@@ -44,7 +44,7 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
           </h2>
           {canWrite && (
             <div className="flex items-center gap-2">
-              <Link href={`/${slug}/import`} className={buttonClasses("secondary", "sm")}>
+              <Link href={`/${slug}/new-repository?mode=mirror`} className={buttonClasses("secondary", "sm")}>
                 <Download className="size-3.5" /> Import
               </Link>
               <Link href={`/${slug}/new-repository`} className={buttonClasses("primary", "sm")}>

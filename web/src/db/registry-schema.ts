@@ -359,6 +359,8 @@ export interface Relabel {
   /** Optional regex applied to the source tag before templating. */
   replaceFrom?: string;
   replaceTo?: string;
+  /** Point "latest" at the newest imported image when the source has no latest tag (default true). */
+  latest?: boolean;
 }
 
 export const mirrors = pgTable(

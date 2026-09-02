@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { GitMerge, Play, Trash2 } from "lucide-react";
+import { GitMerge, Loader2, Play, Trash2 } from "lucide-react";
 import { deleteMirror, previewMirror, runMirrorNow, saveMirror, type MirrorResult } from "@/app/actions/mirrors";
 import type { MirrorLogEntry, Relabel, TagSelector } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -53,14 +53,37 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
     startTransition(() => act(data));
   }
   const running = mirror?.runs.some((r) => r.status === "running") ?? false;
+  // "Sync now" starts the run after the response; keep the busy state (and
+  // polling) until the run row shows up, or give up after a while.
+  const [syncing, startSync] = useTransition();
+  const [kicked, setKicked] = useState(false);
+  const busy = syncing || kicked || running;
+
+  useEffect(() => {
+    if (running) setKicked(false);
+  }, [running]);
 
   // Imports run in the background; poll while one is in flight so the log
   // and counters update without a manual reload.
   useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => router.refresh(), 4000);
-    return () => clearInterval(id);
-  }, [running, router]);
+    if (!running && !kicked) return;
+    const id = setInterval(() => router.refresh(), running ? 4000 : 1500);
+    const giveUp = kicked && !running ? setTimeout(() => setKicked(false), 20000) : null;
+    return () => {
+      clearInterval(id);
+      if (giveUp) clearTimeout(giveUp);
+    };
+  }, [running, kicked, router]);
+
+  function syncNow() {
+    const data = new FormData();
+    data.set("repositoryId", repositoryId);
+    startSync(async () => {
+      await runMirrorNow(data);
+      setKicked(true);
+      router.refresh();
+    });
+  }
 
   return (
     <Card>
@@ -69,20 +92,10 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
         title={mirror ? `Mirroring ${mirror.source}` : "Mirror another registry"}
         description="Import matching tags from a source repository into this one. Run it manually, from the mirror-sync job, or via the jobs API on a schedule."
         action={
-          mirror && (
-            <div className="flex items-center gap-2">
-              {mirror.lastStatus && (
-                <Badge tone={mirror.lastStatus === "succeeded" ? "ok" : "danger"}>
-                  {mirror.lastStatus} · {relativeTime(mirror.lastRunAt)}
-                </Badge>
-              )}
-              <form action={runMirrorNow}>
-                <input type="hidden" name="repositoryId" value={repositoryId} />
-                <Button type="submit" size="sm" variant="accent" disabled={running}>
-                  <Play className="size-3.5" /> {running ? "Syncing…" : "Sync now"}
-                </Button>
-              </form>
-            </div>
+          mirror?.lastStatus && (
+            <Badge tone={mirror.lastStatus === "succeeded" ? "ok" : "danger"}>
+              {mirror.lastStatus} · {relativeTime(mirror.lastRunAt)}
+            </Badge>
           )
         }
       />
@@ -120,6 +133,12 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
             <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>
               {previewing ? "Checking…" : "Preview matching tags"}
             </Button>
+            {mirror && (
+              <Button type="button" variant="accent" onClick={syncNow} disabled={busy} className="sm:ml-auto">
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                {busy ? "Syncing…" : "Sync now"}
+              </Button>
+            )}
             {state?.error && <span className="text-sm text-danger">{state.error}</span>}
             {preview?.error && <span className="text-sm text-danger">{preview.error}</span>}
             {preview?.preview && (

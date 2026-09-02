@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, Ref, TextareaHTMLAttributes } from "react";
 
 export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
@@ -13,7 +13,7 @@ const inputClasses =
   // 16px on phones: anything smaller makes iOS zoom the page when a field is focused.
   "w-full rounded-lg border border-line-2 bg-card px-3 py-2 text-base text-ink placeholder:text-ink-3 focus:border-action focus:outline-none focus:ring-2 focus:ring-action/15 disabled:opacity-60 sm:text-sm";
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   return <input className={clsx(inputClasses, className)} {...props} />;
 }
 

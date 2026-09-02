@@ -303,6 +303,10 @@ local repository:
 - **Relabelling**: a destination tag template with `{tag}`, `{source}`,
   `{major}`, `{minor}`, `{patch}`, and an optional regex rewrite
   (`^v` → ``) applied first. Multi-arch indexes are imported whole.
+- **`latest`**: registries only carry a `latest` tag if one was pushed. When
+  the source has none, the mirror points `latest` at the newest imported image
+  (highest version tag, otherwise the most recently built); untick the option
+  in the mirror form to keep the repository exactly as the source has it.
 - **Re-sync**: *Sync now* on the repository, the `mirror-sync` job on the
   admin Jobs page, or `POST /api/jobs/mirror-sync` from cron. Unchanged tags
   are skipped; mutable tags are re-imported when *overwrite* is on.
