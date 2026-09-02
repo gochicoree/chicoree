@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getOrgContext } from "@/lib/session";
 import { OrgSettings } from "./org-settings";
 import { DefaultVisibilityForm } from "@/components/default-visibility-form";
+import { PullPolicyForm } from "@/components/pull-policy-form";
 import { isLibrary } from "@/lib/library";
 import { db } from "@/db";
 import { organizationSettings } from "@/db/schema";
@@ -26,6 +27,12 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ or
       isLibrary={isLibrary(ctx.org.slug)}
     >
       <DefaultVisibilityForm scope="organization" organizationId={ctx.org.id} value={settings?.defaultVisibility ?? null} />
+      <PullPolicyForm
+        scope="organization"
+        organizationId={ctx.org.id}
+        level={settings?.blockPullsAt ?? null}
+        unrated={settings?.blockUnrated ?? false}
+      />
     </OrgSettings>
   );
 }

@@ -7,8 +7,8 @@ import {
   bigserial,
   boolean,
   foreignKey,
-  integer,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -33,6 +33,10 @@ export const repositories = pgTable(
       .notNull()
       .default("private"),
     pullCount: bigint("pull_count", { mode: "number" }).notNull().default(0),
+    /** Pull policy override: null = inherit the organization's, "off" = never block. */
+    blockPullsAt: text("block_pulls_at", { enum: ["off", "critical", "high", "medium", "low"] }),
+    /** Override for counting unrated findings; null = inherit. */
+    blockUnrated: boolean("block_unrated"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -108,6 +112,29 @@ export const manifestRefs = pgTable(
       name: "manifest_refs_manifest_fk",
     }).onDelete("cascade"),
     index("manifest_refs_ref_idx").on(t.repositoryId, t.refDigest),
+  ],
+);
+
+/**
+ * Manifests whose pulls the registry must refuse, derived by the web app
+ * from scan results and the pull policy (registryd only reads this table).
+ */
+export const manifestBlocks = pgTable(
+  "manifest_blocks",
+  {
+    repositoryId: text("repository_id").notNull(),
+    digest: text("digest").notNull(),
+    /** Human-readable cause, returned to docker clients. */
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.repositoryId, t.digest] }),
+    foreignKey({
+      columns: [t.repositoryId, t.digest],
+      foreignColumns: [manifests.repositoryId, manifests.digest],
+      name: "manifest_blocks_manifest_fk",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -274,6 +301,10 @@ export const organizationSettings = pgTable("organization_settings", {
     .references(() => organization.id, { onDelete: "cascade" }),
   /** Visibility for repositories auto-created by pushes; null = use pusher's / private. */
   defaultVisibility: text("default_visibility", { enum: ["public", "private"] }),
+  /** Pull policy: block pulls of images with findings at this severity or worse; null = off. */
+  blockPullsAt: text("block_pulls_at", { enum: ["critical", "high", "medium", "low"] }),
+  /** Whether findings without a severity rating count against the threshold. */
+  blockUnrated: boolean("block_unrated").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

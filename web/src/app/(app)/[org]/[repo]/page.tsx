@@ -5,7 +5,8 @@ import { getOrgContext } from "@/lib/session";
 import { getRepoByPath, listRepoTags, pullSeries } from "@/lib/data";
 import { env } from "@/lib/env";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
-import { VisibilityBadge } from "@/components/ui/badge";
+import { Badge, VisibilityBadge } from "@/components/ui/badge";
+import { ShieldBan } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { SeverityChips } from "@/components/severity";
@@ -103,6 +104,11 @@ export default async function RepoPage({
                         <span className="ml-2 rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">
                           multi-arch
                         </span>
+                      )}
+                      {tag.blocked && (
+                        <Badge tone="danger" className="ml-2 align-middle" title={tag.blocked}>
+                          <ShieldBan className="size-3" /> pull blocked
+                        </Badge>
                       )}
                       <div className="mt-0.5 text-xs text-ink-3 sm:hidden">pushed {relativeTime(tag.updatedAt)}</div>
                     </td>

@@ -3,7 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/db";
-import { mirrorRuns, mirrors, repositoryWebhooks, webhookDeliveries } from "@/db/schema";
+import { mirrorRuns, mirrors, organizationSettings, repositoryWebhooks, webhookDeliveries } from "@/db/schema";
+import { PullPolicyForm } from "@/components/pull-policy-form";
+import { orgPolicy } from "@/lib/pull-policy";
 import { getOrgContext } from "@/lib/session";
 import { getRepoByPath } from "@/lib/data";
 import { MANAGER_ROLES } from "@/lib/org-roles";
@@ -59,6 +61,9 @@ export default async function RepoSettingsPage({ params }: { params: Promise<{ o
     }),
   );
 
+  const orgSettings = await db.query.organizationSettings.findFirst({
+    where: eq(organizationSettings.organizationId, found.repo.organizationId),
+  });
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, found.repo.id) });
   let mirrorView: MirrorView | null = null;
   if (mirror) {
@@ -104,6 +109,13 @@ export default async function RepoSettingsPage({ params }: { params: Promise<{ o
         description={found.repo.description}
         visibility={found.repo.visibility}
       >
+        <PullPolicyForm
+          scope="repository"
+          repositoryId={found.repo.id}
+          level={found.repo.blockPullsAt ?? null}
+          unrated={found.repo.blockUnrated ?? null}
+          inherited={orgPolicy(orgSettings)}
+        />
         <WebhooksManager repositoryId={found.repo.id} hooks={hookRows} max={MAX_WEBHOOKS_PER_REPO} />
         <div id="mirror">
           <MirrorManager repositoryId={found.repo.id} mirror={mirrorView} />

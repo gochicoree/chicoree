@@ -18,6 +18,8 @@ import { SeverityChips, totalFindings, type SeveritySummary } from "@/components
 import { Button } from "@/components/ui/button";
 import { VulnerabilityPanel } from "./vulnerability-panel";
 import { imageReference } from "@/lib/library";
+import { manifestBlockReason } from "@/lib/pull-policy";
+import { ShieldBan } from "lucide-react";
 
 interface Descriptor {
   mediaType?: string;
@@ -125,6 +127,7 @@ export default async function TagDetailPage({
   }
 
   const actor = await resolveActor(manifest.pushedBy);
+  const blocked = await manifestBlockReason(found.repo.id, digest);
   const scanning = env.clairEnabled;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
@@ -168,6 +171,16 @@ export default async function TagDetailPage({
           )}
         </div>
       </div>
+
+      {blocked && (
+        <div className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
+          <ShieldBan className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <div className="font-medium">Pulls of this image are blocked by the vulnerability policy.</div>
+            <div className="mt-0.5 text-[13px] opacity-90">{blocked}</div>
+          </div>
+        </div>
+      )}
 
       <CommandLine command={`docker pull ${pullRef}`} />
 

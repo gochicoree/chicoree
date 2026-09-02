@@ -8,6 +8,7 @@ import { getIndexReport, getVulnerabilityReport, submitIndex, summarizeReport, t
 import { env } from "./env";
 import { fetchBlobJson } from "./registry-client";
 import { systemPullToken } from "./registry-jwt";
+import { refreshRepositoryBlocks } from "./pull-policy";
 
 interface ManifestDescriptor {
   mediaType?: string;
@@ -119,6 +120,7 @@ export async function runScan(repositoryPath: string, digest: string): Promise<v
       summary: summarizeReport(vulnReport),
       error: null,
     });
+    await refreshRepositoryBlocks(repo.id).catch((err) => console.error("pull policy refresh failed:", err));
   } catch (err) {
     await setScanState(digest, repo.id, {
       status: "failed",

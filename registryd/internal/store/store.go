@@ -348,6 +348,21 @@ func (s *Store) ManifestExists(ctx context.Context, repoID, digest string) (bool
 }
 
 // DeleteManifest removes a manifest (tags and refs cascade via FKs).
+// ManifestBlock reports whether the web app's vulnerability policy forbids
+// pulling a manifest (manifest_blocks is written by the web app only).
+func (s *Store) ManifestBlock(ctx context.Context, repoID, digest string) (string, bool, error) {
+	var reason string
+	err := s.pool.QueryRow(ctx, `
+		SELECT reason FROM manifest_blocks WHERE repository_id = $1 AND digest = $2`, repoID, digest).Scan(&reason)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return reason, true, nil
+}
+
 func (s *Store) DeleteManifest(ctx context.Context, repoID, digest string) error {
 	tag, err := s.pool.Exec(ctx, `
 		DELETE FROM manifests WHERE repository_id = $1 AND digest = $2`, repoID, digest)
