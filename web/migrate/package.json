@@ -1,0 +1,9 @@
+{
+  "name": "chicoree-migrate",
+  "private": true,
+  "description": "Pinned runtime for scripts/migrate.mjs inside the container image; kept separate from the standalone Next build.",
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "pg": "8.16.3"
+  }
+}

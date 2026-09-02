@@ -1,0 +1,21 @@
+# Clair v4 in combo mode: indexer, matcher and notifier in one process.
+http_listen_addr: ":6060"
+introspection_addr: ""
+log_level: "info"
+
+indexer:
+  connstring: "host=postgres port=5432 user=chicoree password=chicoree dbname=clair sslmode=disable"
+  scanlock_retry: 10
+  layer_scan_concurrency: 5
+  migrations: true
+
+matcher:
+  connstring: "host=postgres port=5432 user=chicoree password=chicoree dbname=clair sslmode=disable"
+  max_conn_pool: 100
+  migrations: true
+
+notifier:
+  connstring: "host=postgres port=5432 user=chicoree password=chicoree dbname=clair sslmode=disable"
+  migrations: true
+  delivery_interval: "1m"
+  poll_interval: "5m"
