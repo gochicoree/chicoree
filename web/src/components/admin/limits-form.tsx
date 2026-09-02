@@ -6,6 +6,7 @@ import type { Limits } from "@/lib/quota";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { useActionToast } from "@/components/ui/toast";
 
 /** Admin form for per-user or per-organization limits. Empty = unlimited. */
 export function LimitsForm({
@@ -23,6 +24,7 @@ export function LimitsForm({
     scope === "user" ? setUserLimits : setOrgLimits,
     null,
   );
+  useActionToast(state, "Limits saved");
   const gib = limits.maxStorageBytes === null ? "" : String(limits.maxStorageBytes / 1024 ** 3);
 
   return (
@@ -91,7 +93,6 @@ export function LimitsForm({
             <Button type="submit" disabled={pending}>
               Save limits
             </Button>
-            {state?.saved && <span className="text-sm text-ok">Saved.</span>}
             {state?.error && <span className="text-sm text-danger">{state.error}</span>}
           </div>
         </form>

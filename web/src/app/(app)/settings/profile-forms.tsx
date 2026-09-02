@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { relativeTime } from "@/lib/format";
+import { useToast } from "@/components/ui/toast";
 
 interface SessionRow {
   token: string;
@@ -30,35 +31,37 @@ export function ProfileForms({
   sessions: SessionRow[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [name, setName] = useState(initialName);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setMsg(null);
+    setError(null);
     const res = await authClient.updateUser({ name });
     setBusy(false);
-    setMsg(res.error ? { tone: "err", text: res.error.message ?? "Could not save" } : { tone: "ok", text: "Profile saved." });
+    if (res.error) setError(res.error.message ?? "Could not save");
+    else toast({ title: "Profile saved" });
     router.refresh();
   }
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setMsg(null);
+    setError(null);
     const res = await authClient.changePassword({
       currentPassword,
       newPassword,
       revokeOtherSessions: true,
     });
     setBusy(false);
-    if (res.error) setMsg({ tone: "err", text: res.error.message ?? "Could not change the password" });
+    if (res.error) setError(res.error.message ?? "Could not change the password");
     else {
-      setMsg({ tone: "ok", text: "Password changed. Other sessions were signed out." });
+      toast({ title: "Password changed", description: "Other sessions were signed out." });
       setCurrentPassword("");
       setNewPassword("");
     }
@@ -66,20 +69,13 @@ export function ProfileForms({
 
   async function revoke(token: string) {
     await authClient.revokeSession({ token });
+    toast({ title: "Session revoked" });
     router.refresh();
   }
 
   return (
     <div className="space-y-6">
-      {msg && (
-        <p
-          className={`rounded-md px-3 py-2 text-sm ${
-            msg.tone === "ok" ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"
-          }`}
-        >
-          {msg.text}
-        </p>
-      )}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
       <Card>
         <CardHeader eyebrow="Profile" title="Your details" />

@@ -42,6 +42,8 @@
   --chart-1-soft: #9ec0d6;
   --chart-grid: #e4eaed;
 
+  --overlay: rgb(22 39 47 / 0.45); /* modal / drawer backdrop */
+
   --shadow-card: 0 1px 2px rgb(22 39 47 / 0.05), 0 4px 16px -8px rgb(22 39 47 / 0.08);
 }
 
@@ -80,6 +82,8 @@
     --chart-1-soft: #35637f;
     --chart-grid: #1c313b;
 
+    --overlay: rgb(3 10 14 / 0.7);
+
     --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px -8px rgb(0 0 0 / 0.4);
   }
 }
@@ -117,11 +121,13 @@
   --color-chart-1: var(--chart-1);
   --color-chart-1-soft: var(--chart-1-soft);
   --color-chart-grid: var(--chart-grid);
+  --color-overlay: var(--overlay);
 
   --shadow-card: var(--shadow-card);
 
   --animate-slide-in: slide-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-toast-in: toast-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 
   @keyframes slide-in {
     from {
@@ -137,6 +143,16 @@
     }
     to {
       opacity: 1;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 }

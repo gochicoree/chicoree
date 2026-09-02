@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Plus, Send, Trash2, Webhook } from "lucide-react";
 import { deleteWebhook, saveWebhook, testWebhook, toggleWebhook, type WebhookResult } from "@/app/actions/webhooks";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { relativeTime } from "@/lib/format";
+import { useToast } from "@/components/ui/toast";
 
 export interface WebhookRow {
   id: string;
@@ -52,9 +53,14 @@ function WebhookForm({
 }) {
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(saveWebhook, null);
   const [authType, setAuthType] = useState(hook?.authType ?? "none");
-  if (state?.saved) {
-    onDone();
-  }
+  const { toast } = useToast();
+  useEffect(() => {
+    if (state?.saved) {
+      toast({ title: hook ? "Webhook saved" : "Webhook added" });
+      onDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   return (
     <form action={action} className="grid gap-4 sm:grid-cols-2">
       <input type="hidden" name="repositoryId" value={repositoryId} />
@@ -108,10 +114,6 @@ function WebhookForm({
           <Input id="wh-signing" name="signingSecret" type="password" autoComplete="new-password" className="font-mono" />
         </Field>
       </div>
-      <label className="flex items-center gap-2 text-sm sm:col-span-2">
-        <input type="checkbox" name="events" value="push" defaultChecked className="size-4 accent-[var(--action)]" />
-        Send on image push
-      </label>
       {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">{state.error}</p>}
       <div className="flex gap-2 sm:col-span-2">
         <Button type="submit" disabled={pending}>

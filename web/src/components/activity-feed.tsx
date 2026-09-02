@@ -15,7 +15,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   return (
     <ul className="space-y-1">
       {items.map((item) => (
-        <li key={item.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-card-2">
+        <li key={item.id} className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-card-2">
           <span
             className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
               item.type === "push" ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"
@@ -23,7 +23,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
           >
             {item.type === "push" ? <ArrowUpFromLine className="size-3.5" /> : <Trash2 className="size-3.5" />}
           </span>
-          <div className="min-w-0 flex-1 text-[13px]">
+          <div className="min-w-0 flex-1 text-[13px] leading-snug [overflow-wrap:anywhere]">
             <span className="text-ink-2">{item.actorName ?? "someone"}</span>{" "}
             <span className="text-ink-2">{item.type === "push" ? "pushed" : "deleted"}</span>{" "}
             <Link href={`/${item.repoPath}`} className="font-medium text-ink hover:underline">
@@ -35,7 +35,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
               <span className="font-mono text-ink-3"> @{shortDigest(item.digest, 8)}</span>
             ) : null}
           </div>
-          <span className="shrink-0 text-xs text-ink-3">{relativeTime(item.createdAt)}</span>
+          <span className="shrink-0 pt-0.5 text-xs text-ink-3">{relativeTime(item.createdAt)}</span>
         </li>
       ))}
     </ul>

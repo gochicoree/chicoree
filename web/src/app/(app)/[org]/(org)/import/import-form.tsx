@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef, useTransition } from "react";
 import { createImport, previewMirror, type MirrorResult } from "@/app/actions/mirrors";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,27 @@ import { MirrorFormFields } from "@/components/mirror-form-fields";
 export function ImportForm({ organizationId, orgSlug }: { organizationId: string; orgSlug: string }) {
   const [state, action, pending] = useActionState<MirrorResult | null, FormData>(createImport, null);
   const [preview, previewAction, previewing] = useActionState<MirrorResult | null, FormData>(previewMirror, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [, startTransition] = useTransition();
+
+  // Invoking the actions ourselves (instead of <form action>) keeps React
+  // from resetting every field once an action returns — a preview or a
+  // validation error must not wipe what was typed.
+  function run(act: (payload: FormData) => void) {
+    if (!formRef.current) return;
+    const data = new FormData(formRef.current);
+    startTransition(() => act(data));
+  }
 
   return (
-    <form className="space-y-6">
+    <form
+      ref={formRef}
+      className="space-y-6"
+      onSubmit={(e) => {
+        e.preventDefault();
+        run(action);
+      }}
+    >
       <input type="hidden" name="organizationId" value={organizationId} />
       <Card>
         <CardHeader eyebrow="Source" title="What to import" />
@@ -22,7 +40,7 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
             <MirrorFormFields />
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button type="submit" variant="secondary" formAction={previewAction} formNoValidate disabled={previewing}>
+            <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>
               {previewing ? "Checking…" : "Preview matching tags"}
             </Button>
             {preview?.error && <span className="text-sm text-danger">{preview.error}</span>}
@@ -69,7 +87,7 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
           </div>
           {state?.error && <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
           <div className="mt-4">
-            <Button type="submit" formAction={action} disabled={pending}>
+            <Button type="submit" disabled={pending}>
               {pending ? "Starting import…" : "Create repository and import"}
             </Button>
           </div>

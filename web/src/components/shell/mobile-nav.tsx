@@ -80,7 +80,7 @@ export function MobileNav({
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" role="presentation">
           <div
-            className="absolute inset-0 animate-fade-in bg-ink/40 backdrop-blur-[2px]"
+            className="absolute inset-0 animate-fade-in bg-overlay backdrop-blur-[2px]"
             onClick={() => setOpen(false)}
             aria-hidden
           />
