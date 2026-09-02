@@ -62,6 +62,20 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 		return
 	}
 
+	// The web app derives manifest_blocks from scan results and the pull
+	// policy; its own service reads (config caching, moving tags) bypass it.
+	if rc.identity.Subject != "user:system" {
+		reason, blocked, err := s.store.ManifestBlock(r.Context(), repo.ID, digest)
+		if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+		if blocked {
+			writeError(w, http.StatusForbidden, CodeDenied, "pull blocked by vulnerability policy: "+reason)
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", m.MediaType)
 	w.Header().Set("Docker-Content-Digest", m.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))

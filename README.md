@@ -371,6 +371,14 @@ Users / Organizations*, where usage is shown against each limit.
 - **Garbage collection** is also exposed on the registry itself as
   `POST /internal/v1/gc` (bearer = webhook secret), which the `gc` job calls.
 - **Health**: `GET /internal/v1/healthz` on the registry.
+- **Blocking vulnerable pulls**: *Organization → Settings → Pull policy* sets
+  a severity threshold (critical, high, medium or low and above, optionally
+  counting unrated findings); every repository can inherit it, switch it off
+  or set its own under *Settings → Pull policy*. Images whose last scan
+  reports findings at or above the threshold get a *pull blocked* badge, the
+  registry answers pulls with `403 DENIED` and the reason, and multi-arch
+  images are blocked when any variant is. Unscanned and unscannable images are
+  never blocked; pushes are never affected.
 - **Deleting tags**: organization owners and admins (and instance
   administrators) can remove a tag from the repository page. The registry
   records the deletion and the image data stays until *prune-untagged* and

@@ -123,6 +123,8 @@ export interface TagListItem {
   layerCount: number | null;
   scanStatus: string | null;
   scanSummary: SeveritySummary | null;
+  /** Pull-policy block reason, when the registry refuses pulls of this image. */
+  blocked: string | null;
 }
 
 export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
@@ -132,10 +134,11 @@ export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
         WHERE mr.repository_id = t.repository_id AND mr.manifest_digest = t.manifest_digest) AS content_bytes,
       (SELECT count(*)::int FROM manifest_refs mr WHERE mr.repository_id = t.repository_id
         AND mr.manifest_digest = t.manifest_digest) AS ref_count,
-      vs.status AS scan_status, vs.summary AS scan_summary
+      vs.status AS scan_status, vs.summary AS scan_summary, mb.reason AS blocked
     FROM tags t
     JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
     LEFT JOIN vulnerability_scans vs ON vs.digest = t.manifest_digest
+    LEFT JOIN manifest_blocks mb ON mb.repository_id = t.repository_id AND mb.digest = t.manifest_digest
     WHERE t.repository_id = ${repoId}
     ORDER BY t.updated_at DESC`);
   return rows.map((r) => {
@@ -151,6 +154,7 @@ export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
       layerCount: r.ref_count != null ? Math.max(Number(r.ref_count) - 1, 0) : null,
       scanStatus: (r.scan_status as string) ?? null,
       scanSummary: (r.scan_summary as SeveritySummary) ?? null,
+      blocked: (r.blocked as string | null) ?? null,
     };
   });
 }
