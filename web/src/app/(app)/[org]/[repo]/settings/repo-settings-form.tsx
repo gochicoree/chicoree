@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
+import { useActionToast } from "@/components/ui/toast";
 
 export function RepoSettingsForm({
   repositoryId,
@@ -24,6 +25,7 @@ export function RepoSettingsForm({
   const [confirmPublic, setConfirmPublic] = useState(false);
   const [confirm, setConfirm] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+  useActionToast(state, "Repository settings saved");
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     // Going public is a one-click way to expose private content: confirm first.
@@ -57,12 +59,11 @@ export function RepoSettingsForm({
                 ]}
               />
             </Field>
-            <div className="flex items-end gap-3">
+            <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
               <Button type="submit" disabled={pending}>
                 Save changes
               </Button>
               {state?.error && <span className="text-sm text-danger">{state.error}</span>}
-              {state && !state.error && <span className="text-sm text-ok">Saved.</span>}
             </div>
           </form>
         </CardBody>

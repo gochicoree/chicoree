@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { useActionToast } from "@/components/ui/toast";
 
 export function DefaultVisibilityForm({
   scope,
@@ -20,6 +21,7 @@ export function DefaultVisibilityForm({
     scope === "organization" ? setOrgDefaultVisibility : setUserDefaultVisibility,
     null,
   );
+  useActionToast(state, "Default visibility saved");
   const options =
     scope === "organization"
       ? [
@@ -55,7 +57,6 @@ export function DefaultVisibilityForm({
           <Button type="submit" disabled={pending}>
             Save
           </Button>
-          {state?.saved && <span className="text-sm text-ok">Saved.</span>}
           {state?.error && <span className="text-sm text-danger">{state.error}</span>}
         </form>
       </CardBody>

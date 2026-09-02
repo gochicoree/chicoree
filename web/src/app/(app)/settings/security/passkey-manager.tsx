@@ -8,6 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { relativeTime } from "@/lib/format";
+import { useToast } from "@/components/ui/toast";
 
 interface PasskeyRow {
   id: string;
@@ -18,6 +19,7 @@ interface PasskeyRow {
 
 export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,6 +32,7 @@ export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
     setBusy(false);
     if (res?.error) setError(res.error.message ?? "Could not register the passkey");
     else {
+      toast({ title: "Passkey added" });
       setName("");
       router.refresh();
     }
@@ -37,6 +40,7 @@ export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
 
   async function remove(id: string) {
     await authClient.passkey.deletePasskey({ id });
+    toast({ title: "Passkey removed" });
     router.refresh();
   }
 

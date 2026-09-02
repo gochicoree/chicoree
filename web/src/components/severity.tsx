@@ -15,6 +15,10 @@ export const SEVERITIES = [
 
 export type SeveritySummary = Partial<Record<(typeof SEVERITIES)[number]["key"], number>>;
 
+/** Why a finding can lack a rating; shown wherever "unrated" appears. */
+export const UNRATED_HINT =
+  "No severity published by the source (Alpine's security database, for one, lists fixes without ratings). Unrated is not harmless.";
+
 export function totalFindings(summary: SeveritySummary | null | undefined): number {
   if (!summary) return 0;
   return SEVERITIES.reduce((sum, s) => sum + (summary[s.key] ?? 0), 0);
@@ -62,14 +66,18 @@ export function SeverityChips({
   return (
     <span className={clsx("inline-flex flex-wrap items-center gap-2 font-mono text-xs", className)}>
       {present.map((s) => (
-        <span key={s.key} className="inline-flex items-center gap-1" title={`${summary[s.key]} ${s.key}`}>
+        <span
+          key={s.key}
+          className="inline-flex items-center gap-1"
+          title={s.key === "Unknown" ? UNRATED_HINT : `${summary[s.key]} ${s.key}`}
+        >
           <span
             aria-hidden
             className="inline-block size-2 rounded-full"
             style={{ background: `var(${s.varName})` }}
           />
           <span className="text-ink">
-            {s.letter} {summary[s.key]}
+            {s.key === "Unknown" ? `${summary[s.key]} unrated` : `${s.letter} ${summary[s.key]}`}
           </span>
         </span>
       ))}

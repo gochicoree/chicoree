@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { CommandLine } from "@/components/ui/copy";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 
 export function TwoFactorManager({ enabled }: { enabled: boolean }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [password, setPassword] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [totpUri, setTotpUri] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function TwoFactorManager({ enabled }: { enabled: boolean }) {
     }
     setQrDataUrl(null);
     setTotpUri(null);
+    toast({ title: "Two-factor authentication enabled", description: "Keep your backup codes somewhere safe." });
     router.refresh();
   }
 
@@ -65,6 +68,7 @@ export function TwoFactorManager({ enabled }: { enabled: boolean }) {
     if (res.error) setError(res.error.message ?? "Could not disable two-factor auth");
     else {
       setPassword("");
+      toast({ title: "Two-factor authentication disabled" });
       router.refresh();
     }
   }

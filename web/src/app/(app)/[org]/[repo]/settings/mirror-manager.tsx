@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { GitMerge, Play, Trash2 } from "lucide-react";
 import { deleteMirror, previewMirror, runMirrorNow, saveMirror, type MirrorResult } from "@/app/actions/mirrors";
@@ -9,6 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MirrorFormFields } from "@/components/mirror-form-fields";
+import { useActionToast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
 
 export interface MirrorView {
@@ -40,6 +41,17 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
   const [state, action, pending] = useActionState<MirrorResult | null, FormData>(saveMirror, null);
   const [preview, previewAction, previewing] = useActionState<MirrorResult | null, FormData>(previewMirror, null);
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [, startTransition] = useTransition();
+  useActionToast(state, mirror ? "Mirror saved" : "Mirror configured", (s) => !!s.saved);
+
+  // Actions are invoked from the form's current values rather than via
+  // <form action>, so a preview never resets the fields.
+  function run(act: (payload: FormData) => void) {
+    if (!formRef.current) return;
+    const data = new FormData(formRef.current);
+    startTransition(() => act(data));
+  }
   const running = mirror?.runs.some((r) => r.status === "running") ?? false;
 
   // Imports run in the background; poll while one is in flight so the log
@@ -75,7 +87,14 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
         }
       />
       <CardBody>
-        <form className="grid gap-4 sm:grid-cols-2">
+        <form
+          ref={formRef}
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            run(action);
+          }}
+        >
           <input type="hidden" name="repositoryId" value={repositoryId} />
           <MirrorFormFields
             source={mirror?.source}
@@ -95,13 +114,12 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
             </label>
           )}
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <Button type="submit" formAction={action} disabled={pending}>
+            <Button type="submit" disabled={pending}>
               <GitMerge className="size-4" /> {mirror ? "Save mirror" : "Configure mirror"}
             </Button>
-            <Button type="submit" variant="secondary" formAction={previewAction} formNoValidate disabled={previewing}>
+            <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>
               {previewing ? "Checking…" : "Preview matching tags"}
             </Button>
-            {state?.saved && <span className="text-sm text-ok">Saved.</span>}
             {state?.error && <span className="text-sm text-danger">{state.error}</span>}
             {preview?.error && <span className="text-sm text-danger">{preview.error}</span>}
             {preview?.preview && (

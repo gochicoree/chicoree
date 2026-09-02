@@ -6,6 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { useToast } from "@/components/ui/toast";
 
 export function OrgSettings({
   organizationId,
@@ -21,17 +22,16 @@ export function OrgSettings({
   isLibrary?: boolean;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [name, setName] = useState(initialName);
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setSaved(false);
     const res = await authClient.organization.update({
       organizationId,
       data: { name },
@@ -39,7 +39,7 @@ export function OrgSettings({
     setBusy(false);
     if (res.error) setError(res.error.message ?? "Could not save");
     else {
-      setSaved(true);
+      toast({ title: "Organization saved" });
       router.refresh();
     }
   }
@@ -78,7 +78,6 @@ export function OrgSettings({
               <Input id="org-slug" value={slug} disabled className="font-mono" />
             </Field>
             {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
-            {saved && <p className="rounded-md bg-ok-soft px-3 py-2 text-sm text-ok">Saved.</p>}
             <Button type="submit" disabled={busy}>
               Save changes
             </Button>

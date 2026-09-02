@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ASSIGNABLE_ROLES, type OrgRole } from "@/lib/org-roles";
+import { useToast } from "@/components/ui/toast";
 
 interface MemberRow {
   id: string;
@@ -39,6 +40,7 @@ export function MembersManager({
   invitations: InvitationRow[];
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<OrgRole>("member");
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export function MembersManager({
     setBusy(false);
     if (res.error) setError(res.error.message ?? "Could not send the invitation");
     else {
+      toast({ title: `Invitation sent to ${email}` });
       setEmail("");
       router.refresh();
     }
@@ -65,6 +68,7 @@ export function MembersManager({
       organizationId,
     });
     if (res.error) setError(res.error.message ?? "Could not change the role");
+    else toast({ title: `Role changed to ${newRole}` });
     router.refresh();
   }
 
@@ -75,11 +79,13 @@ export function MembersManager({
       organizationId,
     });
     if (res.error) setError(res.error.message ?? "Could not remove the member");
+    else toast({ title: "Member removed" });
     router.refresh();
   }
 
   async function cancelInvitation(invitationId: string) {
     await authClient.organization.cancelInvitation({ invitationId });
+    toast({ title: "Invitation cancelled" });
     router.refresh();
   }
 

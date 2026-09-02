@@ -6,6 +6,7 @@ import { Ban, ShieldCheck, UserCog } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 
 export function UserControls({
   userId,
@@ -19,15 +20,17 @@ export function UserControls({
   banned: boolean;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function run(fn: () => Promise<{ error?: { message?: string } | null }>) {
+  async function run(fn: () => Promise<{ error?: { message?: string } | null }>, done: string) {
     setBusy(true);
     setError(null);
     const res = await fn();
     setBusy(false);
     if (res.error) setError(res.error.message ?? "That didn't work");
+    else toast({ title: done });
     router.refresh();
   }
 
@@ -55,7 +58,7 @@ export function UserControls({
         <Select
           value={role}
           disabled={busy}
-          onChange={(v) => run(() => authClient.admin.setRole({ userId, role: v as "user" | "admin" }))}
+          onChange={(v) => run(() => authClient.admin.setRole({ userId, role: v as "user" | "admin" }), `Role set to ${v}`)}
           className="w-28"
           size="sm"
           aria-label="Role"
@@ -74,6 +77,7 @@ export function UserControls({
             banned
               ? authClient.admin.unbanUser({ userId })
               : authClient.admin.banUser({ userId, banReason: "Banned by administrator" }),
+            banned ? "User unbanned" : "User banned",
           )
         }
       >
