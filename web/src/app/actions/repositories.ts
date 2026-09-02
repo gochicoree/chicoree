@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organization, repositories, tags } from "@/db/schema";
-import { getOrgRole, requireSession } from "@/lib/session";
+import { getOrgRole, requireSession, getSession } from "@/lib/session";
 import { runScan } from "@/lib/scan";
 import { checkRepoQuota } from "@/lib/quota";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
@@ -124,10 +124,11 @@ export async function deleteTag(formData: FormData): Promise<void> {
 export async function requestRescan(formData: FormData): Promise<void> {
   const repoId = String(formData.get("repositoryId") ?? "");
   const digest = String(formData.get("digest") ?? "");
+  // Re-scans cost Clair real work; only instance administrators may queue them.
+  const session = await getSession();
+  if (session?.user.role !== "admin") return;
   const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repoId) });
   if (!repo) return;
-  const denied = await requireOrgRole(repo.organizationId, WRITER_ROLES);
-  if (denied) return;
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) return;
 
