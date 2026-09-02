@@ -18,15 +18,14 @@ export default async function OrgSettingsPage({ params }: { params: Promise<{ or
   });
 
   return (
-    <div className="space-y-6">
-      <OrgSettings
-        organizationId={ctx.org.id}
-        name={ctx.org.name}
-        slug={ctx.org.slug}
-        isOwner={ctx.role === "owner" && !isLibrary(ctx.org.slug)}
-        isLibrary={isLibrary(ctx.org.slug)}
-      />
+    <OrgSettings
+      organizationId={ctx.org.id}
+      name={ctx.org.name}
+      slug={ctx.org.slug}
+      isOwner={ctx.role === "owner" && !isLibrary(ctx.org.slug)}
+      isLibrary={isLibrary(ctx.org.slug)}
+    >
       <DefaultVisibilityForm scope="organization" organizationId={ctx.org.id} value={settings?.defaultVisibility ?? null} />
-    </div>
+    </OrgSettings>
   );
 }

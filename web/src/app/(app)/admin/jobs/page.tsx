@@ -21,7 +21,7 @@ export default async function JobsPage() {
       <PageHeader eyebrow="Instance" title="Administration" />
       <AdminNav />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {jobs.map((job) => (
           <JobCard
             key={job.name}
@@ -56,14 +56,14 @@ export default async function JobsPage() {
                   <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Status</th>
                   <th className="hidden px-4 py-2.5 text-xs font-medium text-ink-2 md:table-cell">Parameters</th>
                   <th className="hidden px-4 py-2.5 text-xs font-medium text-ink-2 sm:table-cell">Result</th>
-                  <th className="hidden px-4 py-2.5 text-xs font-medium text-ink-2 lg:table-cell">Triggered by</th>
+                  <th className="hidden whitespace-nowrap px-4 py-2.5 text-xs font-medium text-ink-2 xl:table-cell">Triggered by</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-ink-2">Started</th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id} className="border-b border-line last:border-0">
-                    <td className="px-4 py-2.5 font-mono text-[13px] font-medium sm:px-5">{run.job}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[13px] font-medium sm:px-5">{run.job}</td>
                     <td className="px-4 py-2.5">
                       <Badge tone={run.status === "succeeded" ? "ok" : run.status === "failed" ? "danger" : "neutral"}>
                         {run.status}
@@ -73,8 +73,8 @@ export default async function JobsPage() {
                     <td className="hidden max-w-xs truncate px-4 py-2.5 font-mono text-xs text-ink-2 sm:table-cell" title={run.error ?? ""}>
                       {run.error ?? JSON.stringify(run.result ?? {})}
                     </td>
-                    <td className="hidden px-4 py-2.5 font-mono text-xs text-ink-2 lg:table-cell">{run.triggeredBy}</td>
-                    <td className="px-4 py-2.5 text-right text-xs text-ink-3">{relativeTime(run.startedAt)}</td>
+                    <td className="hidden whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink-2 xl:table-cell">{run.triggeredBy}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right text-xs text-ink-3">{relativeTime(run.startedAt)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -92,9 +92,11 @@ export function ProfileForms({
                 </Badge>
               </div>
             </Field>
-            <Button type="submit" disabled={busy}>
-              Save profile
-            </Button>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={busy}>
+                Save profile
+              </Button>
+            </div>
           </form>
         </CardBody>
       </Card>
@@ -128,9 +130,11 @@ export function ProfileForms({
                 required
               />
             </Field>
-            <Button type="submit" disabled={busy}>
-              Change password
-            </Button>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={busy}>
+                Change password
+              </Button>
+            </div>
           </form>
         </CardBody>
       </Card>

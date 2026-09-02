@@ -65,7 +65,7 @@ export default async function RepoSettingsPage({ params }: { params: Promise<{ o
     const runs = await db.query.mirrorRuns.findMany({
       where: eq(mirrorRuns.mirrorId, mirror.id),
       orderBy: [desc(mirrorRuns.startedAt)],
-      limit: 10,
+      limit: 3,
     });
     mirrorView = {
       id: mirror.id,
@@ -98,18 +98,17 @@ export default async function RepoSettingsPage({ params }: { params: Promise<{ o
       <Link href={`/${orgSlug}/${repoName}`} className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
         <ArrowLeft className="size-4" /> {orgSlug}/{repoName}
       </Link>
-      <div className="space-y-6">
-        <RepoSettingsForm
-          repositoryId={found.repo.id}
-          name={found.repo.name}
-          description={found.repo.description}
-          visibility={found.repo.visibility}
-        />
+      <RepoSettingsForm
+        repositoryId={found.repo.id}
+        name={found.repo.name}
+        description={found.repo.description}
+        visibility={found.repo.visibility}
+      >
         <WebhooksManager repositoryId={found.repo.id} hooks={hookRows} max={MAX_WEBHOOKS_PER_REPO} />
         <div id="mirror">
           <MirrorManager repositoryId={found.repo.id} mirror={mirrorView} />
         </div>
-      </div>
+      </RepoSettingsForm>
     </div>
   );
 }

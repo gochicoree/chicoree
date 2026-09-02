@@ -17,23 +17,25 @@ interface JobInfo {
 export function JobCard({ job }: { job: JobInfo }) {
   const [state, action, pending] = useActionState<JobActionResult | null, FormData>(runJobAction, null);
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader eyebrow={job.name} title={job.title} description={job.description} />
-      <CardBody>
-        <form action={action} className="space-y-3">
+      <CardBody className="flex flex-1 flex-col">
+        <form action={action} className="flex flex-1 flex-col gap-3">
           <input type="hidden" name="job" value={job.name} />
           {job.params.map((p) => (
             <Field key={p.name} label={p.name} htmlFor={`${job.name}-${p.name}`} hint={p.description}>
               <Input id={`${job.name}-${p.name}`} name={p.name} placeholder={p.default} className="font-mono" />
             </Field>
           ))}
-          <Button type="submit" variant="secondary" disabled={pending}>
-            <Play className="size-4" /> {pending ? "Running…" : "Run now"}
-          </Button>
-          {state?.status === "succeeded" && (
-            <p className="rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
-          )}
-          {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
+          <div className="mt-auto space-y-3 pt-1">
+            <Button type="submit" variant="secondary" disabled={pending}>
+              <Play className="size-4" /> {pending ? "Running…" : "Run now"}
+            </Button>
+            {state?.status === "succeeded" && (
+              <p className="rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
+            )}
+            {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
+          </div>
         </form>
       </CardBody>
     </Card>
