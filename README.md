@@ -15,7 +15,7 @@ A self-hosted OCI container registry with a proper management plane.
   email one-time codes, passkeys, GitHub/Google/any-OIDC OAuth, LDAP/Active
   Directory with group-based roles, and TOTP or
   email-based two-factor auth.
-- **Clair v4** (combo mode) scans every pushed image; reports live next to the tag.
+- **Clair v4** (combo mode, optional) scans every pushed image; reports live next to the tag.
 
 ## Quick start
 
@@ -69,11 +69,29 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Passkeys | `PASSKEY_RP_ID` (the domain users see), `PASSKEY_RP_NAME` |
 | Jobs API | `JOBS_API_TOKEN` (optional static token for automation) |
 | GC safety window | `GC_GRACE_PERIOD` (default `1h`) |
+| Vulnerability scanning | `CLAIR_URL` (empty disables it) and `COMPOSE_PROFILES=clair` to run the bundled Clair — see [Running without Clair](#running-without-clair) |
 
 For production: serve both the web app and the registry behind TLS (any
 reverse proxy), point `APP_URL`/`REGISTRY_HOST` at the real hostnames, use a
 managed Postgres, and keep `secrets/registry-token.key` private — it signs
 every registry access token.
+
+### Running without Clair
+
+Clair is optional. It needs Postgres and downloads several gigabytes of
+advisory data, so smaller installs may prefer to skip it:
+
+- **Compose:** set `COMPOSE_PROFILES=` and `CLAIR_URL=` (both empty) in
+  `.env`; the `clair` service is behind the `clair` profile and is not started.
+- **the PaaS:** set `CLAIR_URL` to empty and delete the `clair` service from
+  the loaded compose file.
+
+With `CLAIR_URL` empty the app never queues scans, and everything
+vulnerability-related disappears: the column in the tag list, the tab and
+re-scan button on the tag page, the platform-variant column, and the
+`scan-stale` job (its API route answers with an error). Turning Clair back on
+later scans images as they are pushed; run `scan-stale` once to catch up on
+existing ones.
 
 ### Behind a reverse proxy
 
@@ -108,6 +126,34 @@ The registry emits relative `Location` headers for blob uploads and the web
 app never reads forwarded headers, so nothing else is host-specific. Once
 proxied, bind the published ports to loopback in `docker-compose.yml`
 (`127.0.0.1:3000:3000`, `127.0.0.1:5000:5000`) so only the proxy reaches them.
+
+### Single host with Traefik
+
+`docker-compose.prod.yml` is the self-contained production stack for one
+server: Traefik terminates TLS with Let's Encrypt and serves the UI and the
+docker API on a single hostname (`/v2` goes to the registry, everything else
+to the web app), so `docker login oci.example.com` and the browser share one
+domain. Nothing is bind-mounted from the repository; the web container
+generates the token key pair on first start.
+
+```sh
+scripts/deploy.sh root@server oci.example.com you@example.com
+```
+
+The script rsyncs this checkout to `~/chicoree` on the host, installs Docker
+if it is missing, writes `.env` from `.env.prod.example` with fresh secrets
+(first run only), and runs `docker compose -f docker-compose.prod.yml up -d
+--build`. Re-run it to deploy changes. Requirements: DNS for the domain
+pointing at the server, ports 80 and 443 open, and a user that can talk to
+the Docker daemon.
+
+Edit `.env` on the server for SMTP, S3 storage, sign-in providers, group
+bindings, or to disable Clair (`COMPOSE_PROFILES=` and `CLAIR_URL=`). While
+experimenting, set `ACME_CA_SERVER` to Let's Encrypt's staging endpoint so
+failed attempts do not count against the production rate limit. Traefik's
+read timeout is disabled on the HTTPS entrypoint so multi-gigabyte layer
+uploads are never cut short. Back up the `pg-data`, `registry-data`,
+`token-keys` and `traefik-acme` volumes.
 
 ### Deploying with the PaaS
 

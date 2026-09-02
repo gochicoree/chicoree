@@ -125,7 +125,8 @@ export default async function TagDetailPage({
   }
 
   const actor = await resolveActor(manifest.pushedBy);
-  const canRescan = !!role && !isIndex && env.clairEnabled;
+  const scanning = env.clairEnabled;
+  const canRescan = !!role && !isIndex && scanning;
 
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],
@@ -199,7 +200,7 @@ export default async function TagDetailPage({
                     <th className="py-2 pr-4 text-xs font-medium text-ink-2">Platform</th>
                     <th className="hidden px-4 py-2 text-xs font-medium text-ink-2 sm:table-cell">Digest</th>
                     <th className="hidden px-4 py-2 text-right text-xs font-medium text-ink-2 md:table-cell">Manifest size</th>
-                    <th className="px-4 py-2 text-xs font-medium text-ink-2">Vulnerabilities</th>
+                    {scanning && <th className="px-4 py-2 text-xs font-medium text-ink-2">Vulnerabilities</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -219,9 +220,11 @@ export default async function TagDetailPage({
                       <td className="hidden px-4 py-2.5 text-right font-mono text-[13px] text-ink-2 md:table-cell">
                         {formatBytes(child.size ?? 0)}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <SeverityChips summary={child.scanSummary} status={child.scanStatus} />
-                      </td>
+                      {scanning && (
+                        <td className="px-4 py-2.5">
+                          <SeverityChips summary={child.scanSummary} status={child.scanStatus} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -237,26 +240,30 @@ export default async function TagDetailPage({
               badge: layersWithCommands.length,
               content: <LayerTable layers={layersWithCommands} />,
             },
-            {
-              label: "Vulnerabilities",
-              badge: scan?.status === "scanned" ? totalFindings(scan.summary as SeveritySummary) : undefined,
-              content: (
-                <VulnerabilityPanel
-                  scan={
-                    scan
-                      ? {
-                          status: scan.status,
-                          summary: (scan.summary as SeveritySummary) ?? null,
-                          report: scan.report,
-                          error: scan.error,
-                          updatedAt: scan.updatedAt.toISOString(),
+            ...(scanning
+              ? [
+                  {
+                    label: "Vulnerabilities",
+                    badge: scan?.status === "scanned" ? totalFindings(scan.summary as SeveritySummary) : undefined,
+                    content: (
+                      <VulnerabilityPanel
+                        scan={
+                          scan
+                            ? {
+                                status: scan.status,
+                                summary: (scan.summary as SeveritySummary) ?? null,
+                                report: scan.report,
+                                error: scan.error,
+                                updatedAt: scan.updatedAt.toISOString(),
+                              }
+                            : null
                         }
-                      : null
-                  }
-                  clairEnabled={env.clairEnabled}
-                />
-              ),
-            },
+                        clairEnabled={scanning}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               label: "Manifest",
               content: (

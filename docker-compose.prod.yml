@@ -1,0 +1,204 @@
+# Single-host production stack. Traefik terminates TLS with Let's Encrypt and
+# serves everything on ONE hostname (DOMAIN): /v2 goes to registryd, the rest
+# to the web app. No bind mounts from the repo: the web container generates
+# the token key pair on first start (token-keys volume).
+#
+#   scripts/deploy.sh user@host            # rsync + compose up on a server
+#   docker compose -f docker-compose.prod.yml up -d --build   # on the host
+#
+# Required in .env: DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD, AUTH_SECRET,
+# WEBHOOK_SECRET (scripts/deploy.sh creates it with fresh secrets).
+
+services:
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # Image layers arrive as large, slow uploads: never cut a request short.
+      - --entrypoints.websecure.transport.respondingTimeouts.readTimeout=0
+      - --entrypoints.websecure.transport.respondingTimeouts.idleTimeout=15m
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:?set ACME_EMAIL in .env}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      # Point at Let's Encrypt staging while testing to stay under rate limits.
+      - --certificatesresolvers.le.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/letsencrypt
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chicoree
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: chicoree
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chicoree -d chicoree"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://chicoree:${POSTGRES_PASSWORD}@postgres:5432/chicoree
+      APP_URL: https://${DOMAIN:?set DOMAIN in .env}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      REGISTRY_HOST: ${DOMAIN}
+      REGISTRY_INTERNAL_URL: http://registryd:5000
+      JWT_PRIVATE_KEY_FILE: /var/lib/chicoree/keys/registry-token.key
+      JWT_PUBLIC_KEY_FILE: /var/lib/chicoree/keys/registry-token.pub
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in .env}
+      JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
+      # Empty disables scanning and hides vulnerability data (see README).
+      CLAIR_URL: ${CLAIR_URL-http://clair:6060}
+      PASSKEY_RP_ID: ${DOMAIN}
+      PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Chicorée Registry}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Chicorée <registry@${DOMAIN}>}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-SSO}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
+      LDAP_URL: ${LDAP_URL:-}
+      LDAP_NAME: ${LDAP_NAME:-LDAP}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_USER_BASE: ${LDAP_USER_BASE:-}
+      LDAP_USER_FILTER: ${LDAP_USER_FILTER:-(&(objectClass=person)(uid={{username}}))}
+      LDAP_ATTR_EMAIL: ${LDAP_ATTR_EMAIL:-mail}
+      LDAP_ATTR_NAME: ${LDAP_ATTR_NAME:-cn}
+      LDAP_ATTR_GROUPS: ${LDAP_ATTR_GROUPS:-memberOf}
+      LDAP_GROUP_BASE: ${LDAP_GROUP_BASE:-}
+      LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER:-(|(member={{dn}})(uniqueMember={{dn}})(memberUid={{username}}))}
+      LDAP_EMAIL_DOMAIN: ${LDAP_EMAIL_DOMAIN:-}
+      LDAP_START_TLS: ${LDAP_START_TLS:-false}
+      LDAP_TLS_INSECURE: ${LDAP_TLS_INSECURE:-false}
+      AUTH_GROUP_BINDINGS: ${AUTH_GROUP_BINDINGS:-}
+    volumes:
+      - token-keys:/var/lib/chicoree/keys
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.web.entrypoints=websecure
+      - traefik.http.routers.web.tls.certresolver=le
+      - traefik.http.services.web.loadbalancer.server.port=3000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sign-in"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  registryd:
+    build: ./registryd
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://chicoree:${POSTGRES_PASSWORD}@postgres:5432/chicoree
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      FILESYSTEM_ROOT: /var/lib/registry
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_REDIRECT_GET: ${S3_REDIRECT_GET:-false}
+      GC_GRACE_PERIOD: ${GC_GRACE_PERIOD:-1h}
+      # Docker clients are sent here for tokens: same hostname, web app path.
+      TOKEN_REALM: https://${DOMAIN}/api/registry/token
+      TOKEN_SERVICE: chicoree-registry
+      TOKEN_ISSUER: chicoree-web
+      JWT_PUBLIC_KEY_FILE: /var/lib/chicoree/keys/registry-token.pub
+      WEBHOOK_URL: http://web:3000/api/internal/events
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+    volumes:
+      - registry-data:/var/lib/registry
+      - token-keys:/var/lib/chicoree/keys:ro
+    labels:
+      - traefik.enable=true
+      # The docker API lives under /v2; the path is passed through unchanged.
+      - traefik.http.routers.registry.rule=Host(`${DOMAIN}`) && (Path(`/v2`) || PathPrefix(`/v2/`))
+      - traefik.http.routers.registry.priority=100
+      - traefik.http.routers.registry.entrypoints=websecure
+      - traefik.http.routers.registry.tls.certresolver=le
+      - traefik.http.services.registry.loadbalancer.server.port=5000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5000/internal/v1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+  clair:
+    # Optional (COMPOSE_PROFILES=clair). 4.9.0's OSV updater panics; 4.8.0 is stable.
+    image: quay.io/projectquay/clair:4.8.0
+    profiles: [clair]
+    restart: unless-stopped
+    environment:
+      CLAIR_CONNSTRING: host=postgres port=5432 user=chicoree password=${POSTGRES_PASSWORD} dbname=clair sslmode=disable
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        cat > /tmp/config.yaml <<EOC
+        http_listen_addr: ":6060"
+        introspection_addr: ""
+        log_level: "info"
+        indexer:
+          connstring: "$$CLAIR_CONNSTRING"
+          scanlock_retry: 10
+          layer_scan_concurrency: 5
+          migrations: true
+        matcher:
+          connstring: "$$CLAIR_CONNSTRING"
+          max_conn_pool: 100
+          migrations: true
+        notifier:
+          connstring: "$$CLAIR_CONNSTRING"
+          migrations: true
+          delivery_interval: "1m"
+          poll_interval: "5m"
+        EOC
+        exec clair -conf /tmp/config.yaml -mode combo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+volumes:
+  traefik-acme:
+  pg-data:
+  registry-data:
+  token-keys:

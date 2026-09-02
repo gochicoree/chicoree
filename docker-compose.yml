@@ -29,7 +29,8 @@ services:
       JWT_PRIVATE_KEY_FILE: /run/secrets/registry-token.key
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
       JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
-      CLAIR_URL: http://clair:6060
+      # Empty disables scanning (and hides vulnerability data in the UI).
+      CLAIR_URL: ${CLAIR_URL-http://clair:6060}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -120,7 +121,10 @@ services:
 
   clair:
     # 4.9.0's OSV updater panics on current upstream data; 4.8.0 is stable.
+    # Optional: started only with the "clair" profile (COMPOSE_PROFILES in
+    # .env); leave the profile off and CLAIR_URL empty to run without scanning.
     image: quay.io/projectquay/clair:4.8.0
+    profiles: [clair]
     environment:
       CLAIR_MODE: combo
       CLAIR_CONF: /config/config.yaml

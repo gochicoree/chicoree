@@ -30,6 +30,7 @@ export default async function RepoPage({
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
   ]);
   const path = `${orgSlug}/${repoName}`;
+  const scanning = env.clairEnabled;
 
   return (
     <div className="space-y-6">
@@ -78,7 +79,7 @@ export default async function RepoPage({
                   <th className="hidden px-4 py-2.5 text-xs font-medium text-ink-2 md:table-cell">Digest</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-ink-2">Size</th>
                   <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 lg:table-cell">Layers</th>
-                  <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Vulnerabilities</th>
+                  {scanning && <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Vulnerabilities</th>}
                   <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 sm:table-cell">Pushed</th>
                 </tr>
               </thead>
@@ -88,9 +89,9 @@ export default async function RepoPage({
                     <td className="px-4 py-3 sm:px-5">
                       <Link
                         href={`/${path}/tags/${encodeURIComponent(tag.name)}`}
-                        className="inline-flex items-center gap-1.5 font-mono text-[13px] font-medium text-ink hover:underline"
+                        className="inline-flex items-start gap-1.5 break-all font-mono text-[13px] font-medium text-ink hover:underline"
                       >
-                        <TagIcon className="size-3.5 text-ink-3" />
+                        <TagIcon className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
                         {tag.name}
                       </Link>
                       {tag.isIndex && (
@@ -109,9 +110,11 @@ export default async function RepoPage({
                     <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 lg:table-cell">
                       {tag.isIndex ? "—" : (tag.layerCount ?? "—")}
                     </td>
-                    <td className="px-4 py-3">
-                      <SeverityChips summary={tag.scanSummary} status={tag.isIndex ? "index" : tag.scanStatus} />
-                    </td>
+                    {scanning && (
+                      <td className="px-4 py-3">
+                        <SeverityChips summary={tag.scanSummary} status={tag.isIndex ? "index" : tag.scanStatus} />
+                      </td>
+                    )}
                     <td className="hidden px-4 py-3 text-right text-[13px] text-ink-2 sm:table-cell">
                       {relativeTime(tag.updatedAt)}
                     </td>
