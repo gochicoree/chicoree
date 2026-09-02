@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, RotateCw } from "lucide-react";
 import { db } from "@/db";
 import { serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
-import { getOrgContext } from "@/lib/session";
+import { getOrgContext, getSession } from "@/lib/session";
 import { getManifestWithScan, getRepoByPath } from "@/lib/data";
 import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
@@ -126,7 +126,8 @@ export default async function TagDetailPage({
 
   const actor = await resolveActor(manifest.pushedBy);
   const scanning = env.clairEnabled;
-  const canRescan = !!role && !isIndex && scanning;
+  const session = await getSession();
+  const canRescan = session?.user.role === "admin" && !isIndex && scanning;
 
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],

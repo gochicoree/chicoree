@@ -372,7 +372,7 @@ Users / Organizations*, where usage is shown against each limit.
   `POST /internal/v1/gc` (bearer = webhook secret), which the `gc` job calls.
 - **Health**: `GET /internal/v1/healthz` on the registry.
 - **Scan refresh**: every push triggers a Clair scan; the *Re-scan* button on
-  a tag re-submits it (vulnerability databases keep updating, so re-scan
+  a tag (administrators only) re-submits it (vulnerability databases keep updating, so re-scan
   periodically). Clair needs a few minutes after first boot to download its
   vulnerability databases; earlier scans may come back empty.
 
