@@ -1,0 +1,172 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { MonitorSmartphone, X } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
+import { relativeTime } from "@/lib/format";
+
+interface SessionRow {
+  token: string;
+  current: boolean;
+  userAgent: string;
+  ipAddress: string;
+  createdAt: string;
+}
+
+export function ProfileForms({
+  name: initialName,
+  email,
+  emailVerified,
+  sessions,
+}: {
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  sessions: SessionRow[];
+}) {
+  const router = useRouter();
+  const [name, setName] = useState(initialName);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    const res = await authClient.updateUser({ name });
+    setBusy(false);
+    setMsg(res.error ? { tone: "err", text: res.error.message ?? "Could not save" } : { tone: "ok", text: "Profile saved." });
+    router.refresh();
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    const res = await authClient.changePassword({
+      currentPassword,
+      newPassword,
+      revokeOtherSessions: true,
+    });
+    setBusy(false);
+    if (res.error) setMsg({ tone: "err", text: res.error.message ?? "Could not change the password" });
+    else {
+      setMsg({ tone: "ok", text: "Password changed. Other sessions were signed out." });
+      setCurrentPassword("");
+      setNewPassword("");
+    }
+  }
+
+  async function revoke(token: string) {
+    await authClient.revokeSession({ token });
+    router.refresh();
+  }
+
+  return (
+    <div className="space-y-6">
+      {msg && (
+        <p
+          className={`rounded-md px-3 py-2 text-sm ${
+            msg.tone === "ok" ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"
+          }`}
+        >
+          {msg.text}
+        </p>
+      )}
+
+      <Card>
+        <CardHeader eyebrow="Profile" title="Your details" />
+        <CardBody>
+          <form onSubmit={saveProfile} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Name" htmlFor="name">
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </Field>
+            <Field label="Email" htmlFor="email">
+              <div className="flex items-center gap-2">
+                <Input id="email" value={email} disabled />
+                <Badge tone={emailVerified ? "ok" : "neutral"}>
+                  {emailVerified ? "verified" : "unverified"}
+                </Badge>
+              </div>
+            </Field>
+            <Button type="submit" disabled={busy}>
+              Save profile
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          eyebrow="Password"
+          title="Change password"
+          description="Docker logins use access tokens, so changing this never breaks CI."
+        />
+        <CardBody>
+          <form onSubmit={changePassword} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Current password" htmlFor="current-password">
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="New password" htmlFor="new-password" hint="At least 10 characters.">
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={10}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </Field>
+            <Button type="submit" disabled={busy}>
+              Change password
+            </Button>
+          </form>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader eyebrow="Sessions" title="Active sessions" />
+        <div>
+          {sessions.map((s) => (
+            <div key={s.token} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5">
+              <MonitorSmartphone className="size-4 shrink-0 text-ink-3" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px]">{s.userAgent}</div>
+                <div className="text-xs text-ink-3">
+                  {s.ipAddress && `${s.ipAddress} · `}
+                  started {relativeTime(s.createdAt)}
+                </div>
+              </div>
+              {s.current ? (
+                <Badge tone="ok">this device</Badge>
+              ) : (
+                <button
+                  onClick={() => revoke(s.token)}
+                  aria-label="Revoke session"
+                  className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}

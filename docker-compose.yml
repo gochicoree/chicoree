@@ -1,0 +1,169 @@
+name: chicoree
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: chicoree
+      POSTGRES_PASSWORD: chicoree
+      POSTGRES_DB: chicoree
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chicoree -d chicoree"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  web:
+    build: ./web
+    environment:
+      DATABASE_URL: postgres://chicoree:chicoree@postgres:5432/chicoree
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      AUTH_SECRET: ${AUTH_SECRET:?run scripts/gen-keys.sh first}
+      REGISTRY_HOST: ${REGISTRY_HOST:-localhost:5000}
+      REGISTRY_INTERNAL_URL: http://registryd:5000
+      JWT_PRIVATE_KEY_FILE: /run/secrets/registry-token.key
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
+      JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
+      CLAIR_URL: http://clair:6060
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Chicorée <registry@localhost>}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-SSO}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
+      LDAP_URL: ${LDAP_URL:-}
+      LDAP_NAME: ${LDAP_NAME:-LDAP}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_USER_BASE: ${LDAP_USER_BASE:-}
+      LDAP_USER_FILTER: ${LDAP_USER_FILTER:-(&(objectClass=person)(uid={{username}}))}
+      LDAP_ATTR_EMAIL: ${LDAP_ATTR_EMAIL:-mail}
+      LDAP_ATTR_NAME: ${LDAP_ATTR_NAME:-cn}
+      LDAP_ATTR_GROUPS: ${LDAP_ATTR_GROUPS:-memberOf}
+      LDAP_GROUP_BASE: ${LDAP_GROUP_BASE:-}
+      LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER:-(|(member={{dn}})(uniqueMember={{dn}})(memberUid={{username}}))}
+      LDAP_EMAIL_DOMAIN: ${LDAP_EMAIL_DOMAIN:-}
+      LDAP_START_TLS: ${LDAP_START_TLS:-false}
+      LDAP_TLS_INSECURE: ${LDAP_TLS_INSECURE:-false}
+      LDAP_TLS_CA_FILE: ${LDAP_TLS_CA_FILE:-}
+      AUTH_GROUP_BINDINGS: ${AUTH_GROUP_BINDINGS:-}
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-localhost}
+      PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Chicorée Registry}
+    volumes:
+      - ./secrets/registry-token.key:/run/secrets/registry-token.key:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  registryd:
+    build: ./registryd
+    environment:
+      DATABASE_URL: postgres://chicoree:chicoree@postgres:5432/chicoree
+      # Storage plugin selection; each plugin reads <NAME>_* variables
+      # (run `docker compose run --rm registryd plugins` for the full list).
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      FILESYSTEM_ROOT: /var/lib/registry
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_REDIRECT_GET: ${S3_REDIRECT_GET:-false}
+      BUNNY_STORAGE_ZONE: ${BUNNY_STORAGE_ZONE:-}
+      BUNNY_ACCESS_KEY: ${BUNNY_ACCESS_KEY:-}
+      BUNNY_REGION: ${BUNNY_REGION:-}
+      BUNNY_CDN_URL: ${BUNNY_CDN_URL:-}
+      BUNNY_CDN_TOKEN_KEY: ${BUNNY_CDN_TOKEN_KEY:-}
+      GC_GRACE_PERIOD: ${GC_GRACE_PERIOD:-1h}
+      # The realm must be reachable by docker CLIENTS, not just containers.
+      TOKEN_REALM: ${APP_URL:-http://localhost:3000}/api/registry/token
+      TOKEN_SERVICE: chicoree-registry
+      TOKEN_ISSUER: chicoree-web
+      JWT_PUBLIC_KEY_FILE: /run/secrets/registry-token.pub
+      WEBHOOK_URL: http://web:3000/api/internal/events
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
+    volumes:
+      - registry-data:/var/lib/registry
+      - ./secrets/registry-token.pub:/run/secrets/registry-token.pub:ro
+    ports:
+      # On macOS, AirPlay occupies 5000 — set REGISTRY_PORT=5010 (and
+      # REGISTRY_HOST=localhost:5010) in .env if you hit a bind error.
+      - "${REGISTRY_PORT:-5000}:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5000/internal/v1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  clair:
+    # 4.9.0's OSV updater panics on current upstream data; 4.8.0 is stable.
+    image: quay.io/projectquay/clair:4.8.0
+    environment:
+      CLAIR_MODE: combo
+      CLAIR_CONF: /config/config.yaml
+    volumes:
+      - ./deploy/clair/config.yaml:/config/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+
+  # --- Optional: S3-compatible storage for STORAGE_DRIVER=s3 ---
+  # Start with: docker compose --profile s3 up
+  minio:
+    image: minio/minio:latest
+    profiles: [s3]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-chicoree}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-chicoree-minio}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  minio-init:
+    image: minio/mc:latest
+    profiles: [s3]
+    depends_on:
+      - minio
+    entrypoint: >
+      sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done;
+      mc mb -p local/${S3_BUCKET:-registry} || true"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-chicoree}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-chicoree-minio}
+
+volumes:
+  pg-data:
+  registry-data:
+  minio-data:

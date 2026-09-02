@@ -1,0 +1,11 @@
+import { NavTabs } from "@/components/ui/nav-tabs";
+
+const items = [
+  { href: "/settings", label: "Profile", exact: true },
+  { href: "/settings/security", label: "Security" },
+  { href: "/settings/tokens", label: "Access tokens" },
+];
+
+export function SettingsNav() {
+  return <NavTabs className="mb-6" items={items} />;
+}

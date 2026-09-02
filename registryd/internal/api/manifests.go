@@ -1,0 +1,258 @@
+package api
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+
+	"registryd/internal/hooks"
+	"registryd/internal/manifest"
+	"registryd/internal/store"
+)
+
+// maxManifestBytes caps manifest payloads (the spec recommends 4 MiB).
+const maxManifestBytes = 4 << 20
+
+// resolveManifestRef turns a tag-or-digest reference into a digest.
+func (s *Server) resolveManifestRef(r *http.Request, repoID, ref string) (string, error) {
+	if isDigest(ref) {
+		return ref, nil
+	}
+	if !tagRe.MatchString(ref) {
+		return "", errTagInvalid
+	}
+	return s.store.ResolveTag(r.Context(), repoID, ref)
+}
+
+var errTagInvalid = errors.New("invalid tag")
+
+// handleManifestGet serves GET/HEAD /v2/<name>/manifests/<ref>.
+func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
+	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
+		return
+	} else if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	digest, err := s.resolveManifestRef(r, repo.ID, ref)
+	if errors.Is(err, errTagInvalid) {
+		writeError(w, http.StatusBadRequest, CodeTagInvalid, "invalid tag name")
+		return
+	} else if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeManifestUnknown, "manifest unknown")
+		return
+	} else if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	m, err := s.store.GetManifest(r.Context(), repo.ID, digest)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeManifestUnknown, "manifest unknown")
+		return
+	} else if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", m.MediaType)
+	w.Header().Set("Docker-Content-Digest", m.Digest)
+	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(m.Payload)
+	}
+
+	// A pull is any manifest request, GET or HEAD — clients with warm caches
+	// only HEAD to revalidate, and that still counts as image usage (the same
+	// semantics Docker Hub uses).
+	repoID := repo.ID
+	s.recordEvent(&store.Event{
+		RepositoryID: repoID, Type: "pull",
+		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(),
+		ManifestDigest: digest, Tag: tagOrEmpty(ref),
+	})
+	go func() {
+		ctx, cancel := contextWithTimeout()
+		defer cancel()
+		_ = s.store.IncrementPullCount(ctx, repoID)
+	}()
+}
+
+func tagOrEmpty(ref string) string {
+	if isDigest(ref) {
+		return ""
+	}
+	return ref
+}
+
+// handleManifestPut stores a manifest after validating that every referenced
+// blob or child manifest is already present in the repository.
+func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
+	payload, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxManifestBytes))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeManifestInvalid, "manifest too large or unreadable")
+		return
+	}
+	sum := sha256.Sum256(payload)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+
+	isTag := !isDigest(ref)
+	if isTag && !tagRe.MatchString(ref) {
+		writeError(w, http.StatusBadRequest, CodeTagInvalid, "invalid tag name")
+		return
+	}
+	if !isTag && ref != digest {
+		writeError(w, http.StatusBadRequest, CodeDigestInvalid,
+			fmt.Sprintf("provided digest %s does not match content digest %s", ref, digest))
+		return
+	}
+
+	parsed, err := manifest.Parse(r.Header.Get("Content-Type"), payload)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeManifestInvalid, err.Error())
+		return
+	}
+
+	// Blobs must already be in the repository, so it exists by now; a manifest
+	// alone (no layers) can still create it — apply the same rules as blobs.
+	repo, err := s.resolveRepoForWrite(w, r, rc, digest, 0)
+	if err != nil {
+		return
+	}
+
+	// Existence checks for everything the manifest references.
+	if parsed.Config != nil {
+		if _, err := s.store.LinkedBlobSize(r.Context(), repo.ID, parsed.Config.Digest); err != nil {
+			writeError(w, http.StatusBadRequest, CodeManifestBlobUnknown,
+				fmt.Sprintf("config blob %s not found in repository", parsed.Config.Digest))
+			return
+		}
+	}
+	for _, l := range parsed.Layers {
+		if manifest.IsForeignLayer(l.MediaType) {
+			continue
+		}
+		if _, err := s.store.LinkedBlobSize(r.Context(), repo.ID, l.Digest); err != nil {
+			writeError(w, http.StatusBadRequest, CodeManifestBlobUnknown,
+				fmt.Sprintf("layer blob %s not found in repository", l.Digest))
+			return
+		}
+	}
+	for _, c := range parsed.Children {
+		ok, err := s.store.ManifestExists(r.Context(), repo.ID, c.Digest)
+		if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusBadRequest, CodeManifestBlobUnknown,
+				fmt.Sprintf("child manifest %s not found in repository", c.Digest))
+			return
+		}
+	}
+
+	row := &store.Manifest{
+		RepositoryID: repo.ID,
+		Digest:       digest,
+		MediaType:    parsed.MediaType,
+		ArtifactType: parsed.ArtifactType,
+		Size:         int64(len(payload)),
+		Payload:      payload,
+		PushedBy:     rc.identity.Subject,
+	}
+	if parsed.Config != nil {
+		row.ConfigDigest = parsed.Config.Digest
+	}
+	if parsed.Subject != nil {
+		row.SubjectDigest = parsed.Subject.Digest
+	}
+	if err := s.store.UpsertManifest(r.Context(), row, parsed.References()); err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	tag := ""
+	if isTag {
+		tag = ref
+		if err := s.store.UpsertTag(r.Context(), repo.ID, tag, digest); err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+	}
+	_ = s.store.TouchRepository(r.Context(), repo.ID)
+	s.recordEvent(&store.Event{
+		RepositoryID: repo.ID, Type: "push",
+		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(),
+		ManifestDigest: digest, Tag: tag,
+	})
+	s.notifier.Notify(hooks.Event{
+		Type: "manifest.push", Repository: rc.name, Digest: digest, Tag: tag,
+		MediaType: parsed.MediaType, Actor: rc.identity.Subject,
+	})
+
+	w.Header().Set("Location", "/v2/"+rc.name+"/manifests/"+digest)
+	w.Header().Set("Docker-Content-Digest", digest)
+	if parsed.Subject != nil {
+		w.Header().Set("OCI-Subject", parsed.Subject.Digest)
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+// handleManifestDelete removes a tag (when ref is a tag) or the manifest
+// itself (when ref is a digest).
+func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
+	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
+		return
+	} else if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+
+	if !isDigest(ref) {
+		if !tagRe.MatchString(ref) {
+			writeError(w, http.StatusBadRequest, CodeTagInvalid, "invalid tag name")
+			return
+		}
+		err := s.store.DeleteTag(r.Context(), repo.ID, ref)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, CodeManifestUnknown, "tag unknown")
+			return
+		} else if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+		s.recordEvent(&store.Event{
+			RepositoryID: repo.ID, Type: "delete",
+			ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), Tag: ref,
+		})
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	err = s.store.DeleteManifest(r.Context(), repo.ID, ref)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeManifestUnknown, "manifest unknown")
+		return
+	} else if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+	s.recordEvent(&store.Event{
+		RepositoryID: repo.ID, Type: "delete",
+		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), ManifestDigest: ref,
+	})
+	s.notifier.Notify(hooks.Event{
+		Type: "manifest.delete", Repository: rc.name, Digest: ref, Actor: rc.identity.Subject,
+	})
+	w.WriteHeader(http.StatusAccepted)
+}

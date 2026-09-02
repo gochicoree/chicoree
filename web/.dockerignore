@@ -1,0 +1,6 @@
+# Host build artefacts must not leak into the image (and they made the
+# build context >1 GB).
+node_modules
+.next
+AGENTS.md
+CLAUDE.md
