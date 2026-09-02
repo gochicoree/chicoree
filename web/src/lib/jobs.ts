@@ -105,8 +105,9 @@ JOBS["mirror-sync"] = {
   run: async () => runAllMirrors(),
 };
 
+/** Jobs that make sense in this deployment (scanning needs Clair). */
 export function listJobs(): JobDefinition[] {
-  return Object.values(JOBS);
+  return Object.values(JOBS).filter((j) => j.name !== "scan-stale" || env.clairEnabled);
 }
 
 /** Execute a job and record the run. Resolves with the job_runs row id. */

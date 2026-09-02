@@ -1,0 +1,65 @@
+#!/usr/bin/env sh
+# Deploy the production stack (docker-compose.prod.yml) to a single host over
+# SSH: syncs this checkout, writes .env with fresh secrets on first run,
+# installs Docker if missing, and runs `docker compose up -d --build`.
+#
+#   scripts/deploy.sh user@host [domain] [acme-email]
+#   NO_CLAIR=1 scripts/deploy.sh ...   # first run without vulnerability scanning
+#
+# Re-runs are idempotent: .env on the server is never overwritten.
+set -eu
+
+TARGET="${1:?usage: scripts/deploy.sh user@host [domain] [acme-email]}"
+DOMAIN="${2:-}"
+ACME_EMAIL="${3:-}"
+REMOTE_DIR="${REMOTE_DIR:-chicoree}"
+
+cd "$(dirname "$0")/.."
+
+echo "==> syncing to $TARGET:$REMOTE_DIR"
+rsync -az --delete \
+  --exclude .git --exclude node_modules --exclude .next --exclude secrets \
+  --exclude .env --exclude '*.log' --exclude .DS_Store \
+  ./ "$TARGET:$REMOTE_DIR/"
+
+ssh "$TARGET" REMOTE_DIR="$REMOTE_DIR" DOMAIN="$DOMAIN" ACME_EMAIL="$ACME_EMAIL" NO_CLAIR="${NO_CLAIR:-}" 'sh -s' <<'REMOTE'
+set -eu
+cd "$REMOTE_DIR"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "==> installing Docker"
+  curl -fsSL https://get.docker.com | sh
+fi
+if ! docker info >/dev/null 2>&1; then
+  echo "cannot talk to the Docker daemon as $(id -un); use root or add the user to the docker group" >&2
+  exit 1
+fi
+
+if [ ! -f .env ]; then
+  : "${DOMAIN:?first deploy needs: scripts/deploy.sh user@host <domain> <acme-email>}"
+  : "${ACME_EMAIL:?first deploy needs: scripts/deploy.sh user@host <domain> <acme-email>}"
+  rand() { head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | head -c "$1"; }
+  echo "==> writing .env for $DOMAIN"
+  sed \
+    -e "s|^DOMAIN=.*|DOMAIN=$DOMAIN|" \
+    -e "s|^ACME_EMAIL=.*|ACME_EMAIL=$ACME_EMAIL|" \
+    -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(rand 32)|" \
+    -e "s|^AUTH_SECRET=.*|AUTH_SECRET=$(rand 48)|" \
+    -e "s|^WEBHOOK_SECRET=.*|WEBHOOK_SECRET=$(rand 48)|" \
+    -e "s|^JOBS_API_TOKEN=.*|JOBS_API_TOKEN=$(rand 48)|" \
+    .env.prod.example > .env
+  if [ -n "$NO_CLAIR" ]; then
+    sed -i -e 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|' -e 's|^CLAIR_URL=.*|CLAIR_URL=|' .env
+  fi
+  chmod 600 .env
+fi
+# On re-runs these arrive empty and would shadow the values in .env.
+[ -n "$DOMAIN" ] || unset DOMAIN
+[ -n "$ACME_EMAIL" ] || unset ACME_EMAIL
+
+echo "==> building and starting"
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+docker compose -f docker-compose.prod.yml ps
+REMOTE
+
+echo "==> done: https://${DOMAIN:-<domain>}"

@@ -42,7 +42,9 @@ services:
       # Generated on first start into the shared token-keys volume.
       - JWT_PRIVATE_KEY_FILE=/var/lib/chicoree/keys/registry-token.key
       - JWT_PUBLIC_KEY_FILE=/var/lib/chicoree/keys/registry-token.pub
-      - CLAIR_URL=http://clair:6060
+      # Empty disables scanning and hides vulnerability data; then delete the
+      # clair service below as well.
+      - CLAIR_URL=${CLAIR_URL-http://clair:6060}
       - PASSKEY_RP_ID=${SERVICE_FQDN_WEB}
       - PASSKEY_RP_NAME=${PASSKEY_RP_NAME:-Chicorée Registry}
       # Email (leave SMTP_HOST empty to log mail to the container output)
