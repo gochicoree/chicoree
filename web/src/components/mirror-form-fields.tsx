@@ -84,6 +84,20 @@ export function MirrorFormFields({
           <Input id="replaceTo" name="replaceTo" defaultValue={relabel?.replaceTo} className="font-mono" placeholder="" />
         </Field>
       </div>
+      <label className="flex items-start gap-2 text-sm text-ink-2 sm:col-span-2">
+        <input type="hidden" name="latest" value="off" />
+        <input
+          type="checkbox"
+          name="latest"
+          value="on"
+          defaultChecked={relabel?.latest ?? true}
+          className="mt-0.5 size-4 accent-[var(--action)]"
+        />
+        <span>
+          Point <code className="font-mono">latest</code> at the newest imported image when the source has no{" "}
+          <code className="font-mono">latest</code> tag (highest version, else most recently built)
+        </span>
+      </label>
     </>
   );
 }

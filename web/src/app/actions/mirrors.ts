@@ -43,6 +43,7 @@ function readRelabel(formData: FormData): Relabel {
     tagTemplate: String(formData.get("tagTemplate") ?? "{tag}").trim() || "{tag}",
     replaceFrom: String(formData.get("replaceFrom") ?? "").trim() || undefined,
     replaceTo: String(formData.get("replaceTo") ?? "").trim() || undefined,
+    latest: formData.getAll("latest").includes("on"),
   };
 }
 

@@ -169,6 +169,21 @@ class LocalPusher {
     }
   }
 
+  async getManifest(reference: string): Promise<{ bytes: Buffer; mediaType: string }> {
+    const res = await fetch(this.url(`/manifests/${reference}`), { headers: this.headers({ Accept: "*/*" }) });
+    if (res.status !== 200) throw new Error(`manifest ${reference}: ${await describe(res)}`);
+    return {
+      bytes: Buffer.from(await res.arrayBuffer()),
+      mediaType: res.headers.get("content-type") ?? "application/vnd.oci.image.manifest.v1+json",
+    };
+  }
+
+  async getBlobJson(digest: string): Promise<unknown> {
+    const res = await fetch(this.url(`/blobs/${digest}`), { headers: this.headers() });
+    if (res.status !== 200) throw new Error(`blob ${digest}: ${await describe(res)}`);
+    return res.json();
+  }
+
   async putManifest(reference: string, bytes: Buffer, mediaType: string): Promise<void> {
     const res = await fetch(this.url(`/manifests/${reference}`), {
       method: "PUT",
@@ -264,6 +279,14 @@ export async function runMirror(mirrorId: string): Promise<{ runId: string; stat
       await db.update(mirrorRuns).set({ matched, imported, skipped, failed, log }).where(eq(mirrorRuns.id, run.id));
     }
 
+    // Registries only have a "latest" tag if someone pushed one. When the
+    // source has none, point ours at the newest imported image so plain
+    // `docker pull` works on the mirror.
+    if (mirror.relabel.latest !== false && !allTags.includes("latest") && !log.some((e) => e.targetTag === "latest")) {
+      const entry = await publishLatest(local, log);
+      if (entry) log.push(entry);
+    }
+
     const status = failed > 0 && imported === 0 && skipped === 0 ? "failed" : "succeeded";
     await db
       .update(mirrorRuns)
@@ -317,6 +340,79 @@ async function importManifest(
     }
   }
   await local.putManifest(tag ?? digest, bytes, mediaType);
+}
+
+/**
+ * Tags that look like versions: v1.2.3, 1.27, 2. The fourth element ranks a
+ * plain release (1) above anything with a suffix such as -rc1 or -alpine (0).
+ */
+export function versionKey(tag: string): [number, number, number, number] | null {
+  const m = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?=([-+.])|$)/.exec(tag);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0), m[4] ? 0 : 1];
+}
+
+/**
+ * Pick the newest of this run's images: the highest version tag when any
+ * parse as versions, otherwise the most recently built image (config
+ * "created"); ties and undated images fall back to import order.
+ */
+export async function pickNewest<T extends { targetTag: string; digest: string }>(
+  candidates: T[],
+  createdAt: (digest: string) => Promise<Date | null>,
+): Promise<T | null> {
+  if (candidates.length === 0) return null;
+  const versioned = candidates
+    .map((c) => ({ c, key: versionKey(c.targetTag) }))
+    .filter((x): x is { c: T; key: [number, number, number, number] } => x.key !== null);
+  if (versioned.length > 0) {
+    const cmp = (a: number[], b: number[]) => a.map((v, i) => v - b[i]).find((d) => d !== 0) ?? 0;
+    let best = versioned[0];
+    for (const x of versioned) if (cmp(x.key, best.key) >= 0) best = x;
+    return best.c;
+  }
+  let best: { c: T; at: number } | null = null;
+  for (const c of candidates.slice(-100)) {
+    const at = (await createdAt(c.digest).catch(() => null))?.getTime() ?? 0;
+    if (!best || at >= best.at) best = { c, at };
+  }
+  return best?.c ?? candidates[candidates.length - 1];
+}
+
+/** Build date of an image from its config blob (first child for indexes). */
+async function imageCreatedAt(local: LocalPusher, digest: string): Promise<Date | null> {
+  let manifest = JSON.parse((await local.getManifest(digest)).bytes.toString("utf8")) as {
+    config?: Descriptor;
+    manifests?: Descriptor[];
+  };
+  if (Array.isArray(manifest.manifests)) {
+    const child = manifest.manifests.find((m) => m.digest);
+    if (!child?.digest) return null;
+    manifest = JSON.parse((await local.getManifest(child.digest)).bytes.toString("utf8"));
+  }
+  if (!manifest.config?.digest) return null;
+  const config = (await local.getBlobJson(manifest.config.digest)) as { created?: string } | null;
+  const created = config?.created ? new Date(config.created) : null;
+  return created && !Number.isNaN(created.getTime()) ? created : null;
+}
+
+async function publishLatest(local: LocalPusher, log: MirrorLogEntry[]): Promise<MirrorLogEntry | null> {
+  const candidates = log.filter(
+    (e): e is MirrorLogEntry & { digest: string } => !!e.digest && e.status !== "failed",
+  );
+  if (candidates.length === 0) return null;
+  try {
+    const pick = await pickNewest(candidates, (d) => imageCreatedAt(local, d));
+    if (!pick) return null;
+    if ((await local.currentTagDigest("latest")) === pick.digest) {
+      return { sourceTag: pick.targetTag, targetTag: "latest", digest: pick.digest, status: "skipped", detail: "latest already points here" };
+    }
+    const manifest = await local.getManifest(pick.digest);
+    await local.putManifest("latest", manifest.bytes, manifest.mediaType);
+    return { sourceTag: pick.targetTag, targetTag: "latest", digest: pick.digest, status: "imported", detail: "newest imported image" };
+  } catch (err) {
+    return { sourceTag: "(newest)", targetTag: "latest", status: "failed", detail: describeError(err) };
+  }
 }
 
 function describeError(err: unknown): string {

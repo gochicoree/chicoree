@@ -12,7 +12,19 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
   const [state, action, pending] = useActionState<MirrorResult | null, FormData>(createImport, null);
   const [preview, previewAction, previewing] = useActionState<MirrorResult | null, FormData>(previewMirror, null);
   const formRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const nameTouched = useRef(false);
   const [, startTransition] = useTransition();
+
+  // The destination name follows the source's last path segment until the
+  // user edits it: "registry.example.com/team/app:1.2" → "app".
+  function onInput(e: React.FormEvent<HTMLFormElement>) {
+    const target = e.target as HTMLInputElement;
+    if (target.id === "name") nameTouched.current = true;
+    if (target.id === "source" && !nameTouched.current && nameRef.current) {
+      nameRef.current.value = suggestName(target.value);
+    }
+  }
 
   // Invoking the actions ourselves (instead of <form action>) keeps React
   // from resetting every field once an action returns — a preview or a
@@ -27,6 +39,7 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
     <form
       ref={formRef}
       className="space-y-6"
+      onInput={onInput}
       onSubmit={(e) => {
         e.preventDefault();
         run(action);
@@ -67,7 +80,7 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
         <CardBody>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Repository name" htmlFor="name" hint={`Created as ${orgSlug === "library" ? "" : orgSlug + "/"}<name> if it doesn't exist.`}>
-              <Input id="name" name="name" required className="font-mono" pattern="[a-z0-9]+([._\\-][a-z0-9]+)*" />
+              <Input ref={nameRef} id="name" name="name" required className="font-mono" pattern="[a-z0-9]+([._\\-][a-z0-9]+)*" />
             </Field>
             <Field label="Visibility" htmlFor="visibility">
               <Select
@@ -95,4 +108,15 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
       </Card>
     </form>
   );
+}
+
+/** Repository name suggested from a source reference. */
+export function suggestName(source: string): string {
+  const last = source.trim().split("/").pop() ?? "";
+  const bare = last.replace(/@sha256:.*$/, "").replace(/:[^:]*$/, "");
+  return bare
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 64);
 }
