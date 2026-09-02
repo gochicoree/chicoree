@@ -12,6 +12,7 @@ import { SeverityChips } from "@/components/severity";
 import { PullsChart } from "@/components/pulls-chart";
 import { buttonClasses } from "@/components/ui/button";
 import { imageReference } from "@/lib/library";
+import { DeleteTagButton } from "./tag-actions";
 
 export default async function RepoPage({
   params,
@@ -31,6 +32,9 @@ export default async function RepoPage({
   ]);
   const path = `${orgSlug}/${repoName}`;
   const scanning = env.clairEnabled;
+  // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
+  const canDelete = role === "owner" || role === "admin";
+  const latestDigest = tagList.find((t) => t.name === "latest")?.manifestDigest ?? null;
 
   return (
     <div className="space-y-6">
@@ -81,6 +85,7 @@ export default async function RepoPage({
                   <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 lg:table-cell">Layers</th>
                   {scanning && <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Vulnerabilities</th>}
                   <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 sm:table-cell">Pushed</th>
+                  {canDelete && <th className="w-10 px-2 py-2.5" aria-label="Actions" />}
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +123,15 @@ export default async function RepoPage({
                     <td className="hidden px-4 py-3 text-right text-[13px] text-ink-2 sm:table-cell">
                       {relativeTime(tag.updatedAt)}
                     </td>
+                    {canDelete && (
+                      <td className="px-2 py-2 text-right">
+                        <DeleteTagButton
+                          repositoryId={found.repo.id}
+                          tag={tag.name}
+                          latestFollows={tag.name !== "latest" && latestDigest !== null && latestDigest === tag.manifestDigest}
+                        />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

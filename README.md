@@ -371,6 +371,12 @@ Users / Organizations*, where usage is shown against each limit.
 - **Garbage collection** is also exposed on the registry itself as
   `POST /internal/v1/gc` (bearer = webhook secret), which the `gc` job calls.
 - **Health**: `GET /internal/v1/healthz` on the registry.
+- **Deleting tags**: organization owners and admins (and instance
+  administrators) can remove a tag from the repository page. The registry
+  records the deletion and the image data stays until *prune-untagged* and
+  *gc* reclaim it. If `latest` pointed at the deleted image it moves to the
+  newest remaining tag (highest version, else most recently built), or is
+  removed with the last image.
 - **Scan refresh**: every push triggers a Clair scan; the *Re-scan* button on
   a tag (administrators only) re-submits it (vulnerability databases keep updating, so re-scan
   periodically). Clair needs a few minutes after first boot to download its

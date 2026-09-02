@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { organization, repositories, tags } from "@/db/schema";
 import { getOrgRole, requireSession, getSession } from "@/lib/session";
 import { runScan } from "@/lib/scan";
+import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
 import { checkRepoQuota } from "@/lib/quota";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 
@@ -137,4 +138,29 @@ export async function requestRescan(formData: FormData): Promise<void> {
     await runScan(path, digest).catch((err) => console.error("rescan failed:", err));
   });
   revalidatePath(`/${org.slug}/${repo.name}`);
+}
+
+export interface DeleteTagResult {
+  error?: string;
+  outcome?: DeleteTagOutcome;
+}
+
+/** Remove a tag; owners and admins of the organization (and instance admins) only. */
+export async function deleteTagAction(formData: FormData): Promise<DeleteTagResult> {
+  const repositoryId = String(formData.get("repositoryId") ?? "");
+  const tag = String(formData.get("tag") ?? "").trim();
+  if (!tag) return { error: "Missing tag." };
+  const session = await requireSession();
+  const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
+  if (!repo) return { error: "Repository not found." };
+  const denied = await requireOrgRole(repo.organizationId, MANAGER_ROLES);
+  if (denied) return { error: denied.error };
+  try {
+    const outcome = await removeTag(repositoryId, tag, `user:${session.user.id}`);
+    const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+    revalidatePath(`/${org?.slug}/${repo.name}`);
+    return { outcome };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not delete the tag." };
+  }
 }
