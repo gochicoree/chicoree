@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -14,12 +14,15 @@ export function OrgSettings({
   slug,
   isOwner,
   isLibrary = false,
+  children,
 }: {
   organizationId: string;
   name: string;
   slug: string;
   isOwner: boolean;
   isLibrary?: boolean;
+  /** Further settings cards, rendered above the danger zone. */
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -84,6 +87,8 @@ export function OrgSettings({
           </form>
         </CardBody>
       </Card>
+
+      {children}
 
       {isOwner && (
         <Card className="border-danger/30">

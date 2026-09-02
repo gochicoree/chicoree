@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useRef, useState, type ReactNode } from "react";
 import { deleteRepository, updateRepository, type ActionResult } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,14 @@ export function RepoSettingsForm({
   name,
   description,
   visibility: initialVisibility,
+  children,
 }: {
   repositoryId: string;
   name: string;
   description: string;
   visibility: string;
+  /** Further settings cards (webhooks, mirror), rendered above the danger zone. */
+  children?: ReactNode;
 }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updateRepository, null);
   const [visibility, setVisibility] = useState(initialVisibility);
@@ -81,6 +84,8 @@ export function RepoSettingsForm({
         confirmLabel="Yes, make it public"
         tone="accent"
       />
+
+      {children}
 
       <Card className="border-danger/30">
         <CardHeader
