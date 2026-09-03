@@ -149,7 +149,7 @@ export function SmtpForm({ smtp, hasPassword, source }: { smtp: SmtpSettings; ha
           </div>
           <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4 sm:col-span-2">
             <div className="min-w-56 flex-1">
-              <Field label="Send a test email to" htmlFor="smtp-test-to" hint="Uses the values above, saved or not">
+              <Field label="Send a test email to" htmlFor="smtp-test-to">
                 <Input id="smtp-test-to" name="testTo" type="email" placeholder="you@example.com" />
               </Field>
             </div>
@@ -339,7 +339,7 @@ export function LdapForm({ ldap, hasBindPassword, source }: { ldap: LdapSettings
           </div>
           <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4 sm:col-span-2">
             <div className="min-w-56 flex-1">
-              <Field label="Test with a username" htmlFor="ldap-test-username" hint="Binds with the lookup account and runs the user filter, using the values above">
+              <Field label="Test with a username" htmlFor="ldap-test-username">
                 <Input id="ldap-test-username" name="testUsername" placeholder="jdoe" />
               </Field>
             </div>
