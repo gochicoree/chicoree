@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import type { ConnectionOptions } from "node:tls";
 import { Client, InvalidCredentialsError, type Entry } from "ldapts";
-import { env } from "./env";
+import { getInstanceSettings, type LdapSettings } from "./instance-settings";
 import { syncGroupBindings } from "./group-bindings";
 
 export class LdapError extends Error {
@@ -51,10 +51,10 @@ function attrValues(entry: Entry, attr: string): string[] {
     .filter((v) => v.length > 0);
 }
 
-function tlsOptions(): ConnectionOptions {
+function tlsOptions(cfg: LdapSettings): ConnectionOptions {
   const opts: ConnectionOptions = {};
-  if (env.ldapTlsInsecure) opts.rejectUnauthorized = false;
-  if (env.ldapTlsCaFile) opts.ca = readFileSync(env.ldapTlsCaFile);
+  if (cfg.tlsInsecure) opts.rejectUnauthorized = false;
+  if (cfg.tlsCaFile) opts.ca = readFileSync(cfg.tlsCaFile);
   return opts;
 }
 
@@ -65,30 +65,44 @@ const INVALID = "Invalid username or password";
  * Throws LdapError for expected failures; anything else means the directory
  * itself misbehaved (unreachable, TLS, bad bind DN) and should be logged.
  */
-export async function authenticateLdap(username: string, password: string): Promise<LdapIdentity> {
-  if (!env.ldapEnabled) throw new LdapError("LDAP sign-in is not configured");
+export async function authenticateLdap(
+  username: string,
+  password: string,
+  override?: LdapSettings,
+): Promise<LdapIdentity> {
+  const cfg = override ?? (await getInstanceSettings()).ldap;
+  if (!cfg.enabled || !cfg.url) throw new LdapError("LDAP sign-in is not configured");
   const uname = username.trim();
   // An empty password is an "unauthenticated bind" that many servers accept
   // silently — never let it through as a login.
   if (!uname || !password) throw new LdapError(INVALID, true);
-  if (!env.ldapUserBase) throw new LdapError("LDAP_USER_BASE is not configured");
+  if (!cfg.userBase) throw new LdapError("The LDAP user search base is not configured");
 
   const client = new Client({
-    url: env.ldapUrl,
-    timeout: env.ldapTimeoutMs,
-    connectTimeout: env.ldapTimeoutMs,
-    tlsOptions: tlsOptions(),
+    url: cfg.url,
+    timeout: cfg.timeoutMs,
+    connectTimeout: cfg.timeoutMs,
+    tlsOptions: tlsOptions(cfg),
   });
 
   try {
-    if (env.ldapStartTls) await client.startTLS(tlsOptions());
+    if (cfg.startTls) await client.startTLS(tlsOptions(cfg));
 
-    // 1. Find the entry.
-    if (env.ldapBindDn) await client.bind(env.ldapBindDn, env.ldapBindPassword);
-    const wanted = [env.ldapAttrEmail, env.ldapAttrName, env.ldapAttrGroups];
-    const { searchEntries } = await client.search(env.ldapUserBase, {
+    // 1. Find the entry (as the lookup account, whose failure is a config error, not the user's).
+    if (cfg.bindDn) {
+      try {
+        await client.bind(cfg.bindDn, cfg.bindPassword);
+      } catch (e) {
+        if (e instanceof InvalidCredentialsError) {
+          throw new LdapError("The directory rejected the lookup account; check the bind DN and password in the LDAP settings.");
+        }
+        throw e;
+      }
+    }
+    const wanted = [cfg.attrEmail, cfg.attrName, cfg.attrGroups];
+    const { searchEntries } = await client.search(cfg.userBase, {
       scope: "sub",
-      filter: fillTemplate(env.ldapUserFilter, { username: uname }),
+      filter: fillTemplate(cfg.userFilter, { username: uname }),
       attributes: [...new Set(wanted)],
       sizeLimit: 2,
     });
@@ -104,14 +118,14 @@ export async function authenticateLdap(username: string, password: string): Prom
     }
 
     // 3. Groups: whatever the entry lists, plus an explicit group search.
-    const groups = new Set(attrValues(entry, env.ldapAttrGroups));
-    if (env.ldapGroupBase) {
+    const groups = new Set(attrValues(entry, cfg.attrGroups));
+    if (cfg.groupBase) {
       // Search with the service account again: some directories hide group
       // membership from the members themselves.
-      if (env.ldapBindDn) await client.bind(env.ldapBindDn, env.ldapBindPassword);
-      const res = await client.search(env.ldapGroupBase, {
+      if (cfg.bindDn) await client.bind(cfg.bindDn, cfg.bindPassword);
+      const res = await client.search(cfg.groupBase, {
         scope: "sub",
-        filter: fillTemplate(env.ldapGroupFilter, { dn: entry.dn, username: uname }),
+        filter: fillTemplate(cfg.groupFilter, { dn: entry.dn, username: uname }),
         attributes: ["cn"],
         sizeLimit: 1000,
       });
@@ -119,11 +133,11 @@ export async function authenticateLdap(username: string, password: string): Prom
     }
 
     const email =
-      attrValues(entry, env.ldapAttrEmail)[0]?.toLowerCase() ??
-      (env.ldapEmailDomain ? `${uname.toLowerCase()}@${env.ldapEmailDomain}` : null);
+      attrValues(entry, cfg.attrEmail)[0]?.toLowerCase() ??
+      (cfg.emailDomain ? `${uname.toLowerCase()}@${cfg.emailDomain}` : null);
     if (!email) {
       throw new LdapError(
-        `Your directory entry has no "${env.ldapAttrEmail}" attribute. An administrator can set LDAP_EMAIL_DOMAIN to derive one.`,
+        `Your directory entry has no "${cfg.attrEmail}" attribute. An administrator can set an email domain in the LDAP settings to derive one.`,
       );
     }
 
@@ -131,7 +145,7 @@ export async function authenticateLdap(username: string, password: string): Prom
       dn: entry.dn,
       username: uname,
       email,
-      name: attrValues(entry, env.ldapAttrName)[0] ?? uname,
+      name: attrValues(entry, cfg.attrName)[0] ?? uname,
       groups: [...groups],
     };
   } finally {
@@ -142,4 +156,22 @@ export async function authenticateLdap(username: string, password: string): Prom
 /** Apply the LDAP bindings for a user, given the group DNs from their login. */
 export function syncLdapBindings(userId: string, groups: string[]): Promise<void> {
   return syncGroupBindings("ldap", userId, groups);
+}
+
+/** Admin "test connection": bind with the service account and count what the user filter finds. */
+export async function testLdapConnection(cfg: LdapSettings, sampleUsername: string): Promise<{ entries: number; dn: string | null }> {
+  const client = new Client({ url: cfg.url, timeout: cfg.timeoutMs, connectTimeout: cfg.timeoutMs, tlsOptions: tlsOptions(cfg) });
+  try {
+    if (cfg.startTls) await client.startTLS(tlsOptions(cfg));
+    if (cfg.bindDn) await client.bind(cfg.bindDn, cfg.bindPassword);
+    const { searchEntries } = await client.search(cfg.userBase, {
+      scope: "sub",
+      filter: fillTemplate(cfg.userFilter, { username: sampleUsername }),
+      attributes: ["dn"],
+      sizeLimit: 5,
+    });
+    return { entries: searchEntries.length, dn: searchEntries[0]?.dn ?? null };
+  } finally {
+    await client.unbind().catch(() => {});
+  }
 }

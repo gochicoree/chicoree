@@ -12,8 +12,8 @@
 //
 // A lookup that fails, or a token without the needed scope, leaves the user's
 // roles untouched — removals only happen on a definitive answer.
-import { env } from "./env";
-import { bindingsFor, syncGroupBindings, type GroupSource } from "./group-bindings";
+import { bindingsFor, loadGroupBindings, syncGroupBindings, type GroupBinding, type GroupSource } from "./group-bindings";
+import { getInstanceSettings } from "./instance-settings";
 
 export interface OAuthAccountLike {
   userId: string;
@@ -36,8 +36,8 @@ export function decodeJwtClaims(token: string | null | undefined): Record<string
 }
 
 /** Whether a binding names a Google group address (needs the API) rather than just a domain. */
-export function needsGoogleGroupsApi(): boolean {
-  return bindingsFor("google").some((b) => b.group.includes("@"));
+export function needsGoogleGroupsApi(bindings: GroupBinding[]): boolean {
+  return bindingsFor("google", bindings).some((b) => b.group.includes("@"));
 }
 
 async function githubGroups(accessToken: string | null | undefined): Promise<string[] | null> {
@@ -64,12 +64,12 @@ async function githubGroups(accessToken: string | null | undefined): Promise<str
   );
 }
 
-async function googleGroups(account: OAuthAccountLike): Promise<string[] | null> {
+async function googleGroups(account: OAuthAccountLike, bindings: GroupBinding[]): Promise<string[] | null> {
   const claims = decodeJwtClaims(account.idToken);
   if (!claims) return null;
   const groups: string[] = [];
   if (typeof claims.hd === "string" && claims.hd) groups.push(claims.hd.toLowerCase());
-  if (needsGoogleGroupsApi()) {
+  if (needsGoogleGroupsApi(bindings)) {
     const email = typeof claims.email === "string" ? claims.email : null;
     if (!account.accessToken || !email) return null;
     const url = new URL("https://cloudidentity.googleapis.com/v1/groups/-/memberships:searchDirectGroups");
@@ -88,14 +88,14 @@ async function googleGroups(account: OAuthAccountLike): Promise<string[] | null>
   return groups;
 }
 
-function oidcGroups(account: OAuthAccountLike): string[] | null {
+function oidcGroups(account: OAuthAccountLike, oidc: { name: string; groupsClaim: string }): string[] | null {
   const claims = decodeJwtClaims(account.idToken);
   if (!claims) return null;
-  if (!(env.oidcGroupsClaim in claims)) {
-    console.warn(`[group-bindings] ID token from ${env.oidcName} carries no "${env.oidcGroupsClaim}" claim; add it to the ID token (or set OIDC_GROUPS_CLAIM/OIDC_SCOPES) — roles left unchanged`);
+  if (!(oidc.groupsClaim in claims)) {
+    console.warn(`[group-bindings] ID token from ${oidc.name} carries no "${oidc.groupsClaim}" claim; add it to the ID token (or change the groups claim / scopes in the admin settings) — roles left unchanged`);
     return null;
   }
-  const raw = claims[env.oidcGroupsClaim];
+  const raw = claims[oidc.groupsClaim];
   const list = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[\s,]+/) : [];
   return list.filter((v): v is string => typeof v === "string" && v.length > 0).map((v) => v.toLowerCase());
 }
@@ -104,14 +104,16 @@ function oidcGroups(account: OAuthAccountLike): string[] | null {
 export async function syncOAuthGroups(account: OAuthAccountLike): Promise<void> {
   const source = account.providerId as GroupSource;
   if (!OAUTH_SOURCES.includes(source)) return;
-  if (bindingsFor(source).length === 0) return;
+  const bindings = await loadGroupBindings();
+  if (bindingsFor(source, bindings).length === 0) return;
   try {
+    const settings = await getInstanceSettings();
     const groups =
       source === "github"
         ? await githubGroups(account.accessToken)
         : source === "google"
-          ? await googleGroups(account)
-          : oidcGroups(account);
+          ? await googleGroups(account, bindings)
+          : oidcGroups(account, settings.oidc);
     if (groups === null) return;
     await syncGroupBindings(source, account.userId, groups);
   } catch (e) {

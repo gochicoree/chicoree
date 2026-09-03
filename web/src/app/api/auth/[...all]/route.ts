@@ -1,4 +1,10 @@
-import { toNextJsHandler } from "better-auth/next-js";
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 
-export const { GET, POST } = toNextJsHandler(auth.handler);
+// The instance is resolved per request so provider changes made in the
+// admin panel take effect without a restart.
+export async function GET(req: Request) {
+  return (await getAuth()).handler(req);
+}
+export async function POST(req: Request) {
+  return (await getAuth()).handler(req);
+}

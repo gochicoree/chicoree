@@ -20,8 +20,9 @@ import { orgAccessControl, orgRoles } from "./org-roles";
 import { checkOrgCreationQuota } from "./quota";
 import { ensureLibraryOrg, LIBRARY_SLUG } from "./library";
 import { ldap } from "./auth-ldap";
-import { bindingsFor } from "./group-bindings";
+import { bindingsFor, parseGroupBindings } from "./group-bindings";
 import { needsGoogleGroupsApi, syncOAuthGroups } from "./oauth-groups";
+import { getInstanceSettings, settingsVersion, type EffectiveSettings } from "./instance-settings";
 
 // Org slugs become both URL paths and image namespaces; these collide with
 // app routes or registry internals.
@@ -32,25 +33,33 @@ const RESERVED_SLUGS = new Set([
   LIBRARY_SLUG,
 ]);
 
-// Extra scopes are requested only when AUTH_GROUP_BINDINGS actually needs
-// the provider's group information, so plain sign-in stays minimal.
-const socialProviders: Record<string, { clientId: string; clientSecret: string; scope?: string[] }> = {};
-if (env.githubClientId) {
-  socialProviders.github = {
-    clientId: env.githubClientId,
-    clientSecret: env.githubClientSecret,
-    scope: bindingsFor("github").length > 0 ? ["read:org"] : undefined,
-  };
-}
-if (env.googleClientId) {
-  socialProviders.google = {
-    clientId: env.googleClientId,
-    clientSecret: env.googleClientSecret,
-    scope: needsGoogleGroupsApi() ? ["https://www.googleapis.com/auth/cloud-identity.groups.readonly"] : undefined,
-  };
-}
+/**
+ * Build a better-auth instance from the effective settings. Providers can be
+ * (re)configured in the admin panel, so the instance is rebuilt whenever the
+ * stored settings change (see getAuth).
+ */
+function buildAuth(settings: EffectiveSettings) {
+  const bindings = parseGroupBindings(settings.bindings);
+  // Extra scopes are requested only when the group bindings actually need
+  // the provider's group information, so plain sign-in stays minimal.
+  const socialProviders: Record<string, { clientId: string; clientSecret: string; scope?: string[] }> = {};
+  if (settings.github.enabled && settings.github.clientId) {
+    socialProviders.github = {
+      clientId: settings.github.clientId,
+      clientSecret: settings.github.clientSecret,
+      scope: bindingsFor("github", bindings).length > 0 ? ["read:org"] : undefined,
+    };
+  }
+  if (settings.google.enabled && settings.google.clientId) {
+    socialProviders.google = {
+      clientId: settings.google.clientId,
+      clientSecret: settings.google.clientSecret,
+      scope: needsGoogleGroupsApi(bindings) ? ["https://www.googleapis.com/auth/cloud-identity.groups.readonly"] : undefined,
+    };
+  }
+  const oidc = settings.oidc.enabled && settings.oidc.issuer ? settings.oidc : null;
 
-export const auth = betterAuth({
+  return betterAuth({
   appName: "Chicorée Registry",
   baseURL: env.appUrl,
   secret: env.authSecret,
@@ -218,17 +227,17 @@ export const auth = betterAuth({
       origin: env.appUrl,
     }),
     admin(),
-    ...(env.ldapEnabled ? [ldap()] : []),
-    ...(env.oidcIssuer
+    ldap(),
+    ...(oidc
       ? [
           genericOAuth({
             config: [
               {
                 providerId: "oidc",
-                clientId: env.oidcClientId,
-                clientSecret: env.oidcClientSecret,
-                discoveryUrl: `${env.oidcIssuer.replace(/\/$/, "")}/.well-known/openid-configuration`,
-                scopes: env.oidcScopes,
+                clientId: oidc.clientId,
+                clientSecret: oidc.clientSecret,
+                discoveryUrl: `${oidc.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`,
+                scopes: oidc.scopes.split(/[\s,]+/).filter(Boolean),
               },
             ],
           }),
@@ -236,6 +245,23 @@ export const auth = betterAuth({
       : []),
     nextCookies(), // must stay last
   ],
-});
+  });
+}
 
-export type Session = typeof auth.$Infer.Session;
+export type Auth = ReturnType<typeof buildAuth>;
+export type Session = Auth["$Infer"]["Session"];
+
+let cached: { version: number; auth: Auth } | null = null;
+
+/**
+ * The auth instance for the current settings. One cheap query per call
+ * checks whether the admin saved new settings; the instance is rebuilt
+ * only then. Sessions survive rebuilds (same secret and database).
+ */
+export async function getAuth(): Promise<Auth> {
+  const version = await settingsVersion();
+  if (cached && cached.version === version) return cached.auth;
+  const settings = await getInstanceSettings();
+  cached = { version, auth: buildAuth(settings) };
+  return cached.auth;
+}

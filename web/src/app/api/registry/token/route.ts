@@ -7,7 +7,7 @@
 // scopes, and answer with a short-lived ES256 JWT.
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 import { db } from "@/db";
 import {
   accessTokens,
@@ -26,7 +26,7 @@ import {
 import { hashSecret, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
 import { signRegistryToken, type AccessGrant } from "@/lib/registry-jwt";
 import { splitImagePath } from "@/lib/library";
-import { env } from "@/lib/env";
+import { getInstanceSettings } from "@/lib/instance-settings";
 import { authenticateLdap, LdapError } from "@/lib/ldap";
 import { isBanned, provisionLdapUser, type UserStore } from "@/lib/auth-ldap";
 
@@ -99,12 +99,12 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
       })
     : null;
   if (u && credential?.password) {
-    const ctx = await auth.$context;
+    const ctx = await (await getAuth()).$context;
     const valid = await ctx.password.verify({ hash: credential.password, password });
     if (!valid) return { error: "invalid credentials" };
     return { kind: "user", userId: u.id, isAdmin: u.role === "admin", patScope: null };
   }
-  if (env.ldapEnabled) return identifyViaLdap(username, password);
+  if ((await getInstanceSettings()).ldap.enabled) return identifyViaLdap(username, password);
   if (!u) return { error: "invalid credentials" };
   return { error: "this account has no password; docker login with an access token instead" };
 }
@@ -113,7 +113,7 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
 async function identifyViaLdap(username: string, password: string): Promise<Caller | { error: string }> {
   try {
     const identity = await authenticateLdap(username, password);
-    const ctx = await auth.$context;
+    const ctx = await (await getAuth()).$context;
     const user = await provisionLdapUser(ctx.internalAdapter as unknown as UserStore, identity);
     if (isBanned(user)) return { error: "account unavailable" };
     if (user.twoFactorEnabled) {
