@@ -46,6 +46,7 @@ services:
       - AUTH_SECRET=${SERVICE_PASSWORD_64_AUTHSECRET}
       - WEBHOOK_SECRET=${SERVICE_HEX_64_WEBHOOKSECRET}
       - JOBS_API_TOKEN=${SERVICE_HEX_64_JOBSTOKEN}
+      - JOB_SCHEDULER=${JOB_SCHEDULER:-true}
       # What users pass to `docker login` — the registryd domain, no scheme.
       - REGISTRY_HOST=${SERVICE_FQDN_REGISTRYD}
       - REGISTRY_INTERNAL_URL=http://registryd:5000
@@ -90,6 +91,16 @@ services:
       - LDAP_START_TLS=${LDAP_START_TLS:-false}
       - LDAP_TLS_INSECURE=${LDAP_TLS_INSECURE:-false}
       - AUTH_GROUP_BINDINGS=${AUTH_GROUP_BINDINGS:-}
+      # Sign-up controls, branding, audit retention and pull rate limits (see README)
+      - SIGNUP_MODE=${SIGNUP_MODE:-open}
+      - SIGNUP_ALLOWED_DOMAINS=${SIGNUP_ALLOWED_DOMAINS:-}
+      - ORG_CREATION=${ORG_CREATION:-everyone}
+      - INSTANCE_NAME=${INSTANCE_NAME:-}
+      - INSTANCE_TAGLINE=${INSTANCE_TAGLINE:-}
+      - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
+      - RATE_LIMIT_ANONYMOUS=${RATE_LIMIT_ANONYMOUS:-}
+      - RATE_LIMIT_AUTHENTICATED=${RATE_LIMIT_AUTHENTICATED:-}
+      - RATE_LIMIT_TRUSTED_PROXIES=${RATE_LIMIT_TRUSTED_PROXIES:-}
     volumes:
       - token-keys:/var/lib/chicoree/keys
     healthcheck:
@@ -125,6 +136,11 @@ services:
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-true}
       - S3_REDIRECT_GET=${S3_REDIRECT_GET:-false}
       - GC_GRACE_PERIOD=${GC_GRACE_PERIOD:-1h}
+      - REGISTRY_LOG_FORMAT=${REGISTRY_LOG_FORMAT:-text}
+      # Pull rate limit defaults, shared with the web app (Administration → Rate limits overrides them).
+      - RATE_LIMIT_ANONYMOUS=${RATE_LIMIT_ANONYMOUS:-}
+      - RATE_LIMIT_AUTHENTICATED=${RATE_LIMIT_AUTHENTICATED:-}
+      - RATE_LIMIT_TRUSTED_PROXIES=${RATE_LIMIT_TRUSTED_PROXIES:-}
       # Docker clients are sent here for tokens, so it is the public web URL.
       - TOKEN_REALM=${SERVICE_URL_WEB}/api/registry/token
       - TOKEN_SERVICE=chicoree-registry
