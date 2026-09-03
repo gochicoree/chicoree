@@ -8,7 +8,7 @@ import { instanceSettings } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { env } from "./env";
 
-export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings";
+export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics";
 export type SettingsSource = "database" | "environment" | "none";
 
 export interface SmtpSettings {
@@ -50,6 +50,12 @@ export interface LdapSettings {
   timeoutMs: number;
 }
 
+export interface MetricsSettings {
+  enabled: boolean;
+  /** Bearer token Prometheus presents; empty means the endpoint refuses every scrape. */
+  token: string;
+}
+
 export interface EffectiveSettings {
   smtp: SmtpSettings;
   github: OAuthSettings;
@@ -58,6 +64,7 @@ export interface EffectiveSettings {
   ldap: LdapSettings;
   /** AUTH_GROUP_BINDINGS syntax, see lib/group-bindings.ts. */
   bindings: string;
+  metrics: MetricsSettings;
   sources: Record<SettingsSection, SettingsSource>;
   /** Changes whenever a section is saved; consumers cache on it. */
   version: number;
@@ -71,6 +78,7 @@ const SECRET_FIELDS: Record<SettingsSection, string[]> = {
   oidc: ["clientSecret"],
   ldap: ["bindPassword"],
   bindings: [],
+  metrics: ["token"],
 };
 
 function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
@@ -114,6 +122,7 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       timeoutMs: env.ldapTimeoutMs,
     },
     bindings: env.authGroupBindings,
+    metrics: { enabled: env.metricsEnabled, token: env.metricsToken },
   };
 }
 
@@ -131,6 +140,8 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return !!d.ldap.url;
     case "bindings":
       return !!d.bindings;
+    case "metrics":
+      return d.metrics.enabled;
   }
 }
 
@@ -156,7 +167,7 @@ async function loadSettings(): Promise<EffectiveSettings> {
   const sources = {} as Record<SettingsSection, SettingsSource>;
   const merged: Record<string, unknown> = {};
   let version = 0;
-  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings"] as SettingsSection[]) {
+  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics"] as SettingsSection[]) {
     const row = stored.get(section);
     if (row) {
       version = Math.max(version, row.updatedAt.getTime());

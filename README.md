@@ -62,13 +62,14 @@ Everything is environment-driven; see `.env.example` for the full list.
 | --- | --- |
 | Storage backend | `STORAGE_DRIVER=filesystem\|s3\|bunny` plus that plugin's `<NAME>_*` variables — see [Storage plugins](#storage-plugins) |
 | Public addresses | `APP_URL`, `REGISTRY_HOST`, `REGISTRY_PORT` |
-| OAuth sign-in | *Administration → Settings → Sign-in providers*; `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/NAME/SCOPES/GROUPS_CLAIM` as defaults |
-| LDAP sign-in | *Administration → Settings → LDAP*; `LDAP_*` as defaults — see [LDAP](#ldap--active-directory) |
-| Group-based roles | *Administration → Settings → Group bindings*; `AUTH_GROUP_BINDINGS` as default — see [Group-based roles](#group-based-roles) |
-| Email | *Administration → Settings → Email*; `SMTP_HOST/PORT/USER/PASS/FROM` as defaults (compose points at the bundled Mailpit) |
+| OAuth sign-in | *Administration → Auth providers → Sign-in providers*; `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/NAME/SCOPES/GROUPS_CLAIM` as defaults |
+| LDAP sign-in | *Administration → Auth providers → LDAP*; `LDAP_*` as defaults — see [LDAP](#ldap--active-directory) |
+| Group-based roles | *Administration → Auth providers → Group bindings*; `AUTH_GROUP_BINDINGS` as default — see [Group-based roles](#group-based-roles) |
+| Email | *Administration → Email*; `SMTP_HOST/PORT/USER/PASS/FROM` as defaults (compose points at the bundled Mailpit) |
 | Passkeys | `PASSKEY_RP_ID` (the domain users see), `PASSKEY_RP_NAME` |
 | Jobs API | `JOBS_API_TOKEN` (optional static token for automation) |
 | GC safety window | `GC_GRACE_PERIOD` (default `1h`) |
+| Prometheus metrics | *Administration → Metrics*; `METRICS_ENABLED`, `METRICS_TOKEN` as defaults — see [Monitoring](#monitoring) |
 | Vulnerability scanning | `CLAIR_URL` (empty disables it) and `COMPOSE_PROFILES=clair` to run the bundled Clair — see [Running without Clair](#running-without-clair) |
 
 For production: serve both the web app and the registry behind TLS (any
@@ -79,7 +80,7 @@ every registry access token.
 ### Settings in the admin panel
 
 Email (SMTP), the GitHub, Google and OpenID Connect providers, LDAP and the
-group bindings are edited under *Administration → Settings* and take effect
+group bindings are edited under *Administration → Auth providers* and take effect
 immediately: the auth stack, the mailer and the directory client are rebuilt
 from the stored values. Secrets are stored encrypted with `AUTH_SECRET`.
 The matching environment variables still work as defaults for sections that
@@ -373,6 +374,25 @@ Users / Organizations*, where usage is shown against each limit.
 - **Organizations** (`/admin/organizations`): usage vs limits, members and
   their roles, repositories, and deletion — without having to be a member.
 - **Jobs** (`/admin/jobs`): run maintenance jobs and see their history.
+
+## Monitoring
+
+*Administration → Metrics* shows traffic per day, the busiest and largest
+repositories, storage per organization, scan results, account activity and
+the outcome of mirrors, webhooks and jobs.
+
+The same numbers (plus pulls, tags and storage per repository) are available
+to Prometheus at `/api/metrics` once the endpoint is enabled on that page.
+Every scrape must carry the bearer token shown there; the page prints a
+ready-made `prometheus.yml` block. All values are computed from the database
+at scrape time, so they are correct across restarts and replicas. Metric
+names start with `chicoree_`, for example `chicoree_registry_up`,
+`chicoree_storage_bytes{kind="physical"}`,
+`chicoree_repository_pulls_total{organization,repository}` and
+`chicoree_vulnerability_findings{severity}`.
+
+`METRICS_ENABLED=true` and `METRICS_TOKEN` in the environment serve as the
+defaults for instances configured without the admin panel.
 
 ## Operations
 

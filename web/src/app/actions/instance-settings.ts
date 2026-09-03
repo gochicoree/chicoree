@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import {
@@ -24,7 +25,9 @@ const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
 const bool = (fd: FormData, key: string) => fd.get(key) === "on";
 
 function done(section: SettingsSection): SettingsResult {
-  revalidatePath("/admin/settings", "layout");
+  revalidatePath("/admin/auth", "layout");
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
   return { saved: true, message: `${section} settings saved` };
 }
@@ -153,9 +156,25 @@ export async function saveGroupBindings(_prev: SettingsResult | null, fd: FormDa
 export async function resetSection(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
   await requireAdmin();
   const section = str(fd, "section") as SettingsSection;
-  if (!["smtp", "github", "google", "oidc", "ldap", "bindings"].includes(section)) return { error: "Unknown section." };
+  if (!["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics"].includes(section)) return { error: "Unknown section." };
   await resetSettingsSection(section);
-  revalidatePath("/admin/settings", "layout");
+  revalidatePath("/admin/auth", "layout");
+  revalidatePath("/admin/email");
+  revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
   return { saved: true, message: "Reverted to the environment configuration" };
+}
+
+export async function saveMetricsSettings(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
+  await requireAdmin();
+  const enabled = bool(fd, "enabled");
+  const current = (await getInstanceSettings()).metrics;
+  // A fresh token whenever asked for, or when enabling without one: an
+  // enabled endpoint without a token would refuse every scrape.
+  const regenerate = fd.get("regenerate") === "1";
+  const token = regenerate || (enabled && !current.token) ? randomBytes(24).toString("base64url") : "";
+  await saveSettingsSection("metrics", { enabled, token });
+  const result = done("metrics");
+  if (token) result.message = regenerate ? "New scrape token generated" : "Metrics endpoint enabled";
+  return result;
 }
