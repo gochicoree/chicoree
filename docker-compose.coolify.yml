@@ -13,6 +13,11 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       POSTGRES_USER: chicoree
       POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
@@ -28,6 +33,11 @@ services:
   web:
     build: ./web
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       # Domain for the UI; Coolify routes it to port 3000 of this container.
       - SERVICE_URL_WEB_3000
@@ -95,6 +105,11 @@ services:
   registryd:
     build: ./registryd
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       # Domain for the docker API; Coolify routes it to port 5000 here.
       - SERVICE_FQDN_REGISTRYD_5000
@@ -136,6 +151,18 @@ services:
     # 4.9.0's OSV updater panics on current upstream data; 4.8.0 is stable.
     image: quay.io/projectquay/clair:4.8.0
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # Updater downloads land in /tmp and leak when the database is
+    # unreachable; a size-capped tmpfs keeps that off the disk.
+    volumes:
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 3221225472
     environment:
       CLAIR_CONNSTRING: host=postgres port=5432 user=chicoree password=${SERVICE_PASSWORD_POSTGRES} dbname=clair sslmode=disable
     # The image expects a config file; write one from the env at start-up

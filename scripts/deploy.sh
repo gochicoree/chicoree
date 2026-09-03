@@ -60,6 +60,10 @@ fi
 echo "==> building and starting"
 docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 docker compose -f docker-compose.prod.yml ps
+# Every build leaves layers behind; keep a little cache, drop the rest.
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --keep-storage 2G >/dev/null 2>&1 || true
+echo "==> disk: $(df -h / | awk 'NR==2 {print $4 " free of " $2 " (" $5 " used)"}')"
 REMOTE
 
 echo "==> done: https://${DOMAIN:-<domain>}"
