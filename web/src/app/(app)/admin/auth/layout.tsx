@@ -10,7 +10,7 @@ export default async function AdminAuthLayout({ children }: { children: React.Re
       <PageHeader
         eyebrow="Instance"
         title="Administration"
-        description="Sign-in providers, directory access and group-based roles. Values saved here apply immediately and override the environment."
+        description="Sign-in providers, directory access, group-based roles and who may register. Values saved here apply immediately and override the environment."
       />
       <AdminNav />
       <NavTabs
@@ -20,6 +20,7 @@ export default async function AdminAuthLayout({ children }: { children: React.Re
           { href: "/admin/auth", label: "Sign-in providers", exact: true },
           { href: "/admin/auth/ldap", label: "LDAP" },
           { href: "/admin/auth/bindings", label: "Group bindings" },
+          { href: "/admin/auth/access", label: "Access" },
         ]}
       />
       {children}

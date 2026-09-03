@@ -1,20 +1,26 @@
+import type { CSSProperties } from "react";
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/bricolage-grotesque";
 import "@fontsource-variable/public-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/toast";
+import { getBranding } from "@/lib/branding";
 
-export const metadata: Metadata = {
-  title: {
-    default: "Chicorée — container registry",
-    template: "%s · Chicorée",
-  },
-  description:
-    "Self-hosted OCI container registry with organizations, access control and vulnerability scanning.",
-  applicationName: "Chicorée",
-  appleWebApp: { title: "Chicorée", statusBarStyle: "default" },
-};
+// Title, application name and the brand colour follow Administration → Branding.
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  return {
+    title: {
+      default: `${b.instanceName} — container registry`,
+      template: `%s · ${b.instanceName}`,
+    },
+    description:
+      b.tagline || "Self-hosted OCI container registry with organizations, access control and vulnerability scanning.",
+    applicationName: b.instanceName,
+    appleWebApp: { title: b.instanceName, statusBarStyle: "default" },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -28,10 +34,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const b = await getBranding();
+  // The accent colour overrides the --brand token (the mark and brand tints).
+  const style = b.accentColor ? ({ "--brand": b.accentColor } as CSSProperties) : undefined;
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-paper text-ink antialiased">
+      <body className="bg-paper text-ink antialiased" style={style} data-instance={b.instanceName}>
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

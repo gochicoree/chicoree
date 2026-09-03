@@ -5,7 +5,9 @@ package auth
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -119,6 +121,27 @@ func NewVerifier(pemPath, realm, service, issuer string, disabled bool) (*Verifi
 
 // Disabled reports whether auth enforcement is off.
 func (v *Verifier) Disabled() bool { return v.disabled }
+
+// PublicKeyFingerprint identifies the trusted signing key: the hex SHA-256 of
+// its PKIX (SubjectPublicKeyInfo) DER encoding. The web app derives the same
+// value from its private key so the health page can tell a key mismatch from
+// a broken deployment. Empty when auth is disabled.
+func (v *Verifier) PublicKeyFingerprint() string {
+	if v.publicKey == nil {
+		return ""
+	}
+	return PublicKeyFingerprint(v.publicKey)
+}
+
+// PublicKeyFingerprint is the hex SHA-256 over the PKIX DER form of a key.
+func PublicKeyFingerprint(pub any) string {
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(der)
+	return hex.EncodeToString(sum[:])
+}
 
 // Identify parses the Authorization header. A missing header yields (nil, nil)
 // — an unauthenticated request. A present-but-invalid token yields an error.

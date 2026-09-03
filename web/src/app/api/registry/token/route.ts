@@ -7,6 +7,7 @@
 // scopes, and answer with a short-lived ES256 JWT.
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
+import { isAPIError } from "better-auth/api";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/db";
 import {
@@ -128,6 +129,8 @@ async function identifyViaLdap(username: string, password: string): Promise<Call
     return { kind: "user", userId: user.id, isAdmin: user.role === "admin", patScope: null };
   } catch (e) {
     if (e instanceof LdapError) return { error: e.invalidCredentials ? "invalid credentials" : e.message };
+    // Sign-up policy refusals (closed / invite-only / domain list) from the user hook.
+    if (isAPIError(e)) return { error: e.message };
     console.error("LDAP docker login failed", e);
     return { error: "directory server unavailable" };
   }

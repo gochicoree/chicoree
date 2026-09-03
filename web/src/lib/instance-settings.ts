@@ -8,8 +8,15 @@ import { instanceSettings } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { env } from "./env";
 
-export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics";
+export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding";
 export type SettingsSource = "database" | "environment" | "none";
+
+// Sign-up controls and branding: shapes live in the *-shared modules so client
+// components can import them without touching the database.
+import { DEFAULT_ACCESS, type AccessSettings } from "./access-shared";
+import { DEFAULT_BRANDING, type BrandingSettings } from "./branding-shared";
+export type { AccessSettings } from "./access-shared";
+export type { BrandingSettings } from "./branding-shared";
 
 export interface SmtpSettings {
   host: string;
@@ -65,6 +72,8 @@ export interface EffectiveSettings {
   /** AUTH_GROUP_BINDINGS syntax, see lib/group-bindings.ts. */
   bindings: string;
   metrics: MetricsSettings;
+  access: AccessSettings;
+  branding: BrandingSettings;
   sources: Record<SettingsSection, SettingsSource>;
   /** Changes whenever a section is saved; consumers cache on it. */
   version: number;
@@ -79,6 +88,8 @@ const SECRET_FIELDS: Record<SettingsSection, string[]> = {
   ldap: ["bindPassword"],
   bindings: [],
   metrics: ["token"],
+  access: [],
+  branding: [],
 };
 
 function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
@@ -123,6 +134,17 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
     },
     bindings: env.authGroupBindings,
     metrics: { enabled: env.metricsEnabled, token: env.metricsToken },
+    access: {
+      ...DEFAULT_ACCESS,
+      signUpMode: env.signUpMode,
+      allowedEmailDomains: env.signUpAllowedDomains,
+      allowOrganizationCreation: env.orgCreation,
+    },
+    branding: {
+      ...DEFAULT_BRANDING,
+      instanceName: env.instanceName || DEFAULT_BRANDING.instanceName,
+      tagline: env.instanceTagline || DEFAULT_BRANDING.tagline,
+    },
   };
 }
 
@@ -142,6 +164,10 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return !!d.bindings;
     case "metrics":
       return d.metrics.enabled;
+    case "access":
+      return !!process.env.SIGNUP_MODE || !!process.env.SIGNUP_ALLOWED_DOMAINS || !!process.env.ORG_CREATION;
+    case "branding":
+      return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE;
   }
 }
 
@@ -167,7 +193,7 @@ async function loadSettings(): Promise<EffectiveSettings> {
   const sources = {} as Record<SettingsSection, SettingsSource>;
   const merged: Record<string, unknown> = {};
   let version = 0;
-  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics"] as SettingsSection[]) {
+  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding"] as SettingsSection[]) {
     const row = stored.get(section);
     if (row) {
       version = Math.max(version, row.updatedAt.getTime());

@@ -6,8 +6,11 @@ const items = [
   { href: "/admin/organizations", label: "Organizations" },
   { href: "/admin/jobs", label: "Jobs" },
   { href: "/admin/metrics", label: "Metrics" },
+  { href: "/admin/health", label: "Health" },
+  { href: "/admin/audit", label: "Audit" },
   { href: "/admin/email", label: "Email" },
   { href: "/admin/auth", label: "Auth providers" },
+  { href: "/admin/branding", label: "Branding" },
 ];
 
 export function AdminNav() {

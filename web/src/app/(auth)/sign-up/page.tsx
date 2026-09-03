@@ -1,77 +1,62 @@
-"use client";
-
-import { useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
-import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { redirect } from "next/navigation";
+import { getInstanceSettings } from "@/lib/instance-settings";
+import { getSession } from "@/lib/session";
+import { domainRestrictionMessage, findPendingInvitation, isFreshInstall, signUpClosedMessage } from "@/lib/signup-policy";
 import { Card, CardBody } from "@/components/ui/card";
+import { buttonClasses } from "@/components/ui/button";
+import { SignUpForm } from "./sign-up-form";
 
-export default function SignUpPage() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+export const metadata: Metadata = { title: "Create account" };
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const { error } = await authClient.signUp.email({ name, email, password, callbackURL: "/dashboard" });
-    setBusy(false);
-    if (error) setError(error.message ?? "Sign-up failed");
-    else router.push("/dashboard");
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  if (await getSession()) redirect("/dashboard");
+  const sp = await searchParams;
+  const invitationId = typeof sp.invitation === "string" ? sp.invitation.slice(0, 100) : "";
+  const [settings, invitation, fresh] = await Promise.all([
+    getInstanceSettings(),
+    invitationId ? findPendingInvitation(invitationId) : Promise.resolve(null),
+    isFreshInstall(),
+  ]);
+  const { access } = settings;
+  const blocked = !fresh && (access.signUpMode === "closed" || (access.signUpMode === "invite" && !invitation));
+
+  if (blocked) {
+    return (
+      <Card>
+        <CardBody className="space-y-4 py-5">
+          <div>
+            <h1 className="font-display text-lg font-semibold">
+              {access.signUpMode === "closed" ? "Sign-up is closed" : "Invitation required"}
+            </h1>
+            <p className="mt-1 text-sm text-ink-2">
+              {invitationId && !invitation
+                ? "This invitation is no longer valid. Ask the organization for a new one."
+                : signUpClosedMessage(access)}
+            </p>
+          </div>
+          <Link href="/sign-in" className={buttonClasses("primary", "md", "w-full")}>
+            Sign in instead
+          </Link>
+        </CardBody>
+      </Card>
+    );
   }
 
   return (
-    <Card>
-      <CardBody className="space-y-4 py-5">
-        <div>
-          <h1 className="font-display text-lg font-semibold">Create your account</h1>
-          <p className="text-sm text-ink-2">
-            The first account on a fresh install becomes the administrator.
-          </p>
-        </div>
-        <form onSubmit={submit} className="space-y-3">
-          <Field label="Name" htmlFor="name">
-            <Input id="name" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Email" htmlFor="email">
-            <Input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <Field label="Password" htmlFor="password" hint="At least 10 characters.">
-            <Input
-              id="password"
-              type="password"
-              required
-              minLength={10}
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-          {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
-          <Button type="submit" disabled={busy} className="w-full">
-            Create account
-          </Button>
-        </form>
-        <p className="text-center text-sm text-ink-2">
-          Already have an account?{" "}
-          <Link href="/sign-in" className="font-medium text-ink underline-offset-2 hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </CardBody>
-    </Card>
+    <SignUpForm
+      invitation={
+        invitation
+          ? { id: invitation.id, email: invitation.email, organizationName: invitation.organizationName }
+          : null
+      }
+      domainHint={domainRestrictionMessage(access)}
+      firstAccount={fresh}
+    />
   );
 }

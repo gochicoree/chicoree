@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { JOBS, runJob } from "@/lib/jobs";
+import { recordAudit } from "@/lib/audit";
 
 export interface JobActionResult {
   error?: string;
@@ -25,6 +26,7 @@ export async function runJobAction(
     if (v) params[p.name] = v;
   }
   const run = await runJob(name, params, `user:${session.user.id}`);
+  await recordAudit({ action: "job.run", targetType: "job", targetId: name, targetLabel: name, details: { params, status: run.status, runId: run.id } });
   revalidatePath("/admin/jobs");
   revalidatePath("/admin");
   return run.status === "succeeded"

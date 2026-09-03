@@ -22,7 +22,7 @@ import { useToast } from "@/components/ui/toast";
 
 // --- shared bits -----------------------------------------------------------
 
-function useResultToast(state: SettingsResult | null) {
+export function useResultToast(state: SettingsResult | null) {
   const { toast } = useToast();
   const last = useRef(state);
   useEffect(() => {
@@ -52,7 +52,7 @@ function ResetButton({ section }: { section: SettingsSection }) {
   );
 }
 
-function HeaderAction({ section, source }: { section: SettingsSection; source: SettingsSource }) {
+export function HeaderAction({ section, source }: { section: SettingsSection; source: SettingsSource }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <SourceBadge source={source} />
@@ -76,12 +76,12 @@ function useFormRunner() {
   return { formRef, run };
 }
 
-function Feedback({ state }: { state: SettingsResult | null }) {
+export function Feedback({ state }: { state: SettingsResult | null }) {
   if (!state?.error) return null;
   return <span className="text-sm text-danger">{state.error}</span>;
 }
 
-function Check({ name, label, defaultChecked, hint }: { name: string; label: string; defaultChecked: boolean; hint?: ReactNode }) {
+export function Check({ name, label, defaultChecked, hint }: { name: string; label: string; defaultChecked: boolean; hint?: ReactNode }) {
   return (
     <label className="flex items-start gap-2 text-sm text-ink-2">
       <input type="checkbox" name={name} defaultChecked={defaultChecked} className="mt-0.5 size-4 accent-[var(--action)]" />

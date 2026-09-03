@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { authenticateJobsRequest } from "@/lib/jobs-auth";
 import { JOBS, runJob } from "@/lib/jobs";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
     }
   }
+
+  // Audit actor: the static token or the admin behind the access token.
+  const actor = auth.triggeredBy.startsWith("user:") ? { type: "user" as const, id: auth.triggeredBy.slice(5), label: "" } : { type: "api-token" as const, label: "JOBS_API_TOKEN" };
+  await recordAudit({ action: "job.run", actor, targetType: "job", targetId: job, targetLabel: job, details: { params: jobParams, via: "api" }, headers: req.headers });
 
   if (req.nextUrl.searchParams.get("wait") === "false") {
     after(async () => {

@@ -13,12 +13,18 @@ import {
   ShieldCheck,
   Container,
 } from "lucide-react";
-import { Chicory } from "@/components/brand";
+import { BrandLockup } from "@/components/brand";
 import { authClient } from "@/lib/auth-client";
 
 export interface NavOrg {
   slug: string;
   name: string;
+}
+
+/** Instance identity shown in the shell (Administration → Branding). */
+export interface NavBranding {
+  name: string;
+  logoDataUrl?: string;
 }
 
 function NavLink({
@@ -47,10 +53,15 @@ export function Sidebar({
   orgs,
   user,
   isAdmin,
+  branding,
+  canCreateOrgs = true,
 }: {
   orgs: NavOrg[];
   user: { name: string; email: string };
   isAdmin: boolean;
+  branding?: NavBranding;
+  /** Sign-up controls can restrict organization creation to administrators. */
+  canCreateOrgs?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -64,8 +75,7 @@ export function Sidebar({
   return (
     <div className="flex h-full flex-col">
       <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pb-5 pt-5">
-        <Chicory className="size-6 text-brand" />
-        <span className="font-display text-lg font-bold tracking-tight">Chicorée</span>
+        <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} />
       </Link>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5">
@@ -81,13 +91,15 @@ export function Sidebar({
         <div>
           <div className="eyebrow mb-1.5 flex items-center justify-between px-2.5">
             <span>Organizations</span>
-            <Link
-              href="/orgs/new"
-              aria-label="Create organization"
-              className="rounded-md p-1 text-ink-3 hover:bg-card-2 hover:text-ink lg:p-0.5"
-            >
-              <Plus className="size-3.5" />
-            </Link>
+            {canCreateOrgs && (
+              <Link
+                href="/orgs/new"
+                aria-label="Create organization"
+                className="rounded-md p-1 text-ink-3 hover:bg-card-2 hover:text-ink lg:p-0.5"
+              >
+                <Plus className="size-3.5" />
+              </Link>
+            )}
           </div>
           <div className="space-y-0.5">
             {orgs.map((org) => (
@@ -100,13 +112,16 @@ export function Sidebar({
                 <span className="truncate">{org.name}</span>
               </NavLink>
             ))}
-            {orgs.length === 0 && (
+            {orgs.length === 0 && canCreateOrgs && (
               <Link
                 href="/orgs/new"
                 className="block rounded-lg border border-dashed border-line-2 px-2.5 py-2 text-[13px] text-ink-2 hover:border-ink-3 hover:text-ink"
               >
                 Create your first organization
               </Link>
+            )}
+            {orgs.length === 0 && !canCreateOrgs && (
+              <p className="px-2.5 py-2 text-[13px] text-ink-3">No organizations yet — ask an administrator.</p>
             )}
           </div>
         </div>
