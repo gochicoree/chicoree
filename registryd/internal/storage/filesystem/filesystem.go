@@ -105,3 +105,27 @@ func (d *Driver) Delete(_ context.Context, digest string) error {
 }
 
 func (d *Driver) RedirectURL(context.Context, string) (string, error) { return "", nil }
+
+// OpenRange implements storage.RangeReader with a seek, so partial reads
+// never touch the bytes before the offset.
+func (d *Driver) OpenRange(_ context.Context, digest string, offset, length int64) (io.ReadCloser, error) {
+	file, err := os.Open(d.path(digest))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, err
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return &rangeFile{Reader: io.LimitReader(file, length), file: file}, nil
+}
+
+type rangeFile struct {
+	io.Reader
+	file *os.File
+}
+
+func (r *rangeFile) Close() error { return r.file.Close() }

@@ -3,6 +3,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -116,6 +117,33 @@ func (d *Driver) Get(ctx context.Context, digest string) (io.ReadCloser, int64, 
 		return nil, 0, err
 	}
 	return out.Body, aws.ToInt64(out.ContentLength), nil
+}
+
+// OpenRange implements storage.RangeReader with an HTTP Range on GetObject,
+// so only the requested bytes leave the bucket. (With REDIRECT_GET the
+// client fetches the presigned URL itself and sends its own Range header,
+// which S3 honours — this path only serves non-redirected reads.)
+func (d *Driver) OpenRange(ctx context.Context, digest string, offset, length int64) (io.ReadCloser, error) {
+	if length == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	out, err := d.client.GetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(d.opts.Bucket), Key: aws.String(d.key(digest)),
+		Range: aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
+		return nil, err
+	}
+	// Belt and braces: an endpoint that ignored the range (no Content-Range
+	// on the reply) answered with the whole object — skip to the offset and
+	// never hand out more than asked for.
+	if out.ContentRange == nil {
+		return storage.SkipAndLimit(out.Body, offset, length)
+	}
+	return storage.SkipAndLimit(out.Body, 0, length)
 }
 
 func (d *Driver) Stat(ctx context.Context, digest string) (int64, error) {

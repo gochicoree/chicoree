@@ -8,7 +8,7 @@ import { instanceSettings } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { env } from "./env";
 
-export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding";
+export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding" | "ratelimit";
 export type SettingsSource = "database" | "environment" | "none";
 
 // Sign-up controls and branding: shapes live in the *-shared modules so client
@@ -63,6 +63,20 @@ export interface MetricsSettings {
   token: string;
 }
 
+/**
+ * Pull rate limits enforced by registryd (it reads this section straight
+ * from instance_settings every 30s). Limits are "<count>/<window>" strings,
+ * see lib/rate-limit-shared.ts; empty means unlimited.
+ */
+export interface RateLimitSettings {
+  /** Per client IP address. */
+  anonymous: string;
+  /** Per user or service account. */
+  authenticated: string;
+  /** CIDRs / addresses whose X-Forwarded-For header is trusted. */
+  trustedProxies: string;
+}
+
 export interface EffectiveSettings {
   smtp: SmtpSettings;
   github: OAuthSettings;
@@ -74,6 +88,7 @@ export interface EffectiveSettings {
   metrics: MetricsSettings;
   access: AccessSettings;
   branding: BrandingSettings;
+  ratelimit: RateLimitSettings;
   sources: Record<SettingsSection, SettingsSource>;
   /** Changes whenever a section is saved; consumers cache on it. */
   version: number;
@@ -90,6 +105,7 @@ const SECRET_FIELDS: Record<SettingsSection, string[]> = {
   metrics: ["token"],
   access: [],
   branding: [],
+  ratelimit: [],
 };
 
 function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
@@ -145,6 +161,11 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       instanceName: env.instanceName || DEFAULT_BRANDING.instanceName,
       tagline: env.instanceTagline || DEFAULT_BRANDING.tagline,
     },
+    ratelimit: {
+      anonymous: env.rateLimitAnonymous,
+      authenticated: env.rateLimitAuthenticated,
+      trustedProxies: env.rateLimitTrustedProxies,
+    },
   };
 }
 
@@ -168,6 +189,8 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return !!process.env.SIGNUP_MODE || !!process.env.SIGNUP_ALLOWED_DOMAINS || !!process.env.ORG_CREATION;
     case "branding":
       return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE;
+    case "ratelimit":
+      return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated;
   }
 }
 
@@ -193,7 +216,7 @@ async function loadSettings(): Promise<EffectiveSettings> {
   const sources = {} as Record<SettingsSection, SettingsSource>;
   const merged: Record<string, unknown> = {};
   let version = 0;
-  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding"] as SettingsSection[]) {
+  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit"] as SettingsSection[]) {
     const row = stored.get(section);
     if (row) {
       version = Math.max(version, row.updatedAt.getTime());

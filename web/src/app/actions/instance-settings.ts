@@ -15,6 +15,7 @@ import { sendTestMail } from "@/lib/email";
 import { parseGroupBindings } from "@/lib/group-bindings";
 import { testLdapConnection } from "@/lib/ldap";
 import { recordAudit } from "@/lib/audit";
+import { parseRateLimit, parseTrustedProxies } from "@/lib/rate-limit-shared";
 
 export interface SettingsResult {
   error?: string;
@@ -31,6 +32,7 @@ async function done(section: SettingsSection): Promise<SettingsResult> {
   revalidatePath("/admin/email");
   revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
+  revalidatePath("/admin/settings/limits");
   return { saved: true, message: `${section} settings saved` };
 }
 
@@ -158,13 +160,14 @@ export async function saveGroupBindings(_prev: SettingsResult | null, fd: FormDa
 export async function resetSection(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
   await requireAdmin();
   const section = str(fd, "section") as SettingsSection;
-  if (!["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding"].includes(section)) return { error: "Unknown section." };
+  if (!["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit"].includes(section)) return { error: "Unknown section." };
   await resetSettingsSection(section);
   await recordAudit({ action: "settings.reset", targetType: "settings", targetId: section, targetLabel: section });
   revalidatePath("/admin/auth", "layout");
   revalidatePath("/admin/email");
   revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
+  revalidatePath("/admin/settings/limits");
   return { saved: true, message: "Reverted to the environment configuration" };
 }
 
@@ -179,5 +182,27 @@ export async function saveMetricsSettings(_prev: SettingsResult | null, fd: Form
   await saveSettingsSection("metrics", { enabled, token });
   const result = await done("metrics");
   if (token) result.message = regenerate ? "New scrape token generated" : "Metrics endpoint enabled";
+  return result;
+}
+
+/** Pull rate limits; registryd re-reads the stored section within 30 seconds. */
+export async function saveRateLimitSettings(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
+  await requireAdmin();
+  const anonymous = str(fd, "anonymous");
+  const authenticated = str(fd, "authenticated");
+  const trustedProxies = String(fd.get("trustedProxies") ?? "").trim();
+  const anon = parseRateLimit(anonymous);
+  if (anon.error) return { error: `Anonymous limit: ${anon.error}` };
+  const auth = parseRateLimit(authenticated);
+  if (auth.error) return { error: `Authenticated limit: ${auth.error}` };
+  const proxies = parseTrustedProxies(trustedProxies);
+  if (proxies.error) return { error: `Trusted proxies: ${proxies.error}` };
+  await saveSettingsSection("ratelimit", {
+    anonymous: anon.limit ? anonymous.replace(/\s+/g, "") : "",
+    authenticated: auth.limit ? authenticated.replace(/\s+/g, "") : "",
+    trustedProxies: proxies.entries.join(", "),
+  });
+  const result = await done("ratelimit");
+  result.message = "Rate limits saved; the registry applies them within 30 seconds";
   return result;
 }

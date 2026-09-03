@@ -164,6 +164,37 @@ func (d *Driver) Get(ctx context.Context, digest string) (io.ReadCloser, int64, 
 	}
 }
 
+// OpenRange implements storage.RangeReader by sending an HTTP Range header
+// to the storage API. Edge Storage answers 206 for byte ranges; should an
+// endpoint reply with the whole object instead, the surplus is discarded so
+// the caller always receives exactly the requested window.
+func (d *Driver) OpenRange(ctx context.Context, digest string, offset, length int64) (io.ReadCloser, error) {
+	if length == 0 {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+	req, err := d.newRequest(ctx, http.MethodGet, d.objectURL(digest), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", offset, offset+length-1))
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		return storage.SkipAndLimit(resp.Body, 0, length)
+	case http.StatusOK:
+		return storage.SkipAndLimit(resp.Body, offset, length)
+	case http.StatusNotFound:
+		resp.Body.Close()
+		return nil, storage.ErrNotFound
+	default:
+		resp.Body.Close()
+		return nil, fmt.Errorf("bunny range get %s: HTTP %d", digest, resp.StatusCode)
+	}
+}
+
 // Stat tries a HEAD request first and falls back to a directory listing,
 // which the storage API always supports.
 func (d *Driver) Stat(ctx context.Context, digest string) (int64, error) {

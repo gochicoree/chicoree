@@ -11,6 +11,7 @@ const items = [
   { href: "/admin/email", label: "Email" },
   { href: "/admin/auth", label: "Auth providers" },
   { href: "/admin/branding", label: "Branding" },
+  { href: "/admin/settings/limits", label: "Rate limits" },
 ];
 
 export function AdminNav() {

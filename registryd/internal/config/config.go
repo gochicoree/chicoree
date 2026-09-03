@@ -41,6 +41,13 @@ type Config struct {
 	// GCGracePeriod protects blobs uploaded moments ago (their manifest may
 	// still be in flight) from garbage collection.
 	GCGracePeriod time.Duration
+
+	// Pull rate limits ("<count>/<window>", empty = unlimited) and the
+	// proxies whose X-Forwarded-For is trusted. These are the fallback for
+	// instances that never saved the "ratelimit" section in the admin panel.
+	RateLimitAnonymous      string
+	RateLimitAuthenticated  string
+	RateLimitTrustedProxies string
 }
 
 func env(key, def string) string {
@@ -97,6 +104,10 @@ func Load() (*Config, error) {
 
 		UploadSessionTTL: envDuration("UPLOAD_SESSION_TTL", 24*time.Hour),
 		GCGracePeriod:    envDuration("GC_GRACE_PERIOD", time.Hour),
+
+		RateLimitAnonymous:      os.Getenv("RATE_LIMIT_ANONYMOUS"),
+		RateLimitAuthenticated:  os.Getenv("RATE_LIMIT_AUTHENTICATED"),
+		RateLimitTrustedProxies: os.Getenv("RATE_LIMIT_TRUSTED_PROXIES"),
 	}
 
 	if c.DatabaseURL == "" {

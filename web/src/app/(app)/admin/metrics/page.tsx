@@ -9,8 +9,12 @@ import {
   automationOverview,
   scanOverview,
   storageByOrganization,
+  toBytesSeries,
   topRepositories,
+  topRepositoriesByEgress,
   toSeries,
+  trafficByOrganization,
+  trafficBytesSeries,
   trafficSeries,
 } from "@/lib/admin-stats";
 import { formatBytes, formatCount } from "@/lib/format";
@@ -41,7 +45,7 @@ const num = `${td} text-right font-mono tabular-nums`;
 
 export default async function AdminMetricsPage() {
   await requireAdmin();
-  const [traffic, top, orgs, scans, accounts, automation, actors, settings] = await Promise.all([
+  const [traffic, top, orgs, scans, accounts, automation, actors, settings, bytesSeries, topEgress, orgTraffic] = await Promise.all([
     trafficSeries(30),
     topRepositories(8),
     storageByOrganization(),
@@ -50,6 +54,9 @@ export default async function AdminMetricsPage() {
     automationOverview(),
     actorBreakdown(),
     getInstanceSettings(),
+    trafficBytesSeries(30),
+    topRepositoriesByEgress(8),
+    trafficByOrganization(),
   ]);
   const last7 = traffic.slice(-7);
   const pulls30 = sum(traffic.map((d) => d.pulls));
@@ -57,6 +64,12 @@ export default async function AdminMetricsPage() {
   const pulls7 = sum(last7.map((d) => d.pulls));
   const pushes7 = sum(last7.map((d) => d.pushes));
   const totalBytes = Math.max(sum(orgs.map((o) => o.bytes)), 1);
+  const egress30 = sum(bytesSeries.map((d) => d.egress));
+  const ingress30 = sum(bytesSeries.map((d) => d.ingress));
+  const redirect30 = sum(bytesSeries.map((d) => d.redirect));
+  const egress7 = sum(bytesSeries.slice(-7).map((d) => d.egress));
+  const ingress7 = sum(bytesSeries.slice(-7).map((d) => d.ingress));
+  const orgEgressTotal = Math.max(sum(orgTraffic.map((o) => o.egress30d + o.redirect30d)), 1);
   const actorLabel: Record<string, string> = { user: "Users", sa: "Service accounts", anonymous: "Anonymous" };
 
   return (
@@ -94,6 +107,113 @@ export default async function AdminMetricsPage() {
               </CardBody>
             </Card>
           </div>
+        </div>
+
+        <div>
+          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Egress, 7 days" value={formatBytes(egress7)} detail={`${formatBytes(egress30)} in 30 days`} />
+            <StatTile label="Ingress, 7 days" value={formatBytes(ingress7)} detail={`${formatBytes(ingress30)} in 30 days`} />
+            <StatTile
+              label="Redirected, 30 days"
+              value={formatBytes(redirect30)}
+              detail={redirect30 ? "served by the storage backend" : "no storage redirects"}
+            />
+            <StatTile
+              label="Busiest day"
+              value={formatBytes(Math.max(0, ...bytesSeries.map((d) => d.egress + d.ingress)))}
+              detail="bytes moved, last 30 days"
+            />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader eyebrow="Traffic" title="Egress per day" description="Bytes served by the registry (layers and manifests), last 30 days." />
+              <CardBody>
+                <PullsChart data={toBytesSeries(bytesSeries, "egress")} kind="bytes" />
+              </CardBody>
+            </Card>
+            <Card>
+              <CardHeader eyebrow="Traffic" title="Ingress per day" description="Bytes received from pushes and imports, last 30 days." />
+              <CardBody>
+                <PullsChart data={toBytesSeries(bytesSeries, "ingress")} kind="bytes" />
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader eyebrow="Repositories" title="Most egress" description="Bytes served per repository in the last 30 days; redirected bytes left the storage backend directly." />
+            {topEgress.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-ink-3">No traffic recorded yet.</p>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <th className={th}>Repository</th>
+                    <th className={`${th} text-right`}>Egress</th>
+                    <th className={`${th} text-right`}>Redirected</th>
+                    <th className={`${th} text-right`}>Blob pulls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topEgress.map((r) => (
+                    <tr key={r.id}>
+                      <td className={`${td} min-w-0`}>
+                        <Link href={`/${r.org}/${r.name}`} className="font-mono text-[13px] hover:underline">
+                          {r.org}/{r.name}
+                        </Link>
+                      </td>
+                      <td className={num}>{formatBytes(r.egress30d)}</td>
+                      <td className={num}>{r.redirect30d ? formatBytes(r.redirect30d) : "–"}</td>
+                      <td className={num}>{formatCount(r.blobPulls30d)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+          <Card>
+            <CardHeader eyebrow="Organizations" title="Traffic by organization" description="Egress and ingress per organization, last 30 days." />
+            <Table>
+              <thead>
+                <tr>
+                  <th className={th}>Organization</th>
+                  <th className={`${th} text-right`}>Egress</th>
+                  <th className={`${th} text-right`}>Ingress</th>
+                  <th className={`${th} w-32`}>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orgTraffic.map((o) => (
+                  <tr key={o.id}>
+                    <td className={`${td} min-w-0`}>
+                      <Link href={`/admin/organizations/${o.id}`} className="font-medium hover:underline">
+                        {o.name}
+                      </Link>
+                      <span className="ml-2 font-mono text-xs text-ink-3">{o.slug}</span>
+                    </td>
+                    <td className={num} title={o.redirect30d ? `${formatBytes(o.redirect30d)} of it redirected to storage` : undefined}>
+                      {formatBytes(o.egress30d + o.redirect30d)}
+                    </td>
+                    <td className={num}>{formatBytes(o.ingress30d)}</td>
+                    <td className={td}>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
+                          <div
+                            className="h-full rounded-full bg-[var(--brand)]"
+                            style={{ width: `${Math.round(((o.egress30d + o.redirect30d) / orgEgressTotal) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="w-9 text-right font-mono text-xs tabular-nums text-ink-3">
+                          {Math.round(((o.egress30d + o.redirect30d) / orgEgressTotal) * 100)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
