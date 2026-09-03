@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, type ReactNode } from "react";
+import { useActionState, useRef, useState } from "react";
 import { deleteRepository, updateRepository, type ActionResult } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,24 +9,21 @@ import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 
-export function RepoSettingsForm({
+/** Description and visibility. */
+export function RepoGeneralForm({
   repositoryId,
   name,
   description,
   visibility: initialVisibility,
-  children,
 }: {
   repositoryId: string;
   name: string;
   description: string;
   visibility: string;
-  /** Further settings cards (webhooks, mirror), rendered above the danger zone. */
-  children?: ReactNode;
 }) {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(updateRepository, null);
   const [visibility, setVisibility] = useState(initialVisibility);
   const [confirmPublic, setConfirmPublic] = useState(false);
-  const [confirm, setConfirm] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   useActionToast(state, "Repository settings saved");
 
@@ -39,9 +36,9 @@ export function RepoSettingsForm({
   }
 
   return (
-    <div className="space-y-6">
+    <>
       <Card>
-        <CardHeader eyebrow="Repository" title={`Settings — ${name}`} />
+        <CardHeader eyebrow="General" title="Repository details" />
         <CardBody>
           <form ref={formRef} action={action} onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
             <input type="hidden" name="repositoryId" value={repositoryId} />
@@ -84,29 +81,33 @@ export function RepoSettingsForm({
         confirmLabel="Yes, make it public"
         tone="accent"
       />
+    </>
+  );
+}
 
-      {children}
-
-      <Card className="border-danger/30">
-        <CardHeader
-          eyebrow="Danger"
-          title="Delete this repository"
-          description="Removes every tag, manifest and pull statistic. Layer content shared with other repositories is kept; unique content is reclaimed by garbage collection."
-        />
-        <CardBody>
-          <form action={deleteRepository} className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="repositoryId" value={repositoryId} />
-            <div className="min-w-64">
-              <Field label={`Type "${name}" to confirm`} htmlFor="confirmName">
-                <Input id="confirmName" name="confirmName" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
-              </Field>
-            </div>
-            <Button type="submit" variant="danger" disabled={confirm !== name}>
-              Delete repository permanently
-            </Button>
-          </form>
-        </CardBody>
-      </Card>
-    </div>
+/** Typed-confirmation delete. */
+export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; name: string }) {
+  const [confirm, setConfirm] = useState("");
+  return (
+    <Card className="border-danger/30">
+      <CardHeader
+        eyebrow="Danger"
+        title="Delete this repository"
+        description="Removes every tag, manifest and pull statistic. Layer content shared with other repositories is kept; unique content is reclaimed by garbage collection."
+      />
+      <CardBody>
+        <form action={deleteRepository} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="repositoryId" value={repositoryId} />
+          <div className="min-w-64">
+            <Field label={`Type "${name}" to confirm`} htmlFor="confirmName">
+              <Input id="confirmName" name="confirmName" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
+            </Field>
+          </div>
+          <Button type="submit" variant="danger" disabled={confirm !== name}>
+            Delete repository permanently
+          </Button>
+        </form>
+      </CardBody>
+    </Card>
   );
 }
