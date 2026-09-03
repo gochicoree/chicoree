@@ -8,11 +8,21 @@
 #
 # Required in .env: DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD, AUTH_SECRET,
 # WEBHOOK_SECRET (scripts/deploy.sh creates it with fresh secrets).
+# Optional: REGISTRY_DATA_DIR=/path/on/big/disk keeps image layers off the
+# root filesystem (a named volume is used when unset).
+
+# Container logs are capped: Clair alone can write gigabytes of warnings.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
 
 services:
   traefik:
     image: traefik:v3.7
     restart: unless-stopped
+    logging: *logging
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
@@ -39,6 +49,7 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: chicoree
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -54,6 +65,7 @@ services:
   web:
     build: ./web
     restart: unless-stopped
+    logging: *logging
     environment:
       DATABASE_URL: postgres://chicoree:${POSTGRES_PASSWORD}@postgres:5432/chicoree
       APP_URL: https://${DOMAIN:?set DOMAIN in .env}
@@ -120,6 +132,7 @@ services:
   registryd:
     build: ./registryd
     restart: unless-stopped
+    logging: *logging
     environment:
       DATABASE_URL: postgres://chicoree:${POSTGRES_PASSWORD}@postgres:5432/chicoree
       STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
@@ -140,7 +153,8 @@ services:
       WEBHOOK_URL: http://web:3000/api/internal/events
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
     volumes:
-      - registry-data:/var/lib/registry
+      # A path (REGISTRY_DATA_DIR) binds a host directory; the default is the named volume.
+      - ${REGISTRY_DATA_DIR:-registry-data}:/var/lib/registry
       - token-keys:/var/lib/chicoree/keys:ro
     labels:
       - traefik.enable=true
@@ -166,6 +180,14 @@ services:
     image: quay.io/projectquay/clair:4.8.0
     profiles: [clair]
     restart: unless-stopped
+    logging: *logging
+    # Updater downloads land in /tmp and leak when the database is
+    # unreachable; a size-capped tmpfs keeps that off the root filesystem.
+    volumes:
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 3221225472
     environment:
       CLAIR_CONNSTRING: host=postgres port=5432 user=chicoree password=${POSTGRES_PASSWORD} dbname=clair sslmode=disable
     entrypoint: ["sh", "-c"]
