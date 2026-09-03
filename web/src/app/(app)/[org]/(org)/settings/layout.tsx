@@ -18,6 +18,7 @@ export default async function OrgSettingsLayout({
           { href: base, label: "General", exact: true },
           { href: `${base}/policies`, label: "Policies" },
           ...(library ? [] : [{ href: `${base}/proxy`, label: "Proxy" }]),
+          { href: `${base}/webhooks`, label: "Webhooks" },
           ...(canDelete ? [{ href: `${base}/danger`, label: "Danger zone" }] : []),
         ]}
       />

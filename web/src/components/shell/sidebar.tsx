@@ -128,7 +128,10 @@ export function Sidebar({
 
         <div className="space-y-0.5">
           <div className="eyebrow mb-1.5 px-2.5">Account</div>
-          <NavLink href="/settings" active={pathname === "/settings" || pathname === "/settings/security"}>
+          <NavLink
+            href="/settings"
+            active={pathname === "/settings" || pathname === "/settings/security" || pathname === "/settings/notifications"}
+          >
             <Settings className="size-4" /> Settings
           </NavLink>
           <NavLink href="/settings/tokens" active={pathname === "/settings/tokens"}>

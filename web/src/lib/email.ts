@@ -53,7 +53,12 @@ function escapeHtml(s: string): string {
 
 // Shared minimal HTML wrapper so every mail reads as coming from the same
 // product. `brand` is the instance name from the branding settings.
-export function mailLayout(title: string, bodyHtml: string, brand = "Chicorée"): string {
+export function mailLayout(
+  title: string,
+  bodyHtml: string,
+  brand = "Chicorée",
+  footer = "If you didn't request this, you can safely ignore this email.",
+): string {
   return `<!doctype html>
 <html><body style="margin:0;padding:32px;background:#f4f6f7;font-family:ui-sans-serif,system-ui,sans-serif;color:#14252e">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
@@ -64,7 +69,7 @@ export function mailLayout(title: string, bodyHtml: string, brand = "Chicorée")
       </td></tr>
       <tr><td style="padding:16px 32px 28px 32px;font-size:14px;line-height:1.6">${bodyHtml}</td></tr>
     </table>
-    <div style="font-size:12px;color:#5a6e79;padding-top:16px">If you didn't request this, you can safely ignore this email.</div>
+    <div style="font-size:12px;color:#5a6e79;padding-top:16px;max-width:480px">${footer}</div>
   </td></tr></table>
 </body></html>`;
 }

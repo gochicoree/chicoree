@@ -441,6 +441,25 @@ func (s *Store) DeleteTag(ctx context.Context, repoID, name string) error {
 	return nil
 }
 
+// TagsForManifest returns the names of every tag pointing at the digest.
+func (s *Store) TagsForManifest(ctx context.Context, repoID, digest string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT name FROM tags WHERE repository_id = $1 AND manifest_digest = $2 ORDER BY name`, repoID, digest)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
 // ListTags returns tag names sorted lexically, after `last`, limited to n.
 func (s *Store) ListTags(ctx context.Context, repoID string, n int, last string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `

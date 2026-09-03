@@ -333,17 +333,23 @@ export const userSettings = pgTable("user_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// --- Repository webhooks (outbound, on push) ---
+// --- Outbound webhooks (repository- or organization-scoped) ---
 
+/**
+ * One table for both scopes: a row with repository_id belongs to that
+ * repository; a row with organization_id and NULL repository_id applies to
+ * every repository of the organization. Deliveries, retries, the log and
+ * test sends are shared (lib/webhooks.ts).
+ */
 export const repositoryWebhooks = pgTable(
   "repository_webhooks",
   {
     id: text("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    repositoryId: text("repository_id")
-      .notNull()
-      .references(() => repositories.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
+    /** Set (with repository_id NULL) for organization-wide hooks. */
+    organizationId: text("organization_id").references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     url: text("url").notNull(),
     method: text("method", { enum: ["POST", "PUT", "PATCH"] }).notNull().default("POST"),
@@ -366,7 +372,10 @@ export const repositoryWebhooks = pgTable(
     lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true }),
     lastError: text("last_error"),
   },
-  (t) => [index("repository_webhooks_repo_idx").on(t.repositoryId)],
+  (t) => [
+    index("repository_webhooks_repo_idx").on(t.repositoryId),
+    index("repository_webhooks_org_idx").on(t.organizationId),
+  ],
 );
 
 export const webhookDeliveries = pgTable(
@@ -525,3 +534,46 @@ export const repositoryTraffic = pgTable(
   },
   (t) => [primaryKey({ columns: [t.repositoryId, t.day] }), index("repository_traffic_day_idx").on(t.day)],
 );
+// --- Automation: job schedules, notifications ---
+
+/** In-app cron schedule per maintenance job (one row per job name). */
+export const jobSchedules = pgTable("job_schedules", {
+  job: text("job").primaryKey(),
+  /** Standard 5-field cron expression. */
+  cron: text("cron").notNull(),
+  /** Job parameters, same keys as the manual run form. */
+  params: jsonb("params").$type<Record<string, string>>().notNull().default({}),
+  enabled: boolean("enabled").notNull().default(false),
+  /** IANA zone the cron expression is evaluated in. */
+  timezone: text("timezone").notNull().default("UTC"),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  /** Outcome of the last scheduled run: succeeded | failed | skipped. */
+  lastStatus: text("last_status"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Per-user email preference per notification event. Rows exist only for
+ * events the user changed; lib/notify-shared.ts holds the defaults.
+ */
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    email: boolean("email").notNull().default(true),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.event] })],
+);
+
+/** Dedup memory for notifications that must not repeat (quota thresholds, once per 24 h). */
+export const notificationState = pgTable("notification_state", {
+  /** e.g. "quota.warning:<organization id>:storage:80" */
+  key: text("key").primaryKey(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+});

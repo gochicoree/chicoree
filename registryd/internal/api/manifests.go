@@ -255,6 +255,9 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 			writeError(w, http.StatusBadRequest, CodeTagInvalid, "invalid tag name")
 			return
 		}
+		// Resolve the digest first so the web app learns which image the tag
+		// named (the row is gone after the delete).
+		digest, _ := s.store.ResolveTag(r.Context(), repo.ID, ref)
 		err := s.store.DeleteTag(r.Context(), repo.ID, ref)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, CodeManifestUnknown, "tag unknown")
@@ -267,10 +270,15 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 			RepositoryID: repo.ID, Type: "delete",
 			ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), Tag: ref,
 		})
+		s.notifier.Notify(hooks.Event{
+			Type: "manifest.delete", Repository: rc.name, Digest: digest, Tag: ref, Actor: rc.identity.Subject,
+		})
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
+	// Tags are removed by cascade; collect them before the delete for the event.
+	tagNames, _ := s.store.TagsForManifest(r.Context(), repo.ID, ref)
 	err = s.store.DeleteManifest(r.Context(), repo.ID, ref)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeManifestUnknown, "manifest unknown")
@@ -284,7 +292,7 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), ManifestDigest: ref,
 	})
 	s.notifier.Notify(hooks.Event{
-		Type: "manifest.delete", Repository: rc.name, Digest: ref, Actor: rc.identity.Subject,
+		Type: "manifest.delete", Repository: rc.name, Digest: ref, Tags: tagNames, Actor: rc.identity.Subject,
 	})
 	w.WriteHeader(http.StatusAccepted)
 }

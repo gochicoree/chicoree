@@ -22,6 +22,8 @@ import { env } from "./env";
 import { imagePath } from "./library";
 import { signRegistryToken } from "./registry-jwt";
 import { parseSource, RemoteRegistry } from "./remote-registry";
+import { notify } from "./notify";
+import { emitRepositoryEvent } from "./webhooks";
 
 // --- Tag selection ---------------------------------------------------------
 
@@ -296,6 +298,13 @@ export async function runMirror(mirrorId: string): Promise<{ runId: string; stat
       .update(mirrors)
       .set({ lastRunAt: new Date(), lastStatus: status, lastError: failed > 0 ? `${failed} tag(s) failed` : null })
       .where(eq(mirrors.id, mirrorId));
+    await announceMirrorRun(mirror, repo.id, run.id, status, {
+      matched,
+      imported,
+      skipped,
+      failed,
+      error: failed > 0 ? `${failed} tag(s) failed` : null,
+    });
     return { runId: run.id, status };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -304,7 +313,30 @@ export async function runMirror(mirrorId: string): Promise<{ runId: string; stat
       .set({ status: "failed", matched, imported, skipped, failed, log, error: message, finishedAt: new Date() })
       .where(eq(mirrorRuns.id, run.id));
     await db.update(mirrors).set({ lastRunAt: new Date(), lastStatus: "failed", lastError: message }).where(eq(mirrors.id, mirrorId));
+    await announceMirrorRun(mirror, repo.id, run.id, "failed", { matched, imported, skipped, failed, error: message });
     return { runId: run.id, status: "failed" };
+  }
+}
+
+/** Failed runs notify the organization (mirror.failed); finished ones reach webhooks (mirror.completed). */
+async function announceMirrorRun(
+  mirror: { id: string; source: string },
+  repositoryId: string,
+  runId: string,
+  status: "succeeded" | "failed",
+  stats: { matched: number; imported: number; skipped: number; failed: number; error: string | null },
+): Promise<void> {
+  try {
+    if (status === "failed") {
+      await notify({ event: "mirror.failed", mirrorId: mirror.id, repositoryId, runId, error: stats.error ?? "mirror failed" });
+    } else {
+      await emitRepositoryEvent(repositoryId, "mirror.completed", {
+        mirror: { id: mirror.id, source: mirror.source },
+        run: { id: runId, status, ...stats },
+      });
+    }
+  } catch (err) {
+    console.error("mirror notification failed:", err);
   }
 }
 

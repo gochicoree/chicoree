@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { db } from "@/db";
 import { organizationLimits, userLimits } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { parseLimitField, parseStorageGiB } from "@/lib/quota";
 import { recordAudit } from "@/lib/audit";
+import { checkQuotaWarnings } from "@/lib/notify";
 
 export interface LimitsActionResult {
   error?: string;
@@ -57,6 +59,7 @@ export async function setOrgLimits(
     .values({ organizationId, ...values })
     .onConflictDoUpdate({ target: organizationLimits.organizationId, set: values });
   await recordAudit({ action: "admin.org.limits", organizationId, targetType: "organization", targetId: organizationId, details: { ...values, updatedAt: undefined, updatedBy: undefined } });
+  after(() => checkQuotaWarnings(organizationId).catch((err) => console.error("quota warning check failed:", err)));
   revalidatePath(`/admin/organizations/${organizationId}`);
   return { saved: true };
 }

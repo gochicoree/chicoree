@@ -10,6 +10,7 @@ import { getOrgRole, requireSession, getSession } from "@/lib/session";
 import { runScan } from "@/lib/scan";
 import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
 import { checkRepoQuota } from "@/lib/quota";
+import { checkQuotaWarnings } from "@/lib/notify";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
 import { recordAudit } from "@/lib/audit";
@@ -73,6 +74,7 @@ export async function createRepository(
 
   const [created] = await db.insert(repositories).values({ organizationId: orgId, name, description, visibility }).returning({ id: repositories.id });
   await recordAudit({ action: "repo.create", organizationId: orgId, targetType: "repository", targetId: created.id, targetLabel: `${org.slug}/${name}`, details: { visibility } });
+  after(() => checkQuotaWarnings(orgId).catch((err) => console.error("quota warning check failed:", err)));
   revalidatePath(`/${org.slug}`);
   redirect(repoHref(org.slug, name));
 }
@@ -97,6 +99,9 @@ export async function updateRepository(
     .update(repositories)
     .set({ description, visibility, updatedAt: new Date() })
     .where(eq(repositories.id, repoId));
+  if (visibility !== repo.visibility) {
+    after(() => checkQuotaWarnings(repo.organizationId).catch((err) => console.error("quota warning check failed:", err)));
+  }
 
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   await recordAudit({ action: visibility !== repo.visibility ? "repo.visibility" : "repo.update", organizationId: repo.organizationId, targetType: "repository", targetId: repoId, targetLabel: `${org?.slug}/${repo.name}`, details: visibility !== repo.visibility ? { from: repo.visibility, to: visibility } : { description: description !== repo.description } });

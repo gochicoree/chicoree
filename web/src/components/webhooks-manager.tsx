@@ -11,24 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
+import { eventsForScope, WEBHOOK_EVENTS, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
 
-export interface WebhookRow {
-  id: string;
-  name: string;
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  authType: string;
-  authHeaderName: string | null;
-  hasAuthSecret: boolean;
-  hasSigningSecret: boolean;
-  events: string[];
-  enabled: boolean;
-  lastStatus: number | null;
-  lastDeliveredAt: string | null;
-  lastError: string | null;
-  deliveries: { id: string; event: string; ok: boolean; statusCode: number | null; attempts: number; durationMs: number | null; error: string | null; createdAt: string }[];
-}
+export type { WebhookRow };
 
 const METHODS = [
   { value: "POST", label: "POST" },
@@ -42,18 +27,24 @@ const AUTH_TYPES = [
   { value: "header", label: "Custom header", description: "Any header name + value" },
 ];
 
-function WebhookForm({
-  repositoryId,
-  hook,
-  onDone,
-}: {
-  repositoryId: string;
-  hook?: WebhookRow;
-  onDone: () => void;
-}) {
+function eventLabel(value: string): string {
+  return WEBHOOK_EVENTS.find((e) => e.value === value)?.label ?? value;
+}
+
+function ScopeInputs({ scope }: { scope: WebhookScope }) {
+  return scope.kind === "repository" ? (
+    <input type="hidden" name="repositoryId" value={scope.repositoryId} />
+  ) : (
+    <input type="hidden" name="organizationId" value={scope.organizationId} />
+  );
+}
+
+function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: WebhookRow; onDone: () => void }) {
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(saveWebhook, null);
   const [authType, setAuthType] = useState(hook?.authType ?? "none");
   const { toast } = useToast();
+  const events = eventsForScope(scope.kind);
+  const selected = new Set(hook?.events ?? ["push"]);
   useEffect(() => {
     if (state?.saved) {
       toast({ title: hook ? "Webhook saved" : "Webhook added" });
@@ -63,7 +54,7 @@ function WebhookForm({
   }, [state]);
   return (
     <form action={action} className="grid gap-4 sm:grid-cols-2">
-      <input type="hidden" name="repositoryId" value={repositoryId} />
+      <ScopeInputs scope={scope} />
       {hook && <input type="hidden" name="id" value={hook.id} />}
       <Field label="Name" htmlFor="wh-name">
         <Input id="wh-name" name="name" required defaultValue={hook?.name} placeholder="Deploy to staging" />
@@ -76,6 +67,26 @@ function WebhookForm({
           <Input id="wh-url" name="url" type="url" required defaultValue={hook?.url} className="font-mono" placeholder="https://ci.example.com/hooks/registry" />
         </Field>
       </div>
+      <fieldset className="sm:col-span-2">
+        <legend className="mb-1.5 block text-[13px] font-medium text-ink">Events</legend>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          {events.map((e) => (
+            <label key={e.value} className="flex items-start gap-2 rounded-lg border border-line px-2.5 py-2 text-sm">
+              <input
+                type="checkbox"
+                name="events"
+                value={e.value}
+                defaultChecked={selected.has(e.value)}
+                className="mt-0.5 size-4 accent-[var(--action)]"
+              />
+              <span className="min-w-0">
+                <span className="block font-medium">{e.label}</span>
+                <span className="block text-xs text-ink-2">{e.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <Field label="Authentication" htmlFor="wh-auth">
         <Select id="wh-auth" name="authType" options={AUTH_TYPES} value={authType} onChange={setAuthType} />
       </Field>
@@ -127,11 +138,11 @@ function WebhookForm({
   );
 }
 
-function TestButton({ repositoryId, hookId }: { repositoryId: string; hookId: string }) {
+function TestButton({ scope, hookId }: { scope: WebhookScope; hookId: string }) {
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(testWebhook, null);
   return (
     <form action={action} className="inline-flex items-center gap-2">
-      <input type="hidden" name="repositoryId" value={repositoryId} />
+      <ScopeInputs scope={scope} />
       <input type="hidden" name="id" value={hookId} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         <Send className="size-3.5" /> {pending ? "Sending…" : "Send test"}
@@ -141,28 +152,30 @@ function TestButton({ repositoryId, hookId }: { repositoryId: string; hookId: st
           {state.tested.ok ? `delivered (${state.tested.status})` : (state.tested.error ?? "failed")}
         </span>
       )}
+      {state?.error && <span className="text-xs text-danger">{state.error}</span>}
     </form>
   );
 }
 
-export function WebhooksManager({
-  repositoryId,
-  hooks,
-  max,
-}: {
-  repositoryId: string;
-  hooks: WebhookRow[];
-  max: number;
-}) {
+/**
+ * Webhook list + editor, shared by the repository and the organization
+ * settings. Organization hooks receive the events of every repository.
+ */
+export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; hooks: WebhookRow[]; max: number }) {
   const [editing, setEditing] = useState<WebhookRow | "new" | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const org = scope.kind === "organization";
 
   return (
     <Card>
       <CardHeader
         eyebrow="Notifications"
         title={`Webhooks (${hooks.length}/${max})`}
-        description="Called whenever an image is pushed to this repository, with everything about the image, tag and pusher in a JSON body."
+        description={
+          org
+            ? "Called for events in every repository of this organization — pushes, deletions, scan results, mirrors, retention and quota warnings — with a JSON body describing what happened."
+            : "Called for events in this repository — pushes, deletions, scan results, mirrors and retention — with everything about the image, tag and actor in a JSON body."
+        }
         action={
           <Button size="sm" variant="secondary" disabled={hooks.length >= max} onClick={() => setEditing("new")}>
             <Plus className="size-3.5" /> Add webhook
@@ -193,9 +206,9 @@ export function WebhooksManager({
                 )}
                 {h.lastStatus === null && h.lastError && <Badge tone="danger">{h.lastError}</Badge>}
                 <div className="ml-auto flex flex-wrap items-center gap-1">
-                  <TestButton repositoryId={repositoryId} hookId={h.id} />
+                  <TestButton scope={scope} hookId={h.id} />
                   <form action={toggleWebhook}>
-                    <input type="hidden" name="repositoryId" value={repositoryId} />
+                    <ScopeInputs scope={scope} />
                     <input type="hidden" name="id" value={h.id} />
                     <input type="hidden" name="enabled" value={String(!h.enabled)} />
                     <Button type="submit" variant="ghost" size="sm">
@@ -209,7 +222,7 @@ export function WebhooksManager({
                     {expanded === h.id ? "Hide log" : "Log"}
                   </button>
                   <form action={deleteWebhook}>
-                    <input type="hidden" name="repositoryId" value={repositoryId} />
+                    <ScopeInputs scope={scope} />
                     <input type="hidden" name="id" value={h.id} />
                     <button
                       type="submit"
@@ -220,6 +233,13 @@ export function WebhooksManager({
                     </button>
                   </form>
                 </div>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1 pl-7">
+                {h.events.map((e) => (
+                  <Badge key={e} tone="info" title={e}>
+                    {eventLabel(e)}
+                  </Badge>
+                ))}
               </div>
               {expanded === h.id && (
                 <div className="mt-3 rounded-lg border border-line bg-card-2">
@@ -248,9 +268,7 @@ export function WebhooksManager({
         title={editing === "new" ? "Add webhook" : "Edit webhook"}
         description="Secrets are encrypted at rest and never shown again."
       >
-        {editing !== null && (
-          <WebhookForm repositoryId={repositoryId} hook={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />
-        )}
+        {editing !== null && <WebhookForm scope={scope} hook={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />}
       </Modal>
     </Card>
   );
