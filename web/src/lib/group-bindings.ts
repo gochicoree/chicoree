@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { member, organization, user as userTable } from "@/db/schema";
-import { env } from "./env";
+import { getInstanceSettings } from "./instance-settings";
 import { ORG_ROLE_NAMES, type OrgRole } from "./org-roles";
 import { ensureLibraryOrg } from "./library";
 
@@ -41,7 +41,7 @@ export interface GroupBinding {
 const ROLE_RANK: Record<OrgRole, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 const PREFIX = /^(ldap|github|google|oidc):/i;
 
-export function parseGroupBindings(raw: string = env.authGroupBindings): GroupBinding[] {
+export function parseGroupBindings(raw: string): GroupBinding[] {
   return raw
     .split(/[;\n]/)
     .map((s) => s.trim())
@@ -71,8 +71,13 @@ export function parseGroupBindings(raw: string = env.authGroupBindings): GroupBi
     });
 }
 
-/** Whether any binding refers to groups from the given source. */
-export function bindingsFor(source: GroupSource, bindings: GroupBinding[] = parseGroupBindings()): GroupBinding[] {
+/** The bindings currently configured (admin panel, else AUTH_GROUP_BINDINGS). */
+export async function loadGroupBindings(): Promise<GroupBinding[]> {
+  return parseGroupBindings((await getInstanceSettings()).bindings);
+}
+
+/** The bindings that refer to groups from the given source. */
+export function bindingsFor(source: GroupSource, bindings: GroupBinding[]): GroupBinding[] {
   return bindings.filter((b) => b.source === source);
 }
 
@@ -124,7 +129,7 @@ export function resolveBindings(source: GroupSource, groups: string[], bindings:
 
 /** Apply this source's bindings to a user, given the groups from their login. */
 export async function syncGroupBindings(source: GroupSource, userId: string, groups: string[]): Promise<void> {
-  const bindings = parseGroupBindings();
+  const bindings = await loadGroupBindings();
   if (bindingsFor(source, bindings).length === 0) return;
   const { admin, orgRoles, managedOrgs } = resolveBindings(source, groups, bindings);
 

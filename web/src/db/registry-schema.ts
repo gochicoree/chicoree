@@ -308,6 +308,18 @@ export const organizationSettings = pgTable("organization_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Instance-wide configuration edited in the admin panel (SMTP, sign-in
+ * providers, LDAP, group bindings). One row per section; secrets inside the
+ * JSON are encrypted with lib/crypto. Environment variables act as defaults
+ * for sections without a row.
+ */
+export const instanceSettings = pgTable("instance_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<Record<string, unknown>>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const userSettings = pgTable("user_settings", {
   userId: text("user_id")
     .primaryKey()

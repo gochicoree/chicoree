@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { passkey as passkeyTable } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 import { requireSession } from "@/lib/session";
 import { PageHeader } from "@/components/page-header";
 import { SettingsNav } from "../settings-nav";
@@ -15,6 +15,7 @@ export const metadata: Metadata = { title: "Security" };
 
 export default async function SecurityPage() {
   const session = await requireSession();
+  const auth = await getAuth();
   const [passkeys, sessions] = await Promise.all([
     db.query.passkey.findMany({ where: eq(passkeyTable.userId, session.user.id) }),
     auth.api.listSessions({ headers: await headers() }),

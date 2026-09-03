@@ -1,28 +1,48 @@
-import nodemailer from "nodemailer";
-import { env } from "./env";
+import nodemailer, { type Transporter } from "nodemailer";
+import { getInstanceSettings, type SmtpSettings } from "./instance-settings";
 
-// One transporter per process. Without SMTP configured, mail is logged to the
-// server console so local development never blocks on email delivery.
-const transporter = env.smtpHost
-  ? nodemailer.createTransport({
-      host: env.smtpHost,
-      port: env.smtpPort,
-      secure: env.smtpSecure,
-      auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
-    })
-  : null;
+// The transporter follows the admin panel's SMTP settings (environment as
+// default) and is rebuilt when they change. Without a host, mail is logged
+// to the server console so local development never blocks on delivery.
+let cached: { version: number; transporter: Transporter | null; from: string } | null = null;
+
+function build(smtp: SmtpSettings): Transporter | null {
+  if (!smtp.host) return null;
+  return nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
+  });
+}
+
+async function transport(): Promise<{ transporter: Transporter | null; from: string }> {
+  const settings = await getInstanceSettings();
+  if (!cached || cached.version !== settings.version) {
+    cached = { version: settings.version, transporter: build(settings.smtp), from: settings.smtp.from };
+  }
+  return cached;
+}
 
 export async function sendMail(opts: { to: string; subject: string; text: string; html?: string }) {
+  const { transporter, from } = await transport();
   if (!transporter) {
     console.log(`[mail:not-configured] to=${opts.to} subject=${JSON.stringify(opts.subject)}\n${opts.text}`);
     return;
   }
+  await transporter.sendMail({ from, to: opts.to, subject: opts.subject, text: opts.text, html: opts.html });
+}
+
+/** Admin "send test email" with settings that may not be saved yet. */
+export async function sendTestMail(smtp: SmtpSettings, to: string): Promise<void> {
+  const transporter = build(smtp);
+  if (!transporter) throw new Error("Enter an SMTP host first.");
   await transporter.sendMail({
-    from: env.smtpFrom,
-    to: opts.to,
-    subject: opts.subject,
-    text: opts.text,
-    html: opts.html,
+    from: smtp.from,
+    to,
+    subject: "Chicorée test email",
+    text: "If you can read this, outgoing email from your Chicorée registry works.",
+    html: mailLayout("Test email", "<p>If you can read this, outgoing email from your Chicorée registry works.</p>"),
   });
 }
 

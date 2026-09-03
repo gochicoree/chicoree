@@ -62,10 +62,10 @@ Everything is environment-driven; see `.env.example` for the full list.
 | --- | --- |
 | Storage backend | `STORAGE_DRIVER=filesystem\|s3\|bunny` plus that plugin's `<NAME>_*` variables — see [Storage plugins](#storage-plugins) |
 | Public addresses | `APP_URL`, `REGISTRY_HOST`, `REGISTRY_PORT` |
-| OAuth sign-in | `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/NAME/SCOPES/GROUPS_CLAIM` |
-| LDAP sign-in | `LDAP_URL`, `LDAP_BIND_DN/PASSWORD`, `LDAP_USER_BASE/FILTER`, … — see [LDAP](#ldap--active-directory) |
-| Group-based roles | `AUTH_GROUP_BINDINGS` — see [Group-based roles](#group-based-roles) |
-| Email | `SMTP_HOST/PORT/USER/PASS/FROM` (defaults to bundled Mailpit) |
+| OAuth sign-in | *Administration → Settings → Sign-in providers*; `GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/NAME/SCOPES/GROUPS_CLAIM` as defaults |
+| LDAP sign-in | *Administration → Settings → LDAP*; `LDAP_*` as defaults — see [LDAP](#ldap--active-directory) |
+| Group-based roles | *Administration → Settings → Group bindings*; `AUTH_GROUP_BINDINGS` as default — see [Group-based roles](#group-based-roles) |
+| Email | *Administration → Settings → Email*; `SMTP_HOST/PORT/USER/PASS/FROM` as defaults (compose points at the bundled Mailpit) |
 | Passkeys | `PASSKEY_RP_ID` (the domain users see), `PASSKEY_RP_NAME` |
 | Jobs API | `JOBS_API_TOKEN` (optional static token for automation) |
 | GC safety window | `GC_GRACE_PERIOD` (default `1h`) |
@@ -75,6 +75,18 @@ For production: serve both the web app and the registry behind TLS (any
 reverse proxy), point `APP_URL`/`REGISTRY_HOST` at the real hostnames, use a
 managed Postgres, and keep `secrets/registry-token.key` private — it signs
 every registry access token.
+
+### Settings in the admin panel
+
+Email (SMTP), the GitHub, Google and OpenID Connect providers, LDAP and the
+group bindings are edited under *Administration → Settings* and take effect
+immediately: the auth stack, the mailer and the directory client are rebuilt
+from the stored values. Secrets are stored encrypted with `AUTH_SECRET`.
+The matching environment variables still work as defaults for sections that
+have never been saved (each card says whether its values come from the
+admin settings, the environment, or nowhere), and "Use environment values"
+drops a stored section again. Both pages offer checks: a test email and an
+LDAP bind plus user lookup, run with the values in the form.
 
 ### Running without Clair
 
