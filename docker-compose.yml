@@ -29,6 +29,7 @@ services:
       JWT_PRIVATE_KEY_FILE: /run/secrets/registry-token.key
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
       JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
+      JOB_SCHEDULER: ${JOB_SCHEDULER:-true}
       # Empty disables scanning (and hides vulnerability data in the UI).
       CLAIR_URL: ${CLAIR_URL-http://clair:6060}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
@@ -71,6 +72,9 @@ services:
       INSTANCE_NAME: ${INSTANCE_NAME:-}
       INSTANCE_TAGLINE: ${INSTANCE_TAGLINE:-}
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
+      RATE_LIMIT_ANONYMOUS: ${RATE_LIMIT_ANONYMOUS:-}
+      RATE_LIMIT_AUTHENTICATED: ${RATE_LIMIT_AUTHENTICATED:-}
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
     volumes:
       - ./secrets/registry-token.key:/run/secrets/registry-token.key:ro
     ports:
@@ -100,6 +104,11 @@ services:
       BUNNY_CDN_URL: ${BUNNY_CDN_URL:-}
       BUNNY_CDN_TOKEN_KEY: ${BUNNY_CDN_TOKEN_KEY:-}
       GC_GRACE_PERIOD: ${GC_GRACE_PERIOD:-1h}
+      REGISTRY_LOG_FORMAT: ${REGISTRY_LOG_FORMAT:-text}
+      # Pull rate limit defaults, shared with the web app (Administration → Rate limits overrides them).
+      RATE_LIMIT_ANONYMOUS: ${RATE_LIMIT_ANONYMOUS:-}
+      RATE_LIMIT_AUTHENTICATED: ${RATE_LIMIT_AUTHENTICATED:-}
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
       # The realm must be reachable by docker CLIENTS, not just containers.
       TOKEN_REALM: ${APP_URL:-http://localhost:3000}/api/registry/token
       TOKEN_SERVICE: chicoree-registry

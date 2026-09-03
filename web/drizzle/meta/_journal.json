@@ -36,6 +36,13 @@
       "when": 1788459596668,
       "tag": "0004_instance_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788466113530,
+      "tag": "0005_wave1_lifecycle_traffic_admin_automation_proxy",
+      "breakpoints": true
     }
   ]
 }
