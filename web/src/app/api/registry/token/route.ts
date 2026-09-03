@@ -161,10 +161,12 @@ export async function GET(req: NextRequest) {
     if (type !== "repository") continue;
     const target = splitImagePath(name);
     if (!target) continue;
-    // "*" is what skopeo/oras ask for on delete: every action the caller may have.
-    const requested = (actionsRaw === "*" ? [...VALID_ACTIONS] : actionsRaw.split(",")).filter(
-      (a): a is RegistryAction => (VALID_ACTIONS as string[]).includes(a),
-    );
+    // skopeo / containers-image ask for `repository:<name>:*` before deleting;
+    // a wildcard means every action, filtered by what the caller may do.
+    const requested = actionsRaw
+      .split(",")
+      .flatMap((a) => (a === "*" ? VALID_ACTIONS : [a]))
+      .filter((a): a is RegistryAction => (VALID_ACTIONS as string[]).includes(a));
     const granted = await allowedRepositoryActions(caller, target.orgSlug, target.repoName, requested);
     if (granted.length > 0) {
       access.push({ type: "repository", name, actions: granted });

@@ -577,3 +577,65 @@ export const notificationState = pgTable("notification_state", {
   key: text("key").primaryKey(),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
 });
+// --- Tag lifecycle: protected / immutable tags and retention policies ---
+
+/**
+ * Tag rules: glob patterns (`*` and `?` only) over tag names, per
+ * organization or per repository (repository_id NULL = every repository).
+ * `immutable` stops an existing tag from being re-pointed at a different
+ * digest (re-pushing the same digest is fine); `protected` stops the tag —
+ * and, by digest, the manifest it names — from being deleted. registryd
+ * enforces both on manifest PUT/DELETE (internal/store/tagrules.go); the web
+ * app mirrors the checks and shows lock badges (lib/tag-rules-shared.ts).
+ */
+export const tagRules = pgTable(
+  "tag_rules",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** null = every repository of the organization. */
+    repositoryId: text("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
+    pattern: text("pattern").notNull(),
+    immutable: boolean("immutable").notNull().default(false),
+    protected: boolean("protected").notNull().default(false),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tag_rules_org_idx").on(t.organizationId), index("tag_rules_repo_idx").on(t.repositoryId)],
+);
+
+/**
+ * Retention policies: one row per organization (repository_id NULL = the
+ * default for its repositories) and optionally one per repository, which
+ * replaces the organization's entirely. Applied by the `retention` job and
+ * previewed from the settings pages (lib/retention-shared.ts is the planner).
+ */
+export const retentionPolicies = pgTable(
+  "retention_policies",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** null = the organization default; a repository row overrides it entirely. */
+    repositoryId: text("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    /** Keep the N most recently pushed tags. */
+    keepLast: integer("keep_last"),
+    /** Space-separated globs of tags that are always kept, e.g. "latest v*". */
+    keepMatching: text("keep_matching"),
+    /** Tags last pushed more than N days ago are deletion candidates. */
+    deleteOlderThanDays: integer("delete_older_than_days"),
+    /** Manifests without a tag, pushed more than N days ago, are deleted (index children and referrers excepted). */
+    deleteUntaggedAfterDays: integer("delete_untagged_after_days"),
+    updatedBy: text("updated_by"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("retention_policies_scope_uq").on(t.organizationId, t.repositoryId).nullsNotDistinct()],
+);

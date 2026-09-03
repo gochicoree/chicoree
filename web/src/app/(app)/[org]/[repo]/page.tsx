@@ -6,16 +6,19 @@ import { egressSeries, getRepoByPath, listRepoTags, pullSeries, trafficSummary }
 import { env } from "@/lib/env";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
-import { ShieldBan } from "lucide-react";
+import { Layers, Link2, ShieldBan } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { SeverityChips } from "@/components/severity";
 import { PullsChart } from "@/components/pulls-chart";
 import { buttonClasses } from "@/components/ui/button";
+import { RuleBadges } from "@/components/tag-rules-manager";
 import { imageReference } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
-import { DeleteTagButton } from "./tag-actions";
+import { describeMediaType, listUntaggedManifests } from "@/lib/manifests";
+import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
+import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
 
 export default async function RepoPage({
   params,
@@ -30,12 +33,14 @@ export default async function RepoPage({
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
 
-  const [tagList, series, proxy, egress, traffic] = await Promise.all([
+  const [tagList, series, proxy, egress, traffic, rules, untagged] = await Promise.all([
     listRepoTags(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
     role ? egressSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
+    effectiveTagRules(found.repo.organizationId, found.repo.id),
+    listUntaggedManifests(found.repo.id),
   ]);
   const path = `${orgSlug}/${repoName}`;
   const base = repoHref(orgSlug, repoName);
@@ -47,6 +52,10 @@ export default async function RepoPage({
   // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
   const canDelete = role === "owner" || role === "admin";
   const latestDigest = tagList.find((t) => t.name === "latest")?.manifestDigest ?? null;
+  // Which tag rules lock each tag (immutable / protected) — for badges and the delete button.
+  const flagsByTag = new Map(tagList.map((t) => [t.name, tagFlags(rules, t.name)]));
+  // Digests referenced by other manifests in this repository (index children); those cannot be deleted alone.
+  const showUntagged = untagged.length > 0 || canDelete;
 
   return (
     <div className="space-y-6">
@@ -139,6 +148,20 @@ export default async function RepoPage({
                           <ShieldBan className="size-3" /> pull blocked
                         </Badge>
                       )}
+                      {(flagsByTag.get(tag.name)?.immutable || flagsByTag.get(tag.name)?.protected) && (
+                        <span className="ml-2 inline-flex gap-1 align-middle">
+                          <RuleBadges
+                            immutable={!!flagsByTag.get(tag.name)?.immutable}
+                            isProtected={!!flagsByTag.get(tag.name)?.protected}
+                            title={[
+                              flagsByTag.get(tag.name)?.immutable && `Immutable (rule "${flagsByTag.get(tag.name)!.immutable!.pattern}"): cannot be re-pointed`,
+                              flagsByTag.get(tag.name)?.protected && `Protected (rule "${flagsByTag.get(tag.name)!.protected!.pattern}"): cannot be deleted`,
+                            ]
+                              .filter(Boolean)
+                              .join("; ")}
+                          />
+                        </span>
+                      )}
                       <div className="mt-0.5 text-xs text-ink-3 sm:hidden">pushed {relativeTime(tag.updatedAt)}</div>
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
@@ -164,6 +187,7 @@ export default async function RepoPage({
                           repositoryId={found.repo.id}
                           tag={tag.name}
                           latestFollows={tag.name !== "latest" && latestDigest !== null && latestDigest === tag.manifestDigest}
+                          protectedBy={flagsByTag.get(tag.name)?.protected?.pattern ?? null}
                         />
                       </td>
                     )}
@@ -174,6 +198,86 @@ export default async function RepoPage({
           </div>
         )}
       </Card>
+
+      {showUntagged && (
+        <Card>
+          <CardHeader
+            eyebrow="Untagged"
+            title={`Untagged manifests (${untagged.length})`}
+            description="Images no tag points at: left behind by deleted or re-pointed tags, platform variants of a multi-arch index, or artifacts attached to another image. Retention policies and the prune job clean them up; layer data is reclaimed by garbage collection."
+          />
+          {untagged.length === 0 ? (
+            <CardBody>
+              <p className="text-sm text-ink-3">Every manifest in this repository has a tag.</p>
+            </CardBody>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th className="px-4 py-2.5 text-xs font-medium text-ink-2 sm:px-5">Digest</th>
+                    <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Type</th>
+                    <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 md:table-cell">Size</th>
+                    <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 sm:table-cell">Pushed</th>
+                    {canDelete && <th className="w-10 px-2 py-2.5" aria-label="Actions" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {untagged.map((m) => {
+                    const blocked = m.isChild
+                      ? "Platform variant of a multi-arch index that still exists; delete the index instead."
+                      : null;
+                    return (
+                      <tr key={m.digest} className="border-b border-line last:border-0 hover:bg-card-2">
+                        <td className="px-4 py-3 sm:px-5">
+                          <Link href={`/${path}/tags/${encodeURIComponent(m.digest)}`} className="hover:underline">
+                            <Digest digest={m.digest} />
+                          </Link>
+                          <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+                            {m.isChild && (
+                              <Badge tone="info" title="Referenced by a multi-arch index in this repository">
+                                <Layers className="size-3" /> index child
+                              </Badge>
+                            )}
+                            {m.isReferrer && (
+                              <Badge tone="info" title={`Attached to ${m.subjectDigest?.slice(7, 19)} (subject)`}>
+                                <Link2 className="size-3" /> referrer
+                              </Badge>
+                            )}
+                            {m.referrerCount > 0 && (
+                              <Badge tone="neutral" title="Other manifests are attached to this one">
+                                {m.referrerCount} attached
+                              </Badge>
+                            )}
+                          </span>
+                          <div className="mt-0.5 text-xs text-ink-3 sm:hidden">pushed {relativeTime(m.pushedAt)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-[13px] text-ink-2">
+                          {describeMediaType(m.mediaType, m.artifactType)}
+                          {m.isIndex ? (
+                            <span className="ml-2 rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">multi-arch</span>
+                          ) : (
+                            m.platform && <span className="ml-2 font-mono text-xs text-ink-3">{m.platform}</span>
+                          )}
+                        </td>
+                        <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 md:table-cell">
+                          {m.isIndex ? "—" : formatBytes(m.contentBytes)}
+                        </td>
+                        <td className="hidden px-4 py-3 text-right text-[13px] text-ink-2 sm:table-cell">{relativeTime(m.pushedAt)}</td>
+                        {canDelete && (
+                          <td className="px-2 py-2 text-right">
+                            <DeleteManifestButton repositoryId={found.repo.id} digest={m.digest} tags={[]} blocked={blocked} />
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {role && series && (
         <div className="grid gap-4 lg:grid-cols-2">

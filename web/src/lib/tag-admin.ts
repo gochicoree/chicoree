@@ -7,8 +7,9 @@ import { organization, repositories, tags as tagsTable } from "@/db/schema";
 import { env } from "./env";
 import { imagePath } from "./library";
 import { pickNewest } from "./mirror";
-import { fetchBlobJson, fetchManifestRaw } from "./registry-client";
+import { fetchBlobJson, fetchManifestRaw, registryErrorMessage } from "./registry-client";
 import { signRegistryToken } from "./registry-jwt";
+import { effectiveTagRules, protectedReason, tagFlags } from "./tag-rules";
 
 export interface DeleteTagOutcome {
   deleted: string;
@@ -45,20 +46,33 @@ async function imageCreatedAt(path: string, digest: string): Promise<Date | null
 
 /**
  * Delete a tag as `subject` (a "user:<id>" registry subject). The caller has
- * already checked the access model. Throws with a user-facing message.
+ * already checked the access model; protected tags (tag rules) are refused
+ * here and by the registry. Throws with a user-facing message.
+ *
+ * `moveLatest` (default true) re-points "latest" at the newest remaining
+ * image when it named the deleted one; retention passes false so a policy
+ * never changes what "latest" means.
  */
-export async function deleteTag(repositoryId: string, tagName: string, subject: string): Promise<DeleteTagOutcome> {
+export async function deleteTag(
+  repositoryId: string,
+  tagName: string,
+  subject: string,
+  opts: { moveLatest?: boolean } = {},
+): Promise<DeleteTagOutcome> {
   const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
   if (!repo) throw new Error("Repository not found.");
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) throw new Error("Organization not found.");
   const path = imagePath(org.slug, repo.name);
 
-  const [target, latest] = await Promise.all([
+  const [target, latest, rules] = await Promise.all([
     db.query.tags.findFirst({ where: and(eq(tagsTable.repositoryId, repo.id), eq(tagsTable.name, tagName)) }),
     db.query.tags.findFirst({ where: and(eq(tagsTable.repositoryId, repo.id), eq(tagsTable.name, "latest")) }),
+    effectiveTagRules(repo.organizationId, repo.id),
   ]);
   if (!target) throw new Error(`Tag "${tagName}" does not exist.`);
+  const blocked = protectedReason(rules, tagName);
+  if (blocked) throw new Error(blocked);
 
   const { token } = await signRegistryToken(
     subject,
@@ -68,10 +82,17 @@ export async function deleteTag(repositoryId: string, tagName: string, subject: 
 
   const res = await registryDelete(path, tagName, token);
   if (res.status === 404) throw new Error(`Tag "${tagName}" does not exist.`);
+  if (res.status === 403) throw new Error(`The registry refused: ${await registryErrorMessage(res)}`);
   if (res.status !== 202) throw new Error(`The registry refused to delete the tag (HTTP ${res.status}).`);
 
   // "latest" only needs attention when it pointed at the image we just untagged.
-  if (tagName === "latest" || !latest || latest.manifestDigest !== target.manifestDigest) {
+  if (opts.moveLatest === false || tagName === "latest" || !latest || latest.manifestDigest !== target.manifestDigest) {
+    return { deleted: tagName, latest: "unchanged" };
+  }
+  // A locked "latest" stays where it is: immutable means it may not be
+  // re-pointed, protected means it may not be removed.
+  const latestFlags = tagFlags(rules, "latest");
+  if (latestFlags.immutable || latestFlags.protected) {
     return { deleted: tagName, latest: "unchanged" };
   }
 
@@ -80,6 +101,9 @@ export async function deleteTag(repositoryId: string, tagName: string, subject: 
   });
   if (remaining.length === 0) {
     const gone = await registryDelete(path, "latest", token);
+    if (gone.status === 403) {
+      throw new Error(`Deleted ${tagName}, but "latest" stays: ${await registryErrorMessage(gone)}`);
+    }
     if (gone.status !== 202 && gone.status !== 404) {
       throw new Error(`Deleted ${tagName}, but "latest" could not be removed (HTTP ${gone.status}).`);
     }

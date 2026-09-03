@@ -28,7 +28,7 @@ export default async function RepoSettingsLayout({
         className="mb-6"
         items={[
           { href: base, label: "General", exact: true },
-          { href: `${base}/policy`, label: "Pull policy" },
+          { href: `${base}/policy`, label: "Policies" },
           { href: `${base}/webhooks`, label: "Webhooks" },
           { href: `${base}/mirror`, label: "Mirror" },
           { href: `${base}/danger`, label: "Danger zone" },
