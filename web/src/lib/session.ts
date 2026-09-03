@@ -8,8 +8,12 @@ import { member, organization } from "@/db/schema";
 
 /** Session lookup, deduplicated per request. */
 export const getSession = cache(async () => {
+  // Read the request headers first: that marks the route dynamic, so a
+  // production build never reaches the settings query below while
+  // prerendering (there is no database at build time).
+  const requestHeaders = await headers();
   const auth = await getAuth();
-  return auth.api.getSession({ headers: await headers() });
+  return auth.api.getSession({ headers: requestHeaders });
 });
 
 export async function requireSession() {
