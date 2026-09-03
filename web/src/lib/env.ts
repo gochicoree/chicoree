@@ -179,6 +179,15 @@ export const env = {
     return process.env.AUTH_GROUP_BINDINGS ?? "";
   },
 
+  // Prometheus exporter defaults (the admin panel can override both).
+  get metricsEnabled() {
+    return process.env.METRICS_ENABLED === "true";
+  },
+  /** Bearer token Prometheus must present to /api/metrics. */
+  get metricsToken() {
+    return process.env.METRICS_TOKEN ?? "";
+  },
+
   // WebAuthn relying party
   get passkeyRpId() {
     return process.env.PASSKEY_RP_ID ?? "localhost";

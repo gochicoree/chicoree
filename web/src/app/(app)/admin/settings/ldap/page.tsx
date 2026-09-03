@@ -1,10 +1,5 @@
-import type { Metadata } from "next";
-import { getInstanceSettings } from "@/lib/instance-settings";
-import { LdapForm } from "../forms";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "LDAP settings" };
-
-export default async function AdminLdapSettings() {
-  const s = await getInstanceSettings();
-  return <LdapForm ldap={{ ...s.ldap, bindPassword: "" }} hasBindPassword={!!s.ldap.bindPassword} source={s.sources.ldap} />;
+export default function AdminSettingsRedirect() {
+  redirect("/admin/auth/ldap");
 }
