@@ -10,6 +10,7 @@ import { env } from "./env";
 import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
 import { notify } from "./notify";
+import { runRetention } from "./retention";
 
 export interface JobDefinition {
   name: string;
@@ -117,6 +118,24 @@ JOBS["proxy-evict"] = {
     { name: "dryRun", description: "true = only count what would be removed", default: "false" },
   ],
   run: async (params) => evictProxyTags(durationToMs(params.unusedFor, 30 * 86_400_000), params.dryRun === "true"),
+};
+JOBS.retention = {
+  name: "retention",
+  title: "Apply retention policies",
+  description:
+    "Walks every repository with an enabled retention policy (Settings → Policies) and removes the tags and untagged manifests it selects. Dry run by default: reports what would go without deleting anything. Run garbage collection afterwards to reclaim space.",
+  params: [
+    { name: "dryRun", description: "true only reports; false deletes", default: "true" },
+    { name: "organization", description: "Only this organization (slug)", default: "" },
+    { name: "repository", description: "Only this repository (org/name)", default: "" },
+  ],
+  run: async (params) =>
+    runRetention({
+      dryRun: params.dryRun !== "false",
+      organizationSlug: params.organization || undefined,
+      repositoryPath: params.repository || undefined,
+      subject: "user:system",
+    }),
 };
 
 /** Jobs that make sense in this deployment (scanning needs Clair). */

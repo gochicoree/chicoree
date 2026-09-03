@@ -41,6 +41,21 @@ export async function fetchBlobJson(repositoryPath: string, digest: string): Pro
   }
 }
 
+/**
+ * The message from an OCI error body ({"errors":[{"code","message"}]}), or
+ * a generic "HTTP <status>" when the response carries none.
+ */
+export async function registryErrorMessage(res: Response): Promise<string> {
+  try {
+    const parsed = (await res.json()) as { errors?: { message?: string }[] };
+    const message = parsed.errors?.[0]?.message;
+    if (message) return message;
+  } catch {
+    // not JSON
+  }
+  return `HTTP ${res.status}`;
+}
+
 /** Trigger a garbage-collection pass on registryd (admin action). */
 export async function triggerGarbageCollection(grace?: string): Promise<
   { ok: true; result: Record<string, number> } | { ok: false; error: string }

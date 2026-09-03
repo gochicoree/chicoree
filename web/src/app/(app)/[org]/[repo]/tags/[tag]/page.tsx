@@ -20,6 +20,10 @@ import { VulnerabilityPanel } from "./vulnerability-panel";
 import { imageReference } from "@/lib/library";
 import { decodeRepoParam, repoHref } from "@/lib/proxy-shared";
 import { manifestBlockReason } from "@/lib/pull-policy";
+import { manifestDeleteBlocker } from "@/lib/manifests";
+import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
+import { RuleBadges } from "@/components/tag-rules-manager";
+import { DeleteManifestButton } from "../../tag-actions";
 import { ShieldBan } from "lucide-react";
 
 interface Descriptor {
@@ -136,6 +140,11 @@ export default async function TagDetailPage({
   const scanning = env.clairEnabled;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
+  // Tag rules: lock badges for a tag reference, and whether the image may be deleted by digest.
+  const canManage = role === "owner" || role === "admin";
+  const rules = await effectiveTagRules(found.repo.organizationId, found.repo.id);
+  const flags = isDigestRef ? null : tagFlags(rules, reference);
+  const deletion = canManage ? await manifestDeleteBlocker(found.repo, digest) : null;
 
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],
@@ -160,20 +169,48 @@ export default async function TagDetailPage({
           <ArrowLeft className="size-4" /> {path}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="break-all font-mono text-xl font-semibold tracking-tight">
-            <span className="text-ink-2">{repoName}</span>
-            <span className="text-ink-3">{isDigestRef ? "@" : ":"}</span>
-            {isDigestRef ? digest.slice(7, 19) : reference}
-          </h1>
-          {canRescan && (
-            <form action={requestRescan}>
-              <input type="hidden" name="repositoryId" value={found.repo.id} />
-              <input type="hidden" name="digest" value={digest} />
-              <Button type="submit" variant="secondary" size="sm">
-                <RotateCw className="size-3.5" /> Re-scan
-              </Button>
-            </form>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="break-all font-mono text-xl font-semibold tracking-tight">
+              <span className="text-ink-2">{repoName}</span>
+              <span className="text-ink-3">{isDigestRef ? "@" : ":"}</span>
+              {isDigestRef ? digest.slice(7, 19) : reference}
+            </h1>
+            {flags && (flags.immutable || flags.protected) && (
+              <span className="inline-flex gap-1">
+                <RuleBadges
+                  immutable={!!flags.immutable}
+                  isProtected={!!flags.protected}
+                  title={[
+                    flags.immutable && `Immutable (rule "${flags.immutable.pattern}"): cannot be re-pointed at another image`,
+                    flags.protected && `Protected (rule "${flags.protected.pattern}"): cannot be deleted`,
+                  ]
+                    .filter(Boolean)
+                    .join("; ")}
+                />
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canRescan && (
+              <form action={requestRescan}>
+                <input type="hidden" name="repositoryId" value={found.repo.id} />
+                <input type="hidden" name="digest" value={digest} />
+                <Button type="submit" variant="secondary" size="sm">
+                  <RotateCw className="size-3.5" /> Re-scan
+                </Button>
+              </form>
+            )}
+            {deletion && (
+              <DeleteManifestButton
+                repositoryId={found.repo.id}
+                digest={digest}
+                tags={deletion.tags}
+                blocked={deletion.reason}
+                variant="button"
+                afterDelete={`/${path}`}
+              />
+            )}
+          </div>
         </div>
       </div>
 

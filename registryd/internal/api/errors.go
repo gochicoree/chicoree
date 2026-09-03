@@ -46,10 +46,11 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(ociErrors{Errors: []ociError{{Code: code, Message: message}}})
 }
 
-// writeStoreError maps quota violations to 403 DENIED with the reason and
-// everything else to an opaque 500.
+// writeStoreError maps quota violations and tag-rule violations (immutable
+// or protected tags) to 403 DENIED with the reason and everything else to an
+// opaque 500.
 func writeStoreError(w http.ResponseWriter, r *http.Request, err error) {
-	if store.IsQuotaError(err) {
+	if store.IsQuotaError(err) || store.IsPolicyError(err) {
 		writeError(w, http.StatusForbidden, CodeDenied, err.Error())
 		return
 	}

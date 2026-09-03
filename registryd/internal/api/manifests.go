@@ -159,6 +159,16 @@ func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *r
 		return
 	}
 
+	// Immutable tags (tag_rules) may not be re-pointed; refuse before
+	// anything is written. UpsertTagGuarded repeats the check under a row
+	// lock so concurrent pushes cannot race past it.
+	if isTag {
+		if err := s.store.CheckTagImmutable(r.Context(), repo, ref, digest); err != nil {
+			writeStoreError(w, r, err)
+			return
+		}
+	}
+
 	// Existence checks for everything the manifest references.
 	if parsed.Config != nil {
 		if _, err := s.store.LinkedBlobSize(r.Context(), repo.ID, parsed.Config.Digest); err != nil {
@@ -213,8 +223,8 @@ func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *r
 	tag := ""
 	if isTag {
 		tag = ref
-		if err := s.store.UpsertTag(r.Context(), repo.ID, tag, digest); err != nil {
-			writeInternal(w, r, err)
+		if err := s.store.UpsertTagGuarded(r.Context(), repo, tag, digest); err != nil {
+			writeStoreError(w, r, err)
 			return
 		}
 	}
@@ -255,6 +265,11 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 			writeError(w, http.StatusBadRequest, CodeTagInvalid, "invalid tag name")
 			return
 		}
+		// Protected tags (tag_rules) cannot be removed.
+		if err := s.store.CheckTagDeletable(r.Context(), repo, ref); err != nil {
+			writeStoreError(w, r, err)
+			return
+		}
 		// Resolve the digest first so the web app learns which image the tag
 		// named (the row is gone after the delete).
 		digest, _ := s.store.ResolveTag(r.Context(), repo.ID, ref)
@@ -277,6 +292,12 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 		return
 	}
 
+	// A manifest named by a protected tag cannot be removed by digest either
+	// (the tag rows would cascade away with it).
+	if err := s.store.CheckManifestDeletable(r.Context(), repo, ref); err != nil {
+		writeStoreError(w, r, err)
+		return
+	}
 	// Tags are removed by cascade; collect them before the delete for the event.
 	tagNames, _ := s.store.TagsForManifest(r.Context(), repo.ID, ref)
 	err = s.store.DeleteManifest(r.Context(), repo.ID, ref)

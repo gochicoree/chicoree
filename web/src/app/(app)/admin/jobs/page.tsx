@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { AdminNav } from "../admin-nav";
 import { JobCard } from "./job-card";
+import { RunResult } from "./run-result";
 
 export const metadata: Metadata = { title: "Jobs" };
 
@@ -118,8 +119,8 @@ export default async function JobsPage() {
                         </Badge>
                       </td>
                       <td className="hidden px-4 py-2.5 font-mono text-xs text-ink-2 md:table-cell">{JSON.stringify(run.params ?? {})}</td>
-                      <td className="hidden max-w-xs truncate px-4 py-2.5 font-mono text-xs text-ink-2 sm:table-cell" title={run.error ?? ""}>
-                        {run.error ?? JSON.stringify(run.result ?? {})}
+                      <td className="hidden max-w-xs px-4 py-2.5 font-mono text-xs text-ink-2 sm:table-cell">
+                        <RunResult job={run.job} result={run.result} error={run.error} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right text-xs text-ink-3">{relativeTime(run.startedAt)}</td>
                     </tr>

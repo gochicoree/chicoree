@@ -302,7 +302,8 @@ export async function recentActivity(opts: {
     SELECT e.id, e.type, e.actor_type, e.tag, e.manifest_digest, e.created_at,
       o.slug || '/' || r.name AS repo_path,
       CASE e.actor_type
-        WHEN 'user' THEN COALESCE((SELECT u.name FROM "user" u WHERE u.id = e.actor_id), 'deleted user')
+        WHEN 'user' THEN CASE WHEN e.actor_id = 'system' THEN 'system'
+          ELSE COALESCE((SELECT u.name FROM "user" u WHERE u.id = e.actor_id), 'deleted user') END
         WHEN 'sa' THEN COALESCE((SELECT sa.name FROM service_accounts sa WHERE sa.id = e.actor_id), 'deleted service account')
         ELSE NULL
       END AS actor_name
