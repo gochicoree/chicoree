@@ -11,6 +11,7 @@ import (
 
 	"registryd/internal/storage"
 	"registryd/internal/store"
+	"registryd/internal/traffic"
 )
 
 func uploadLocation(name, id string) string {
@@ -239,6 +240,9 @@ func (s *Server) commitUpload(w http.ResponseWriter, r *http.Request, rc *reqCtx
 		return
 	}
 	s.staging.Remove(id)
+	// Ingress is counted once per successful upload: the bytes the client
+	// sent across every PATCH/PUT of this session (mounts send nothing).
+	s.countTraffic(repo.ID, traffic.Delta{PushBytes: size})
 
 	w.Header().Set("Location", blobLocation(rc.name, actual))
 	w.Header().Set("Docker-Content-Digest", actual)

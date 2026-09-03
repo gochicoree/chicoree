@@ -48,7 +48,7 @@ async function clairUp(): Promise<number> {
 /** Render the whole exposition; a few aggregate queries plus two health probes. */
 export async function renderMetrics(): Promise<string> {
   const started = performance.now();
-  const [totals, byRepo, events, scans, findings, automation, health, clair] = await Promise.all([
+  const [totals, byRepo, events, scans, findings, automation, health, clair, trafficByRepo, trafficTotals] = await Promise.all([
     db.execute(sql`
       SELECT
         (SELECT count(*) FROM "user" WHERE role = 'admin')::int AS admins,
@@ -95,6 +95,21 @@ export async function renderMetrics(): Promise<string> {
       SELECT 'job', status, job, count(*)::bigint FROM job_runs GROUP BY job, status`),
     registryHealth(),
     clairUp(),
+    db.execute(sql`
+      SELECT o.slug AS org, r.name,
+        sum(t.pull_bytes)::bigint AS egress,
+        sum(t.push_bytes)::bigint AS ingress,
+        sum(t.redirect_bytes)::bigint AS redirect
+      FROM repository_traffic t
+      JOIN repositories r ON r.id = t.repository_id
+      JOIN organization o ON o.id = r.organization_id
+      GROUP BY o.slug, r.name
+      ORDER BY o.slug, r.name`),
+    db.execute(sql`
+      SELECT COALESCE(sum(pull_bytes), 0)::bigint AS egress,
+        COALESCE(sum(push_bytes), 0)::bigint AS ingress,
+        COALESCE(sum(redirect_bytes), 0)::bigint AS redirect
+      FROM repository_traffic`),
   ]);
 
   const t = totals.rows[0];
@@ -154,6 +169,19 @@ export async function renderMetrics(): Promise<string> {
     rows.filter((r) => r.kind === "webhook").map((r) => [{ status: String(r.k) }, num(r.n)] as Sample));
   x.add("chicoree_job_runs_total", "counter", "Maintenance job runs by job and outcome.",
     rows.filter((r) => r.kind === "job").map((r) => [{ job: String(r.j), status: String(r.k) }, num(r.n)] as Sample));
+  const repoLabels = (r: Record<string, unknown>) => ({ organization: String(r.org), repository: String(r.name) });
+  x.add("chicoree_repository_egress_bytes_total", "counter", "Bytes registryd served for the repository (blob and manifest GETs; partial responses count what was sent).",
+    trafficByRepo.rows.map((r) => [repoLabels(r), num(r.egress)] as Sample));
+  x.add("chicoree_repository_ingress_bytes_total", "counter", "Bytes received for the repository (committed uploads and manifest PUTs).",
+    trafficByRepo.rows.map((r) => [repoLabels(r), num(r.ingress)] as Sample));
+  x.add("chicoree_repository_redirect_bytes_total", "counter", "Blob bytes handed to the storage backend via redirect instead of being served by registryd.",
+    trafficByRepo.rows.map((r) => [repoLabels(r), num(r.redirect)] as Sample));
+  const tt = trafficTotals.rows[0];
+  x.add("chicoree_traffic_bytes_total", "counter", "Instance traffic by direction: egress served by registryd, ingress received, redirect offloaded to storage.", [
+    [{ direction: "egress" }, num(tt.egress)],
+    [{ direction: "ingress" }, num(tt.ingress)],
+    [{ direction: "redirect" }, num(tt.redirect)],
+  ]);
   x.add("chicoree_scrape_duration_seconds", "gauge", "Time spent collecting this exposition.", [[{}, (performance.now() - started) / 1000]]);
   return x.toString();
 }

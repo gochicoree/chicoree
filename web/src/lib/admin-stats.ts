@@ -236,6 +236,116 @@ export async function automationOverview(): Promise<AutomationOverview> {
   };
 }
 
+// --- Traffic in bytes (repository_traffic, written by registryd) ---
+
+export interface TrafficBytesDay {
+  day: string;
+  /** Bytes served by registryd (blob + manifest GETs). */
+  egress: number;
+  /** Bytes received (committed uploads + manifest PUTs). */
+  ingress: number;
+  /** Blob sizes of GETs answered with a redirect to the storage backend. */
+  redirect: number;
+}
+
+export async function trafficBytesSeries(days = 30): Promise<TrafficBytesDay[]> {
+  const { rows } = await db.execute(sql`
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+      COALESCE(t.egress, 0)::bigint AS egress,
+      COALESCE(t.ingress, 0)::bigint AS ingress,
+      COALESCE(t.redirect, 0)::bigint AS redirect
+    FROM generate_series(
+      (now() AT TIME ZONE 'utc')::date - ${days - 1}::int,
+      (now() AT TIME ZONE 'utc')::date,
+      interval '1 day') AS d(day)
+    LEFT JOIN (
+      SELECT day, sum(pull_bytes) AS egress, sum(push_bytes) AS ingress, sum(redirect_bytes) AS redirect
+      FROM repository_traffic
+      WHERE day >= (now() AT TIME ZONE 'utc')::date - ${days - 1}::int
+      GROUP BY day
+    ) t ON t.day = d.day
+    ORDER BY d.day`);
+  return rows.map((r) => ({ day: String(r.day), egress: Number(r.egress), ingress: Number(r.ingress), redirect: Number(r.redirect) }));
+}
+
+export const toBytesSeries = (days: TrafficBytesDay[], key: "egress" | "ingress" | "redirect"): DayCount[] =>
+  days.map((d) => ({ day: d.day, count: d[key] }));
+
+export interface TopEgressRepo {
+  id: string;
+  org: string;
+  name: string;
+  visibility: string;
+  egress30d: number;
+  redirect30d: number;
+  ingress30d: number;
+  blobPulls30d: number;
+}
+
+/** Repositories that caused the most egress in the last 30 days. */
+export async function topRepositoriesByEgress(limit = 8): Promise<TopEgressRepo[]> {
+  const { rows } = await db.execute(sql`
+    SELECT r.id, r.name, o.slug AS org, r.visibility,
+      sum(t.pull_bytes)::bigint AS egress,
+      sum(t.redirect_bytes)::bigint AS redirect,
+      sum(t.push_bytes)::bigint AS ingress,
+      sum(t.blob_pulls)::bigint AS blob_pulls
+    FROM repository_traffic t
+    JOIN repositories r ON r.id = t.repository_id
+    JOIN organization o ON o.id = r.organization_id
+    WHERE t.day > (now() AT TIME ZONE 'utc')::date - 30
+    GROUP BY r.id, r.name, o.slug, r.visibility
+    HAVING sum(t.pull_bytes) + sum(t.redirect_bytes) > 0
+    ORDER BY sum(t.pull_bytes) + sum(t.redirect_bytes) DESC, o.slug, r.name
+    LIMIT ${limit}`);
+  return rows.map((r) => ({
+    id: String(r.id),
+    org: String(r.org),
+    name: String(r.name),
+    visibility: String(r.visibility),
+    egress30d: Number(r.egress),
+    redirect30d: Number(r.redirect),
+    ingress30d: Number(r.ingress),
+    blobPulls30d: Number(r.blob_pulls),
+  }));
+}
+
+export interface OrgTraffic {
+  id: string;
+  slug: string;
+  name: string;
+  egress30d: number;
+  redirect30d: number;
+  ingress30d: number;
+}
+
+/** Egress / ingress per organization, last 30 days (organizations without traffic included). */
+export async function trafficByOrganization(): Promise<OrgTraffic[]> {
+  const { rows } = await db.execute(sql`
+    SELECT o.id, o.slug, o.name,
+      COALESCE(t.egress, 0)::bigint AS egress,
+      COALESCE(t.redirect, 0)::bigint AS redirect,
+      COALESCE(t.ingress, 0)::bigint AS ingress
+    FROM organization o
+    LEFT JOIN (
+      SELECT r.organization_id,
+        sum(t.pull_bytes) AS egress, sum(t.redirect_bytes) AS redirect, sum(t.push_bytes) AS ingress
+      FROM repository_traffic t
+      JOIN repositories r ON r.id = t.repository_id
+      WHERE t.day > (now() AT TIME ZONE 'utc')::date - 30
+      GROUP BY r.organization_id
+    ) t ON t.organization_id = o.id
+    ORDER BY egress DESC, ingress DESC, o.name`);
+  return rows.map((r) => ({
+    id: String(r.id),
+    slug: String(r.slug),
+    name: String(r.name),
+    egress30d: Number(r.egress),
+    redirect30d: Number(r.redirect),
+    ingress30d: Number(r.ingress),
+  }));
+}
+
 /** Who pushes and pulls: activity by actor type, last 30 days. */
 export async function actorBreakdown(): Promise<{ actor: string; pulls: number; pushes: number }[]> {
   const { rows } = await db.execute(sql`

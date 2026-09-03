@@ -21,6 +21,7 @@ import (
 	"registryd/internal/hooks"
 	"registryd/internal/storage"
 	"registryd/internal/store"
+	"registryd/internal/traffic"
 
 	// Storage plugins register themselves on import. Add new backends here.
 	_ "registryd/internal/storage/bunny"
@@ -83,6 +84,24 @@ func main() {
 	notifier := hooks.NewNotifier(cfg.WebhookURL, cfg.WebhookSecret)
 	server := api.NewServer(cfg, st, driver, staging, verifier, notifier)
 
+	// Egress/ingress accounting: aggregated in memory, flushed to
+	// repository_traffic every 10s and once more on shutdown.
+	counter := traffic.New(st.UpsertTraffic)
+	server.UseTraffic(counter)
+	trafficDone := make(chan struct{})
+	go func() {
+		defer close(trafficDone)
+		counter.Run(ctx, 10*time.Second)
+	}()
+
+	// Pull rate limits: the admin panel's settings row, else the environment;
+	// re-read every 30s so changes apply without a restart.
+	if err := server.EnableRateLimiting(ctx); err != nil {
+		slog.Error("rate limit configuration invalid", "err", err)
+		os.Exit(1)
+	}
+	go server.RunRateLimitReload(ctx, 30*time.Second)
+
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           server.Handler(),
@@ -118,6 +137,9 @@ func main() {
 		slog.Error("http server failed", "err", err)
 		os.Exit(1)
 	}
+	// Let the traffic counter write its last batch before the process ends.
+	stop()
+	<-trafficDone
 	slog.Info("registryd stopped")
 }
 

@@ -170,6 +170,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Instance administrators always carry the catalog grant, so registryd
+  // recognises them (they are exempt from pull rate limits) whatever scope
+  // the client asked for — admins may do everything anyway.
+  if (caller.kind === "user" && caller.isAdmin && !access.some((g) => g.type === "registry" && g.name === "catalog")) {
+    access.push({ type: "registry", name: "catalog", actions: ["*"] });
+  }
+
   const { token, issuedAt, expiresIn } = await signRegistryToken(callerSubject(caller), access);
   return NextResponse.json({
     token,

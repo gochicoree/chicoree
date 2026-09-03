@@ -12,6 +12,7 @@ import (
 	"registryd/internal/hooks"
 	"registryd/internal/manifest"
 	"registryd/internal/store"
+	"registryd/internal/traffic"
 )
 
 // maxManifestBytes caps manifest payloads (the spec recommends 4 MiB).
@@ -32,6 +33,11 @@ var errTagInvalid = errors.New("invalid tag")
 
 // handleManifestGet serves GET/HEAD /v2/<name>/manifests/<ref>.
 func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
+	// Manifest requests are what counts as a pull, so this is where the pull
+	// rate limit applies (before any database work; see ratelimit.go).
+	if !s.enforcePullLimit(w, r, rc) {
+		return
+	}
 	// Proxy-cache organizations fill the local copy from the upstream first
 	// (see proxy.go); everything below then serves it like any other image.
 	px := s.proxyFor(r.Context(), rc.org)
@@ -86,9 +92,11 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 	w.Header().Set("Docker-Content-Digest", m.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(m.Size, 10))
 	w.WriteHeader(http.StatusOK)
+	var written int
 	if r.Method != http.MethodHead {
-		_, _ = w.Write(m.Payload)
+		written, _ = w.Write(m.Payload)
 	}
+	s.countTraffic(repo.ID, traffic.Delta{PullBytes: int64(written), ManifestPulls: 1})
 
 	// A pull is any manifest request, GET or HEAD — clients with warm caches
 	// only HEAD to revalidate, and that still counts as image usage (the same
@@ -211,6 +219,7 @@ func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *r
 		}
 	}
 	_ = s.store.TouchRepository(r.Context(), repo.ID)
+	s.countTraffic(repo.ID, traffic.Delta{PushBytes: int64(len(payload))})
 	s.recordEvent(&store.Event{
 		RepositoryID: repo.ID, Type: "push",
 		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(),

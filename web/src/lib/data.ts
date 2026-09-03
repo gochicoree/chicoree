@@ -221,6 +221,58 @@ export async function pullSeries(opts: {
   return rows.map((r) => ({ day: r.day as string, count: Number(r.count) }));
 }
 
+// --- Traffic in bytes (repository_traffic, written by registryd) ---
+
+type TrafficScope = { repoId?: string; orgId?: string; days?: number };
+
+function trafficScopeSql(opts: TrafficScope) {
+  return opts.repoId
+    ? sql`AND t.repository_id = ${opts.repoId}`
+    : opts.orgId
+      ? sql`AND t.repository_id IN (SELECT id FROM repositories WHERE organization_id = ${opts.orgId})`
+      : sql``;
+}
+
+/** Bytes served by registryd per day (zero-filled), for the egress chart. */
+export async function egressSeries(opts: TrafficScope): Promise<DayCountRow[]> {
+  const days = opts.days ?? 30;
+  const { rows } = await db.execute(sql`
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day, COALESCE(c.bytes, 0)::bigint AS count
+    FROM generate_series(
+      (now() AT TIME ZONE 'utc')::date - ${days - 1}::int,
+      (now() AT TIME ZONE 'utc')::date,
+      interval '1 day') AS d(day)
+    LEFT JOIN (
+      SELECT t.day, sum(t.pull_bytes) AS bytes
+      FROM repository_traffic t
+      WHERE t.day >= (now() AT TIME ZONE 'utc')::date - ${days - 1}::int
+      ${trafficScopeSql(opts)}
+      GROUP BY t.day
+    ) c ON c.day = d.day
+    ORDER BY d.day`);
+  return rows.map((r) => ({ day: r.day as string, count: Number(r.count) }));
+}
+
+export interface TrafficSummary {
+  egressBytes: number;
+  ingressBytes: number;
+  redirectBytes: number;
+}
+
+/** Totals over the last N days for a repository or organization. */
+export async function trafficSummary(opts: TrafficScope): Promise<TrafficSummary> {
+  const days = opts.days ?? 30;
+  const { rows } = await db.execute(sql`
+    SELECT COALESCE(sum(t.pull_bytes), 0)::bigint AS egress,
+      COALESCE(sum(t.push_bytes), 0)::bigint AS ingress,
+      COALESCE(sum(t.redirect_bytes), 0)::bigint AS redirect
+    FROM repository_traffic t
+    WHERE t.day >= (now() AT TIME ZONE 'utc')::date - ${days - 1}::int
+    ${trafficScopeSql(opts)}`);
+  const r = rows[0];
+  return { egressBytes: Number(r?.egress ?? 0), ingressBytes: Number(r?.ingress ?? 0), redirectBytes: Number(r?.redirect ?? 0) };
+}
+
 export interface ActivityItem {
   id: number;
   type: string;

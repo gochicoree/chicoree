@@ -3,12 +3,12 @@ package api
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 
 	"registryd/internal/storage"
 	"registryd/internal/store"
+	"registryd/internal/traffic"
 )
 
 // handleBlobGet serves GET/HEAD /v2/<name>/blobs/<digest>. Access control is
@@ -47,6 +47,7 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Accept-Ranges", "bytes")
 
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
@@ -55,12 +56,16 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 	}
 
 	// Offload large transfers to the backend when it supports signed URLs.
+	// The client repeats its Range header against that URL, which S3 and
+	// the bunny CDN honour; the whole blob is accounted as redirected once.
 	if url, err := s.driver.RedirectURL(r.Context(), digest); err == nil && url != "" {
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		s.countTraffic(repo.ID, traffic.Delta{RedirectBytes: size, BlobPulls: 1})
 		return
 	}
 
-	body, actualSize, err := s.driver.Get(r.Context(), digest)
+	// Full body or a single byte range (206), see ranges.go.
+	written, status, err := writeBlobContent(w, r, s.driver, digest, size)
 	if errors.Is(err, storage.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeBlobUnknown, "blob content missing from storage")
 		return
@@ -68,10 +73,9 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 		writeInternal(w, r, err)
 		return
 	}
-	defer body.Close()
-	w.Header().Set("Content-Length", strconv.FormatInt(actualSize, 10))
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, body)
+	if status == http.StatusOK || status == http.StatusPartialContent {
+		s.countTraffic(repo.ID, traffic.Delta{PullBytes: written, BlobPulls: 1})
+	}
 }
 
 // handleBlobDelete unlinks the blob from the repository; the content itself

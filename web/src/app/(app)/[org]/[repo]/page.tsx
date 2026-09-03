@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { getRepoByPath, listRepoTags, pullSeries } from "@/lib/data";
+import { egressSeries, getRepoByPath, listRepoTags, pullSeries, trafficSummary } from "@/lib/data";
 import { env } from "@/lib/env";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
@@ -30,10 +30,12 @@ export default async function RepoPage({
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
 
-  const [tagList, series, proxy] = await Promise.all([
+  const [tagList, series, proxy, egress, traffic] = await Promise.all([
     listRepoTags(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
+    role ? egressSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
+    role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
   ]);
   const path = `${orgSlug}/${repoName}`;
   const base = repoHref(orgSlug, repoName);
@@ -68,7 +70,9 @@ export default async function RepoPage({
           </div>
           {found.repo.description && <p className="mt-1 text-sm text-ink-2">{found.repo.description}</p>}
           <p className="mt-1 font-mono text-xs text-ink-3">
-            {formatCount(found.repo.pullCount)} pulls · updated {relativeTime(found.repo.updatedAt)}
+            {formatCount(found.repo.pullCount)} pulls
+            {traffic && ` · ${formatBytes(traffic.egressBytes + traffic.redirectBytes)} egress in 30 days`}
+            {" · "}updated {relativeTime(found.repo.updatedAt)}
             {proxy && ` · upstream checked ${lastChecked ? relativeTime(lastChecked) : "never"}`}
           </p>
         </div>
@@ -172,12 +176,22 @@ export default async function RepoPage({
       </Card>
 
       {role && series && (
-        <Card>
-          <CardHeader eyebrow="Activity" title="Pulls per day" description="Last 30 days, this repository" />
-          <CardBody>
-            <PullsChart data={series} height={130} />
-          </CardBody>
-        </Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader eyebrow="Activity" title="Pulls per day" description="Last 30 days, this repository" />
+            <CardBody>
+              <PullsChart data={series} height={130} />
+            </CardBody>
+          </Card>
+          {egress && (
+            <Card>
+              <CardHeader eyebrow="Activity" title="Egress per day" description="Bytes served by the registry, last 30 days" />
+              <CardBody>
+                <PullsChart data={egress} height={130} kind="bytes" />
+              </CardBody>
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );

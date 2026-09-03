@@ -13,8 +13,10 @@ import (
 	"registryd/internal/auth"
 	"registryd/internal/config"
 	"registryd/internal/hooks"
+	"registryd/internal/ratelimit"
 	"registryd/internal/storage"
 	"registryd/internal/store"
+	"registryd/internal/traffic"
 	"registryd/internal/upstream"
 )
 
@@ -29,6 +31,10 @@ type Server struct {
 	// proxies holds the pull-through proxy configuration (see proxy.go).
 	proxies *proxyRegistry
 	started time.Time
+	// Optional: pull rate limiting (see ratelimit.go) and traffic accounting
+	// (see traffic.go); nil disables the feature.
+	limiter *ratelimit.Manager
+	traffic *traffic.Counter
 }
 
 func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging *storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {

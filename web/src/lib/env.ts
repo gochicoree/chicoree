@@ -227,4 +227,17 @@ export const env = {
     const n = Number(process.env.AUDIT_RETENTION_DAYS ?? 365);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 365;
   },
+  // Pull rate limits ("<count>/<window>", e.g. 100/6h; empty = unlimited) as
+  // defaults for the admin panel's Rate limits section. registryd reads the
+  // same variables when the section was never saved.
+  get rateLimitAnonymous() {
+    return process.env.RATE_LIMIT_ANONYMOUS ?? "";
+  },
+  get rateLimitAuthenticated() {
+    return process.env.RATE_LIMIT_AUTHENTICATED ?? "";
+  },
+  /** CIDRs whose X-Forwarded-For registryd trusts for the client address. */
+  get rateLimitTrustedProxies() {
+    return process.env.RATE_LIMIT_TRUSTED_PROXIES ?? "";
+  },
 };

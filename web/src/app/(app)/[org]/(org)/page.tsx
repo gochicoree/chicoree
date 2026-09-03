@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Plus } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { listOrgRepos, pullSeries } from "@/lib/data";
+import { egressSeries, listOrgRepos, pullSeries, trafficSummary } from "@/lib/data";
 import { formatBytes } from "@/lib/format";
 import { RepoTable } from "@/components/repo-table";
 import { StatTile } from "@/components/page-header";
@@ -22,10 +22,12 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
   if (!ctx) notFound();
   const { org, role } = ctx;
 
-  const [repos, series, proxy] = await Promise.all([
+  const [repos, series, proxy, egress, traffic] = await Promise.all([
     listOrgRepos(org.id, !!role),
     role ? pullSeries({ orgId: org.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(org.id),
+    role ? egressSeries({ orgId: org.id, days: 30 }) : Promise.resolve(null),
+    role ? trafficSummary({ orgId: org.id, days: 30 }) : Promise.resolve(null),
   ]);
   // Proxy caches are filled by pulls, never by pushes or the UI.
   const canWrite = !!role && WRITER_ROLES.includes(role) && !proxy;
@@ -35,10 +37,15 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
   return (
     <div className="space-y-6">
       {role && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Repositories" value={repos.length} />
           <StatTile label="Logical size" value={formatBytes(totalSize)} />
-          <StatTile label="Total pulls" value={totalPulls} className="col-span-2 sm:col-span-1" />
+          <StatTile label="Total pulls" value={totalPulls} />
+          <StatTile
+            label="Egress, 30 days"
+            value={formatBytes((traffic?.egressBytes ?? 0) + (traffic?.redirectBytes ?? 0))}
+            detail={traffic?.redirectBytes ? `${formatBytes(traffic.redirectBytes)} via storage redirects` : `${formatBytes(traffic?.ingressBytes ?? 0)} ingress`}
+          />
         </div>
       )}
 
@@ -82,12 +89,22 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
       </div>
 
       {role && series && (
-        <Card>
-          <CardHeader eyebrow="Activity" title="Pulls per day" description="Last 30 days, this organization" />
-          <CardBody>
-            <PullsChart data={series} height={140} />
-          </CardBody>
-        </Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader eyebrow="Activity" title="Pulls per day" description="Last 30 days, this organization" />
+            <CardBody>
+              <PullsChart data={series} height={140} />
+            </CardBody>
+          </Card>
+          {egress && (
+            <Card>
+              <CardHeader eyebrow="Activity" title="Egress per day" description="Bytes served by the registry, last 30 days" />
+              <CardBody>
+                <PullsChart data={egress} height={140} kind="bytes" />
+              </CardBody>
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  date,
   foreignKey,
   index,
   integer,
@@ -498,3 +499,29 @@ export const organizationProxies = pgTable("organization_proxies", {
   lastError: text("last_error"),
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
 });
+// --- Traffic accounting (written by registryd, read by the web app) ---
+
+/**
+ * Egress/ingress per repository and UTC day. registryd aggregates in memory
+ * and upserts every few seconds (registryd/internal/traffic); the web app
+ * only reads. pull_bytes are bytes registryd itself served (blob + manifest
+ * GETs, partial responses count what was sent); redirect_bytes are blob
+ * sizes of GETs answered with a redirect to the storage backend (the bytes
+ * then leave S3/CDN, not the registry); push_bytes are bytes received for
+ * committed uploads and manifest PUTs.
+ */
+export const repositoryTraffic = pgTable(
+  "repository_traffic",
+  {
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    pullBytes: bigint("pull_bytes", { mode: "number" }).notNull().default(0),
+    pushBytes: bigint("push_bytes", { mode: "number" }).notNull().default(0),
+    redirectBytes: bigint("redirect_bytes", { mode: "number" }).notNull().default(0),
+    blobPulls: bigint("blob_pulls", { mode: "number" }).notNull().default(0),
+    manifestPulls: bigint("manifest_pulls", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.repositoryId, t.day] }), index("repository_traffic_day_idx").on(t.day)],
+);
