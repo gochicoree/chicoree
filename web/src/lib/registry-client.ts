@@ -59,6 +59,40 @@ export async function triggerGarbageCollection(grace?: string): Promise<
   }
 }
 
+/** What GET /internal/v1/status on registryd reports (bearer = webhook secret). */
+export interface RegistryStatus {
+  status: string;
+  version: string;
+  goVersion: string;
+  storage: string;
+  stagingDir: string;
+  /** -1 when unknown. */
+  stagingFreeBytes: number;
+  blobCount: number;
+  blobBytes: number;
+  startedAt: string;
+  uptimeSeconds: number;
+  publicKeyFingerprint: string;
+  authDisabled: boolean;
+  databaseError?: string;
+}
+
+/** Build, storage and key facts from registryd for the health page; null when unreachable. */
+export async function registryStatus(timeoutMs = 3000): Promise<{ status: RegistryStatus; latencyMs: number } | { error: string }> {
+  const started = Date.now();
+  try {
+    const res = await fetch(`${env.registryInternalUrl}/internal/v1/status`, {
+      headers: { Authorization: `Bearer ${env.webhookSecret}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return { error: `registry answered ${res.status} to /internal/v1/status` };
+    return { status: (await res.json()) as RegistryStatus, latencyMs: Date.now() - started };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "registry unreachable" };
+  }
+}
+
 /** Health probe used on the admin screen. */
 export async function registryHealth(): Promise<{ ok: boolean; storage?: string }> {
   try {

@@ -37,24 +37,29 @@ export async function sendMail(opts: { to: string; subject: string; text: string
 export async function sendTestMail(smtp: SmtpSettings, to: string): Promise<void> {
   const transporter = build(smtp);
   if (!transporter) throw new Error("Enter an SMTP host first.");
+  const brand = (await getInstanceSettings()).branding.instanceName || "Chicorée";
   await transporter.sendMail({
     from: smtp.from,
     to,
-    subject: "Chicorée test email",
-    text: "If you can read this, outgoing email from your Chicorée registry works.",
-    html: mailLayout("Test email", "<p>If you can read this, outgoing email from your Chicorée registry works.</p>"),
+    subject: `${brand} test email`,
+    text: `If you can read this, outgoing email from your ${brand} registry works.`,
+    html: mailLayout("Test email", `<p>If you can read this, outgoing email from your ${brand} registry works.</p>`, brand),
   });
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // Shared minimal HTML wrapper so every mail reads as coming from the same
-// product.
-export function mailLayout(title: string, bodyHtml: string): string {
+// product. `brand` is the instance name from the branding settings.
+export function mailLayout(title: string, bodyHtml: string, brand = "Chicorée"): string {
   return `<!doctype html>
 <html><body style="margin:0;padding:32px;background:#f4f6f7;font-family:ui-sans-serif,system-ui,sans-serif;color:#14252e">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d9e0e4;border-radius:12px">
       <tr><td style="padding:28px 32px 0 32px">
-        <div style="font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#5a6e79;font-weight:600">Chicorée Registry</div>
+        <div style="font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#5a6e79;font-weight:600">${escapeHtml(brand)}</div>
         <h1 style="font-size:20px;margin:12px 0 0 0">${title}</h1>
       </td></tr>
       <tr><td style="padding:16px 32px 28px 32px;font-size:14px;line-height:1.6">${bodyHtml}</td></tr>

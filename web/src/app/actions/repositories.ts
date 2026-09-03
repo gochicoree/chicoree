@@ -12,6 +12,7 @@ import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
 import { checkRepoQuota } from "@/lib/quota";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
+import { recordAudit } from "@/lib/audit";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -70,7 +71,8 @@ export async function createRepository(
   const quota = await checkRepoQuota(orgId, visibility, org.name);
   if (quota) return { error: quota };
 
-  await db.insert(repositories).values({ organizationId: orgId, name, description, visibility });
+  const [created] = await db.insert(repositories).values({ organizationId: orgId, name, description, visibility }).returning({ id: repositories.id });
+  await recordAudit({ action: "repo.create", organizationId: orgId, targetType: "repository", targetId: created.id, targetLabel: `${org.slug}/${name}`, details: { visibility } });
   revalidatePath(`/${org.slug}`);
   redirect(repoHref(org.slug, name));
 }
@@ -97,6 +99,7 @@ export async function updateRepository(
     .where(eq(repositories.id, repoId));
 
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  await recordAudit({ action: visibility !== repo.visibility ? "repo.visibility" : "repo.update", organizationId: repo.organizationId, targetType: "repository", targetId: repoId, targetLabel: `${org?.slug}/${repo.name}`, details: visibility !== repo.visibility ? { from: repo.visibility, to: visibility } : { description: description !== repo.description } });
   revalidatePath(`/${org?.slug}/${repo.name}`);
   return {};
 }
@@ -113,6 +116,7 @@ export async function deleteRepository(formData: FormData): Promise<void> {
   // is reclaimed by the next garbage-collection pass.
   await db.delete(repositories).where(eq(repositories.id, repoId));
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  await recordAudit({ action: "repo.delete", organizationId: repo.organizationId, targetType: "repository", targetId: repoId, targetLabel: `${org?.slug}/${repo.name}`, details: { visibility: repo.visibility } });
   revalidatePath(`/${org?.slug}`);
   redirect(`/${org?.slug}`);
 }
@@ -127,6 +131,7 @@ export async function deleteTag(formData: FormData): Promise<void> {
 
   await db.delete(tags).where(and(eq(tags.repositoryId, repoId), eq(tags.name, tagName)));
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  await recordAudit({ action: "tag.delete", organizationId: repo.organizationId, targetType: "tag", targetId: `${repoId}:${tagName}`, targetLabel: `${org?.slug}/${repo.name}:${tagName}` });
   revalidatePath(`/${org?.slug}/${repo.name}`);
 }
 
@@ -142,6 +147,7 @@ export async function requestRescan(formData: FormData): Promise<void> {
   if (!org) return;
 
   const path = `${org.slug}/${repo.name}`;
+  await recordAudit({ action: "scan.request", organizationId: repo.organizationId, targetType: "manifest", targetId: digest, targetLabel: `${path}@${digest.slice(0, 19)}` });
   after(async () => {
     await runScan(path, digest).catch((err) => console.error("rescan failed:", err));
   });
@@ -166,6 +172,7 @@ export async function deleteTagAction(formData: FormData): Promise<DeleteTagResu
   try {
     const outcome = await removeTag(repositoryId, tag, `user:${session.user.id}`);
     const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+    await recordAudit({ action: "tag.delete", organizationId: repo.organizationId, targetType: "tag", targetId: `${repositoryId}:${tag}`, targetLabel: `${org?.slug}/${repo.name}:${tag}`, details: { outcome } });
     revalidatePath(`/${org?.slug}/${repo.name}`);
     return { outcome };
   } catch (err) {

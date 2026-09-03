@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Compass, Menu, Settings, X } from "lucide-react";
-import { Chicory } from "@/components/brand";
-import { Sidebar, type NavOrg } from "./sidebar";
+import { BrandLockup } from "@/components/brand";
+import { Sidebar, type NavBranding, type NavOrg } from "./sidebar";
 
 /**
  * Small-screen shell: a slim sticky header with a menu button, and the full
@@ -15,10 +15,14 @@ export function MobileNav({
   orgs,
   user,
   isAdmin,
+  branding,
+  canCreateOrgs,
 }: {
   orgs: NavOrg[];
   user: { name: string; email: string };
   isAdmin: boolean;
+  branding?: NavBranding;
+  canCreateOrgs?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -64,8 +68,7 @@ export function MobileNav({
           <Menu className="size-5" />
         </button>
         <Link href="/dashboard" className="flex min-w-0 items-center gap-2 px-1">
-          <Chicory className="size-5 shrink-0 text-brand" />
-          <span className="truncate font-display text-[17px] font-bold tracking-tight">Chicorée</span>
+          <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} size="sm" />
         </Link>
         <div className="ml-auto flex items-center">
           <Link href="/explore" aria-label="Explore" className={iconLink}>
@@ -101,7 +104,7 @@ export function MobileNav({
             >
               <X className="size-5" />
             </button>
-            <Sidebar orgs={orgs} user={user} isAdmin={isAdmin} />
+            <Sidebar orgs={orgs} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} />
           </div>
         </div>
       )}

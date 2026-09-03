@@ -3,13 +3,18 @@ import { redirect } from "next/navigation";
 import { ArrowRight, Fingerprint, Layers, ScanSearch, Users } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { env } from "@/lib/env";
-import { Chicory } from "@/components/brand";
+import { BrandLockup } from "@/components/brand";
 import { buttonClasses } from "@/components/ui/button";
+import { getBranding } from "@/lib/branding";
+import { getInstanceSettings } from "@/lib/instance-settings";
 
 // Landing: the docker-pull moment plus the layer strata — the two things this
 // product is about. Signed-in users go straight to work.
 export default async function LandingPage() {
   if (await getSession()) redirect("/dashboard");
+  const [brand, settings] = await Promise.all([getBranding(), getInstanceSettings()]);
+  // Invitation-only and closed instances do not advertise sign-up.
+  const canSignUp = settings.access.signUpMode === "open";
 
   // A believable image, drawn as proportional layer strata.
   const strata = [4, 18, 3, 41, 9, 26, 6, 13];
@@ -17,20 +22,21 @@ export default async function LandingPage() {
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5">
-        <div className="flex items-center gap-2.5">
-          <Chicory className="size-7 text-brand" />
-          <span className="font-display text-xl font-bold tracking-tight">Chicorée</span>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <BrandLockup name={brand.instanceName} logoDataUrl={brand.logoDataUrl || undefined} size="lg" />
         </div>
         <nav className="flex items-center gap-2">
           <Link href="/explore" className={buttonClasses("ghost", "sm", "max-sm:hidden")}>
             Explore
           </Link>
-          <Link href="/sign-in" className={buttonClasses("secondary", "sm")}>
+          <Link href="/sign-in" className={buttonClasses(canSignUp ? "secondary" : "primary", "sm")}>
             Sign in
           </Link>
-          <Link href="/sign-up" className={buttonClasses("primary", "sm")}>
-            Get started
-          </Link>
+          {canSignUp && (
+            <Link href="/sign-up" className={buttonClasses("primary", "sm")}>
+              Get started
+            </Link>
+          )}
         </nav>
       </header>
 
@@ -44,14 +50,20 @@ export default async function LandingPage() {
               accounted for.
             </h1>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-2">
-              Chicorée stores your container images and shows you what's inside them: layers,
+              {brand.instanceName} stores your container images and shows you what's inside them: layers,
               sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI
               credentials included.
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
-              <Link href="/sign-up" className={buttonClasses("primary")}>
-                Create the first account <ArrowRight className="size-4" />
-              </Link>
+              {canSignUp ? (
+                <Link href="/sign-up" className={buttonClasses("primary")}>
+                  Create the first account <ArrowRight className="size-4" />
+                </Link>
+              ) : (
+                <Link href="/sign-in" className={buttonClasses("primary")}>
+                  Sign in <ArrowRight className="size-4" />
+                </Link>
+              )}
               <Link href="/explore" className={buttonClasses("secondary")}>
                 Browse public images
               </Link>
@@ -126,7 +138,17 @@ export default async function LandingPage() {
       </main>
 
       <footer className="border-t border-line py-8 text-center text-xs text-ink-3">
-        Chicorée — a self-hosted container registry
+        {brand.instanceName}
+        {brand.tagline ? ` — ${brand.tagline}` : ""}
+        {brand.footerLinks.length > 0 && (
+          <span className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+            {brand.footerLinks.map((l) => (
+              <a key={`${l.label}-${l.url}`} href={l.url} className="hover:text-ink hover:underline">
+                {l.label}
+              </a>
+            ))}
+          </span>
+        )}
       </footer>
     </div>
   );

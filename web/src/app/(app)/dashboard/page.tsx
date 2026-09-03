@@ -12,16 +12,20 @@ import { PullsChart } from "@/components/pulls-chart";
 import { ActivityFeed } from "@/components/activity-feed";
 import { buttonClasses } from "@/components/ui/button";
 import { imageReference } from "@/lib/library";
+import { getInstanceSettings } from "@/lib/instance-settings";
+import { canCreateOrganization } from "@/lib/signup-policy";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const session = await requireSession();
-  const [orgs, series, activity] = await Promise.all([
+  const [orgs, series, activity, settings] = await Promise.all([
     listUserOrgs(session.user.id),
     pullSeries({ userId: session.user.id, days: 30 }),
     recentActivity({ userId: session.user.id, limit: 12 }),
+    getInstanceSettings(),
   ]);
+  const canCreateOrgs = canCreateOrganization(settings.access, session.user.role);
   const totalRepos = orgs.reduce((sum, o) => sum + o.repoCount, 0);
   const totalStorage = orgs.reduce((sum, o) => sum + o.storageBytes, 0);
   const pulls30d = series.reduce((sum, d) => sum + d.count, 0);
@@ -33,9 +37,11 @@ export default async function DashboardPage() {
         title={`Welcome back, ${session.user.name.split(" ")[0]}`}
         description="What's moving through your registry."
         action={
-          <Link href="/orgs/new" className={buttonClasses("secondary")}>
-            <Plus className="size-4" /> New organization
-          </Link>
+          canCreateOrgs ? (
+            <Link href="/orgs/new" className={buttonClasses("secondary")}>
+              <Plus className="size-4" /> New organization
+            </Link>
+          ) : undefined
         }
       />
 

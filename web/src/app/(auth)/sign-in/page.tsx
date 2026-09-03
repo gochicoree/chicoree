@@ -6,9 +6,21 @@ import { SignInForm } from "./sign-in-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-export default async function SignInPage() {
-  if (await getSession()) redirect("/dashboard");
+/** Only same-origin paths may be used as the post-sign-in destination. */
+function safeNext(v: string | undefined): string {
+  return v && v.startsWith("/") && !v.startsWith("//") ? v : "/dashboard";
+}
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const next = safeNext(typeof sp.next === "string" ? sp.next : undefined);
+  if (await getSession()) redirect(next);
   const s = await getInstanceSettings();
+  const invitationId = typeof sp.invitation === "string" ? sp.invitation.slice(0, 100) : "";
   return (
     <SignInForm
       providers={{
@@ -19,6 +31,8 @@ export default async function SignInPage() {
         ldap: s.ldap.enabled && !!s.ldap.url,
         ldapName: s.ldap.name,
       }}
+      signUp={{ mode: s.access.signUpMode, invitationId }}
+      next={next}
     />
   );
 }

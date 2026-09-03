@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { organization, organizationSettings, userSettings } from "@/db/schema";
 import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
+import { recordAudit } from "@/lib/audit";
 
 export interface SettingsResult {
   error?: string;
@@ -35,6 +36,7 @@ export async function setOrgDefaultVisibility(
       set: { defaultVisibility, updatedAt: new Date() },
     });
   const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
+  await recordAudit({ action: "org.settings.default_visibility", organizationId, targetType: "organization", targetId: organizationId, targetLabel: org?.slug, details: { defaultVisibility } });
   revalidatePath(`/${org?.slug}/settings`);
   return { saved: true };
 }
@@ -50,6 +52,7 @@ export async function setUserDefaultVisibility(
     .insert(userSettings)
     .values({ userId: session.user.id, defaultVisibility, updatedAt: new Date() })
     .onConflictDoUpdate({ target: userSettings.userId, set: { defaultVisibility, updatedAt: new Date() } });
+  await recordAudit({ action: "user.settings.default_visibility", targetType: "user", targetId: session.user.id, details: { defaultVisibility } });
   revalidatePath("/settings");
   return { saved: true };
 }

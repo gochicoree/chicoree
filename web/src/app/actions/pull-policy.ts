@@ -7,6 +7,7 @@ import { organization, organizationSettings, repositories } from "@/db/schema";
 import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
 import { LEVELS, refreshOrganizationBlocks, refreshRepositoryBlocks, type Level } from "@/lib/pull-policy";
+import { recordAudit } from "@/lib/audit";
 
 export interface PolicyResult {
   error?: string;
@@ -35,6 +36,7 @@ export async function setOrgPullPolicy(_prev: PolicyResult | null, formData: For
     });
   await refreshOrganizationBlocks(organizationId);
   const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
+  await recordAudit({ action: "policy.update", organizationId, targetType: "organization", targetId: organizationId, targetLabel: org?.slug, details: { scope: "organization", level, unrated } });
   if (org) {
     revalidatePath(`/${org.slug}/settings`);
     revalidatePath(`/${org.slug}`, "layout");
@@ -59,6 +61,7 @@ export async function setRepoPullPolicy(_prev: PolicyResult | null, formData: Fo
     .where(eq(repositories.id, repositoryId));
   const { blocked } = await refreshRepositoryBlocks(repositoryId);
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  await recordAudit({ action: "policy.update", organizationId: repo.organizationId, targetType: "repository", targetId: repositoryId, targetLabel: `${org?.slug}/${repo.name}`, details: { scope: "repository", level, unrated, blocked } });
   if (org) {
     revalidatePath(`/${org.slug}/${repo.name}/settings`);
     revalidatePath(`/${org.slug}/${repo.name}`);

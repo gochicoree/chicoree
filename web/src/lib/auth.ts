@@ -23,6 +23,8 @@ import { ldap } from "./auth-ldap";
 import { bindingsFor, parseGroupBindings } from "./group-bindings";
 import { needsGoogleGroupsApi, syncOAuthGroups } from "./oauth-groups";
 import { getInstanceSettings, settingsVersion, type EffectiveSettings } from "./instance-settings";
+import { auditAfterHook, auditBeforeHook, auditOrganizationHooks, auditSessionCreated, auditSessionDeleted, auditUserCreated, auditUserUpdate } from "./auth-audit";
+import { canCreateOrganization, enforceSignUpPolicy, INVITATION_HEADER, ORG_CREATION_DENIED } from "./signup-policy";
 
 // Org slugs become both URL paths and image namespaces; these collide with
 // app routes or registry internals.
@@ -58,9 +60,12 @@ function buildAuth(settings: EffectiveSettings) {
     };
   }
   const oidc = settings.oidc.enabled && settings.oidc.issuer ? settings.oidc : null;
+  // Instance name from the branding settings: email subjects, TOTP issuer.
+  const brand = settings.branding.instanceName || "Chicorée";
 
   return betterAuth({
-  appName: "Chicorée Registry",
+  appName: `${brand} Registry`,
+  hooks: { before: auditBeforeHook, after: auditAfterHook },
   baseURL: env.appUrl,
   secret: env.authSecret,
   database: drizzleAdapter(db, { provider: "pg" }),
@@ -71,11 +76,12 @@ function buildAuth(settings: EffectiveSettings) {
     sendResetPassword: async ({ user, url }) => {
       await sendMail({
         to: user.email,
-        subject: "Reset your Chicorée password",
+        subject: `Reset your ${brand} password`,
         text: `Reset your password: ${url}`,
         html: mailLayout(
           "Reset your password",
           `<p>Someone (hopefully you) asked to reset the password for ${user.email}.</p><p>${buttonHtml(url, "Choose a new password")}</p>`,
+          brand,
         ),
       });
     },
@@ -87,11 +93,12 @@ function buildAuth(settings: EffectiveSettings) {
     sendVerificationEmail: async ({ user, url }) => {
       await sendMail({
         to: user.email,
-        subject: "Verify your email for Chicorée",
+        subject: `Verify your email for ${brand}`,
         text: `Verify your email: ${url}`,
         html: mailLayout(
           "Verify your email",
           `<p>Confirm that ${user.email} belongs to you to finish setting up your account.</p><p>${buttonHtml(url, "Verify email")}</p>`,
+          brand,
         ),
       });
     },
@@ -104,13 +111,33 @@ function buildAuth(settings: EffectiveSettings) {
       create: {
         // The very first account on a fresh install becomes the instance
         // administrator; everyone after that is a regular user.
-        before: async (user) => {
+        before: async (user, context) => {
           const [{ value: existing }] = await db.select({ value: count() }).from(userTable);
+          // Sign-up mode and domain list (Administration → Auth providers → Access).
+          await enforceSignUpPolicy(user, settings.access, { isFirstUser: existing === 0, invitationId: context?.headers?.get(INVITATION_HEADER) });
           return { data: { ...user, role: existing === 0 ? "admin" : "user" } };
         },
         // Administrators own the "library" organization (top-level images).
-        after: async (user) => {
+        after: async (user, context) => {
           if (user.role === "admin") await ensureLibraryOrg(user.id);
+          await auditUserCreated(user, context);
+        },
+      },
+      update: {
+        before: async (user, context) => {
+          await auditUserUpdate(user, context);
+        },
+      },
+    },
+    session: {
+      create: {
+        after: async (session, context) => {
+          await auditSessionCreated(session, context);
+        },
+      },
+      delete: {
+        before: async (session, context) => {
+          await auditSessionDeleted(session, context);
         },
       },
     },
@@ -138,18 +165,23 @@ function buildAuth(settings: EffectiveSettings) {
         const url = `${env.appUrl}/accept-invitation/${data.id}`;
         await sendMail({
           to: data.email,
-          subject: `Join ${data.organization.name} on Chicorée`,
+          subject: `Join ${data.organization.name} on ${brand}`,
           text: `${data.inviter.user.name} invited you to the ${data.organization.name} organization: ${url}`,
           html: mailLayout(
             `Join ${data.organization.name}`,
             `<p>${data.inviter.user.name} (${data.inviter.user.email}) invited you to the <strong>${data.organization.name}</strong> organization.</p><p>${buttonHtml(url, "Accept invitation")}</p>`,
+            brand,
           ),
         });
       },
       // Org slugs double as registry namespaces (<slug>/<repo>), so they must
       // be valid OCI path components.
       organizationHooks: {
+        ...auditOrganizationHooks,
         beforeCreateOrganization: async ({ organization, user }) => {
+          if (!canCreateOrganization(settings.access, user.role)) {
+            throw new APIError("FORBIDDEN", { message: ORG_CREATION_DENIED });
+          }
           const slug = organization.slug ?? "";
           if (!/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(slug)) {
             throw new APIError("BAD_REQUEST", {
@@ -186,14 +218,14 @@ function buildAuth(settings: EffectiveSettings) {
       },
     }),
     twoFactor({
-      issuer: "Chicorée Registry",
+      issuer: `${brand} Registry`,
       otpOptions: {
         sendOTP: async ({ user, otp }) => {
           await sendMail({
             to: user.email,
-            subject: `${otp} is your Chicorée verification code`,
+            subject: `${otp} is your ${brand} verification code`,
             text: `Your verification code is ${otp}`,
-            html: mailLayout("Your verification code", `<p>Enter this code to finish signing in.</p>${codeHtml(otp)}`),
+            html: mailLayout("Your verification code", `<p>Enter this code to finish signing in.</p>${codeHtml(otp)}`, brand),
           });
         },
       },
@@ -202,11 +234,12 @@ function buildAuth(settings: EffectiveSettings) {
       sendMagicLink: async ({ email, url }) => {
         await sendMail({
           to: email,
-          subject: "Your Chicorée sign-in link",
+          subject: `Your ${brand} sign-in link`,
           text: `Sign in: ${url}`,
           html: mailLayout(
-            "Sign in to Chicorée",
+            `Sign in to ${brand}`,
             `<p>Use the button below to sign in as ${email}. The link is valid for a few minutes.</p><p>${buttonHtml(url, "Sign in")}</p>`,
+            brand,
           ),
         });
       },
@@ -215,9 +248,9 @@ function buildAuth(settings: EffectiveSettings) {
       sendVerificationOTP: async ({ email, otp }) => {
         await sendMail({
           to: email,
-          subject: `${otp} is your Chicorée code`,
+          subject: `${otp} is your ${brand} code`,
           text: `Your code is ${otp}`,
-          html: mailLayout("Your one-time code", `<p>Enter this code to continue.</p>${codeHtml(otp)}`),
+          html: mailLayout("Your one-time code", `<p>Enter this code to continue.</p>${codeHtml(otp)}`, brand),
         });
       },
     }),

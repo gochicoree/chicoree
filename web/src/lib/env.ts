@@ -195,4 +195,36 @@ export const env = {
   get passkeyRpName() {
     return process.env.PASSKEY_RP_NAME ?? "Chicorée Registry";
   },
+
+  // Sign-up controls (defaults; Administration → Auth providers → Access overrides them).
+  /** open | invite | closed */
+  get signUpMode() {
+    const v = process.env.SIGNUP_MODE ?? "open";
+    return v === "invite" || v === "closed" ? v : "open";
+  },
+  /** Comma/space separated email domains allowed to register; empty = any. */
+  get signUpAllowedDomains() {
+    return (process.env.SIGNUP_ALLOWED_DOMAINS ?? "")
+      .split(/[\s,;]+/)
+      .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+      .filter(Boolean);
+  },
+  /** everyone | admins */
+  get orgCreation() {
+    return process.env.ORG_CREATION === "admins" ? "admins" : "everyone";
+  },
+
+  // Branding defaults (Administration → Branding overrides them).
+  get instanceName() {
+    return process.env.INSTANCE_NAME ?? "";
+  },
+  get instanceTagline() {
+    return process.env.INSTANCE_TAGLINE ?? "";
+  },
+
+  /** Audit log rows older than this are pruned (opportunistically, on insert). */
+  get auditRetentionDays() {
+    const n = Number(process.env.AUDIT_RETENTION_DAYS ?? 365);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 365;
+  },
 };

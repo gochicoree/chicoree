@@ -555,3 +555,10 @@ func (s *Store) CollectGarbage(ctx context.Context, grace time.Duration) (*GCRes
 	res.DeletedBlobs = int64(len(res.OrphanedDigests))
 	return res, nil
 }
+
+// BlobStats reports how many unique blobs exist and their total physical
+// size, for the status endpoint.
+func (s *Store) BlobStats(ctx context.Context) (count int64, bytes int64, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(size), 0) FROM blobs`).Scan(&count, &bytes)
+	return count, bytes, err
+}

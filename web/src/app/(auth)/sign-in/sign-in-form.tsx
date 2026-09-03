@@ -13,6 +13,8 @@ type Mode = "password" | "ldap" | "magic-link" | "email-otp";
 
 export function SignInForm({
   providers,
+  signUp = { mode: "open", invitationId: "" },
+  next = "/dashboard",
 }: {
   providers: {
     github: boolean;
@@ -22,8 +24,15 @@ export function SignInForm({
     ldap: boolean;
     ldapName: string;
   };
+  /** Sign-up controls: the "create an account" link follows the mode. */
+  signUp?: { mode: "open" | "invite" | "closed"; invitationId: string };
+  /** Same-origin path to land on afterwards (e.g. an invitation). */
+  next?: string;
 }) {
   const router = useRouter();
+  const callbackURL = next;
+  const showSignUp = signUp.mode === "open" || (signUp.mode === "invite" && !!signUp.invitationId);
+  const signUpHref = signUp.invitationId ? `/sign-up?invitation=${encodeURIComponent(signUp.invitationId)}` : "/sign-up";
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -47,20 +56,20 @@ export function SignInForm({
     e.preventDefault();
     await withBusy(async () => {
       if (mode === "password") {
-        const { error } = await authClient.signIn.email({ email, password, callbackURL: "/dashboard" });
+        const { error } = await authClient.signIn.email({ email, password, callbackURL });
         if (error) setError(error.message ?? "Sign-in failed");
-        else router.push("/dashboard");
+        else router.push(callbackURL);
       } else if (mode === "ldap") {
         // Custom endpoint from the server-side ldap plugin; the two-factor
         // client plugin still sees the response and redirects when needed.
         const res = await authClient.$fetch<{ twoFactorRedirect?: boolean }>("/sign-in/ldap", {
           method: "POST",
-          body: { username, password, callbackURL: "/dashboard" },
+          body: { username, password, callbackURL },
         });
         if (res.error) setError(res.error.message ?? "Sign-in failed");
-        else if (!res.data?.twoFactorRedirect) router.push("/dashboard");
+        else if (!res.data?.twoFactorRedirect) router.push(callbackURL);
       } else if (mode === "magic-link") {
-        const { error } = await authClient.signIn.magicLink({ email, callbackURL: "/dashboard" });
+        const { error } = await authClient.signIn.magicLink({ email, callbackURL });
         if (error) setError(error.message ?? "Could not send the link");
         else setNotice(`Sign-in link sent to ${email}. Check your inbox.`);
       } else {
@@ -75,7 +84,7 @@ export function SignInForm({
     await withBusy(async () => {
       const res = await authClient.signIn.passkey();
       if (res?.error) setError(res.error.message ?? "Passkey sign-in failed");
-      else router.push("/dashboard");
+      else router.push(callbackURL);
     });
   }
 
@@ -191,7 +200,7 @@ export function SignInForm({
               variant="secondary"
               className="w-full"
               disabled={busy}
-              onClick={() => authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" })}
+              onClick={() => authClient.signIn.social({ provider: "github", callbackURL })}
             >
               Continue with GitHub
             </Button>
@@ -201,7 +210,7 @@ export function SignInForm({
               variant="secondary"
               className="w-full"
               disabled={busy}
-              onClick={() => authClient.signIn.social({ provider: "google", callbackURL: "/dashboard" })}
+              onClick={() => authClient.signIn.social({ provider: "google", callbackURL })}
             >
               Continue with Google
             </Button>
@@ -215,7 +224,7 @@ export function SignInForm({
                 // Generic OIDC providers register as first-class social providers.
                 authClient.signIn.social({
                   provider: "oidc" as Parameters<typeof authClient.signIn.social>[0]["provider"],
-                  callbackURL: "/dashboard",
+                  callbackURL,
                 })
               }
             >
@@ -225,12 +234,18 @@ export function SignInForm({
         </div>
 
         {!anySocial && null}
-        <p className="text-center text-sm text-ink-2">
-          New here?{" "}
-          <Link href="/sign-up" className="font-medium text-ink underline-offset-2 hover:underline">
-            Create an account
-          </Link>
-        </p>
+        {showSignUp ? (
+          <p className="text-center text-sm text-ink-2">
+            New here?{" "}
+            <Link href={signUpHref} className="font-medium text-ink underline-offset-2 hover:underline">
+              Create an account
+            </Link>
+          </p>
+        ) : (
+          <p className="text-center text-xs text-ink-3">
+            {signUp.mode === "invite" ? "New accounts are created by invitation only." : "This registry does not accept new accounts."}
+          </p>
+        )}
       </CardBody>
     </Card>
   );

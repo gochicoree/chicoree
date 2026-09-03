@@ -65,6 +65,12 @@ services:
       AUTH_GROUP_BINDINGS: ${AUTH_GROUP_BINDINGS:-}
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-localhost}
       PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Chicorée Registry}
+      SIGNUP_MODE: ${SIGNUP_MODE:-open}
+      SIGNUP_ALLOWED_DOMAINS: ${SIGNUP_ALLOWED_DOMAINS:-}
+      ORG_CREATION: ${ORG_CREATION:-everyone}
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
+      INSTANCE_TAGLINE: ${INSTANCE_TAGLINE:-}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
     volumes:
       - ./secrets/registry-token.key:/run/secrets/registry-token.key:ro
     ports:

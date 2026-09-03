@@ -12,6 +12,7 @@ import { encryptSecret } from "@/lib/crypto";
 import { checkRepoQuota } from "@/lib/quota";
 import { runMirror, selectTags } from "@/lib/mirror";
 import { parseSource, RemoteRegistry } from "@/lib/remote-registry";
+import { recordAudit } from "@/lib/audit";
 
 export interface MirrorResult {
   error?: string;
@@ -84,6 +85,7 @@ export async function saveMirror(_prev: MirrorResult | null, formData: FormData)
   } else {
     await db.insert(mirrors).values({ repositoryId, createdBy: session.user.id, ...values });
   }
+  await recordAudit({ action: existing ? "mirror.update" : "mirror.create", organizationId: ctx.org.id, targetType: "repository", targetId: repositoryId, targetLabel: `${ctx.org.slug}/${ctx.repo.name}`, details: { source, selector, overwrite, enabled } });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
   return { saved: true };
 }
@@ -93,6 +95,7 @@ export async function deleteMirror(formData: FormData): Promise<void> {
   const ctx = await repoContext(repositoryId, MANAGER_ROLES);
   if ("error" in ctx) return;
   await db.delete(mirrors).where(eq(mirrors.repositoryId, repositoryId));
+  await recordAudit({ action: "mirror.delete", organizationId: ctx.org.id, targetType: "repository", targetId: repositoryId, targetLabel: `${ctx.org.slug}/${ctx.repo.name}` });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
 }
 
@@ -103,6 +106,7 @@ export async function runMirrorNow(formData: FormData): Promise<void> {
   if ("error" in ctx) return;
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repositoryId) });
   if (!mirror) return;
+  await recordAudit({ action: "mirror.sync", organizationId: ctx.org.id, targetType: "repository", targetId: repositoryId, targetLabel: `${ctx.org.slug}/${ctx.repo.name}`, details: { source: mirror.source } });
   after(async () => {
     await runMirror(mirror.id).catch((err) => console.error("mirror run failed:", err));
   });
@@ -175,6 +179,7 @@ export async function createImport(_prev: MirrorResult | null, formData: FormDat
       createdBy: session.user.id,
     })
     .returning();
+  await recordAudit({ action: "mirror.create", organizationId, targetType: "repository", targetId: repo.id, targetLabel: `${org.slug}/${repo.name}`, details: { source, selector, visibility, mirrorId: mirror.id } });
   after(async () => {
     await runMirror(mirror.id).catch((err) => console.error("mirror run failed:", err));
   });

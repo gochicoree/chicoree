@@ -28,11 +28,12 @@ type Server struct {
 	notifier *hooks.Notifier
 	// proxies holds the pull-through proxy configuration (see proxy.go).
 	proxies *proxyRegistry
+	started time.Time
 }
 
 func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging *storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
 	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
-		proxies: newProxyRegistry(cfg)}
+		proxies: newProxyRegistry(cfg), started: time.Now()}
 }
 
 var (
@@ -49,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v2/", s.routeV2)
 	mux.HandleFunc("/v2", s.routeV2)
 	mux.HandleFunc("GET /internal/v1/healthz", s.handleHealthz)
+	mux.HandleFunc("GET /internal/v1/status", s.handleStatus)
 	mux.HandleFunc("POST /internal/v1/gc", s.handleGC)
 	mux.HandleFunc("POST /internal/v1/proxies/reload", s.handleProxyReload)
 	return logMiddleware(mux)

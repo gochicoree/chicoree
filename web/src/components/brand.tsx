@@ -1,3 +1,5 @@
+import { clsx } from "clsx";
+
 // Brand mark: a chicory blossom — eight ligulate rays with the toothed tips
 // the flower is known for, around a small disc. Drawn to stay legible at 16px.
 const RAY =
@@ -13,5 +15,33 @@ export function Chicory({ className }: { className?: string }) {
         <circle cx="12" cy="12" r="1.6" />
       </g>
     </svg>
+  );
+}
+
+/** Instance identity for the shell: the uploaded logo when one is set, else the blossom. */
+export interface BrandProps {
+  name: string;
+  logoDataUrl?: string;
+}
+
+/** The mark alone: an uploaded logo (data URL) or the blossom in brand colour. */
+export function BrandMark({ logoDataUrl, className }: { logoDataUrl?: string; className?: string }) {
+  if (logoDataUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- inline data URL, no optimisation possible
+    return <img src={logoDataUrl} alt="" className={clsx("shrink-0 object-contain", className)} />;
+  }
+  return <Chicory className={clsx("shrink-0 text-brand", className)} />;
+}
+
+/** Mark + name, sized for the sidebar/header ("md") or the auth screens ("lg"). */
+export function BrandLockup({ name, logoDataUrl, size = "md" }: BrandProps & { size?: "sm" | "md" | "lg" }) {
+  const mark = size === "lg" ? "size-7" : size === "sm" ? "size-5" : "size-6";
+  const text =
+    size === "lg" ? "font-display text-xl font-bold tracking-tight" : size === "sm" ? "font-display text-[17px] font-bold tracking-tight" : "font-display text-lg font-bold tracking-tight";
+  return (
+    <>
+      <BrandMark logoDataUrl={logoDataUrl} className={mark} />
+      <span className={clsx("truncate", text)}>{name}</span>
+    </>
   );
 }

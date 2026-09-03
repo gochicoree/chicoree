@@ -8,6 +8,7 @@ import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
 import { encryptSecret } from "@/lib/crypto";
 import { buildPushPayload, deliverWebhook, MAX_WEBHOOKS_PER_REPO } from "@/lib/webhooks";
+import { recordAudit } from "@/lib/audit";
 
 export interface WebhookResult {
   error?: string;
@@ -102,6 +103,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
       createdBy: session.user.id,
     });
   }
+  await recordAudit({ action: id ? "webhook.update" : "webhook.create", organizationId: ctx.org.id, targetType: "webhook", targetId: id || null, targetLabel: `${ctx.org.slug}/${ctx.repo.name} · ${name}`, details: { url, method, authType, events: base.events } });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
   return { saved: true };
 }
@@ -112,6 +114,7 @@ export async function deleteWebhook(formData: FormData): Promise<void> {
   const ctx = await requireRepoManager(repositoryId);
   if ("error" in ctx) return;
   await db.delete(repositoryWebhooks).where(and(eq(repositoryWebhooks.id, id), eq(repositoryWebhooks.repositoryId, repositoryId)));
+  await recordAudit({ action: "webhook.delete", organizationId: ctx.org.id, targetType: "webhook", targetId: id, targetLabel: `${ctx.org.slug}/${ctx.repo.name}` });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
 }
 
@@ -125,6 +128,7 @@ export async function toggleWebhook(formData: FormData): Promise<void> {
     .update(repositoryWebhooks)
     .set({ enabled })
     .where(and(eq(repositoryWebhooks.id, id), eq(repositoryWebhooks.repositoryId, repositoryId)));
+  await recordAudit({ action: "webhook.toggle", organizationId: ctx.org.id, targetType: "webhook", targetId: id, targetLabel: `${ctx.org.slug}/${ctx.repo.name}`, details: { enabled } });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
 }
 
@@ -155,6 +159,7 @@ export async function testWebhook(_prev: WebhookResult | null, formData: FormDat
   if (!built) return { error: "Could not build a payload." };
   await deliverWebhook(hook, built.payload);
   const refreshed = await db.query.repositoryWebhooks.findFirst({ where: eq(repositoryWebhooks.id, id) });
+  await recordAudit({ action: "webhook.test", organizationId: ctx.org.id, targetType: "webhook", targetId: id, targetLabel: `${ctx.org.slug}/${ctx.repo.name} · ${hook.name}`, details: { status: refreshed?.lastStatus ?? null } });
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
   return {
     tested: {
