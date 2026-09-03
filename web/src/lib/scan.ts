@@ -9,6 +9,7 @@ import { env } from "./env";
 import { fetchBlobJson } from "./registry-client";
 import { systemPullToken } from "./registry-jwt";
 import { refreshRepositoryBlocks } from "./pull-policy";
+import { splitImagePath } from "./library";
 
 interface ManifestDescriptor {
   mediaType?: string;
@@ -24,11 +25,14 @@ interface ManifestPayload {
 }
 
 async function resolveRepository(repositoryPath: string) {
-  const [orgSlug, repoName] = repositoryPath.split("/");
-  const org = await db.query.organization.findFirst({ where: eq(organization.slug, orgSlug) });
+  // Proxy caches use nested names (dockerhub/bitnami/redis): everything
+  // after the organization is the repository.
+  const target = splitImagePath(repositoryPath);
+  if (!target) return null;
+  const org = await db.query.organization.findFirst({ where: eq(organization.slug, target.orgSlug) });
   if (!org) return null;
   const repo = await db.query.repositories.findFirst({
-    where: and(eq(repositories.organizationId, org.id), eq(repositories.name, repoName)),
+    where: and(eq(repositories.organizationId, org.id), eq(repositories.name, target.repoName)),
   });
   return repo ?? null;
 }

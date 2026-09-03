@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { organization, repositories, tags } from "@/db/schema";
+import { organization, organizationProxies, repositories, tags } from "@/db/schema";
 import { getOrgRole, requireSession, getSession } from "@/lib/session";
 import { runScan } from "@/lib/scan";
 import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
 import { checkRepoQuota } from "@/lib/quota";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
+import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -46,8 +47,15 @@ export async function createRepository(
 
   const denied = await requireOrgRole(orgId, WRITER_ROLES);
   if (denied) return denied;
-  if (!NAME_RE.test(name) || name.length > 100) {
-    return { error: "Repository names use lowercase letters, digits and single ._- separators." };
+  // Proxy caches mirror upstream paths, which may be nested (bitnami/redis).
+  const proxy = await db.query.organizationProxies.findFirst({ where: eq(organizationProxies.organizationId, orgId) });
+  const validName = proxy ? isValidRepoName(name, true) : NAME_RE.test(name) && name.length <= 100;
+  if (!validName) {
+    return {
+      error: proxy
+        ? "Repository names use lowercase letters, digits and single ._- separators, with / between path components."
+        : "Repository names use lowercase letters, digits and single ._- separators.",
+    };
   }
   if (RESERVED_REPO_NAMES.has(name)) {
     return { error: `"${name}" is reserved; pick a different name.` };
@@ -64,7 +72,7 @@ export async function createRepository(
 
   await db.insert(repositories).values({ organizationId: orgId, name, description, visibility });
   revalidatePath(`/${org.slug}`);
-  redirect(`/${org.slug}/${name}`);
+  redirect(repoHref(org.slug, name));
 }
 
 export async function updateRepository(

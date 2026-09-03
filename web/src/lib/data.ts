@@ -60,6 +60,10 @@ export interface RepoListItem {
   sizeBytes: number;
   lastPushedAt: Date | null;
   orgSlug?: string;
+  /** The organization is a proxy cache; the repository was filled from its upstream. */
+  proxy: boolean;
+  /** Proxy caches: the most recent upstream check of any tag in the repository. */
+  lastCheckedAt: Date | null;
 }
 
 const repoListSelect = sql`
@@ -67,7 +71,9 @@ const repoListSelect = sql`
   (SELECT count(*)::int FROM tags t WHERE t.repository_id = r.id) AS tag_count,
   COALESCE((SELECT sum(b.size)::bigint FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
     WHERE rb.repository_id = r.id), 0) AS size_bytes,
-  (SELECT max(m.created_at) FROM manifests m WHERE m.repository_id = r.id) AS last_pushed_at`;
+  (SELECT max(m.created_at) FROM manifests m WHERE m.repository_id = r.id) AS last_pushed_at,
+  EXISTS (SELECT 1 FROM organization_proxies p WHERE p.organization_id = r.organization_id) AS is_proxy,
+  (SELECT max(t.proxy_checked_at) FROM tags t WHERE t.repository_id = r.id) AS last_checked_at`;
 
 function mapRepoRow(r: Record<string, unknown>): RepoListItem {
   return {
@@ -81,6 +87,8 @@ function mapRepoRow(r: Record<string, unknown>): RepoListItem {
     sizeBytes: Number(r.size_bytes),
     lastPushedAt: r.last_pushed_at ? new Date(r.last_pushed_at as string) : null,
     orgSlug: r.org_slug as string,
+    proxy: !!r.is_proxy,
+    lastCheckedAt: r.last_checked_at ? new Date(r.last_checked_at as string) : null,
   };
 }
 
@@ -125,11 +133,13 @@ export interface TagListItem {
   scanSummary: SeveritySummary | null;
   /** Pull-policy block reason, when the registry refuses pulls of this image. */
   blocked: string | null;
+  /** Proxy caches: when the upstream last confirmed this tag. */
+  proxyCheckedAt: Date | null;
 }
 
 export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
   const { rows } = await db.execute(sql`
-    SELECT t.name, t.manifest_digest, t.updated_at, m.media_type, m.size AS manifest_size,
+    SELECT t.name, t.manifest_digest, t.updated_at, t.proxy_checked_at, m.media_type, m.size AS manifest_size,
       (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
         WHERE mr.repository_id = t.repository_id AND mr.manifest_digest = t.manifest_digest) AS content_bytes,
       (SELECT count(*)::int FROM manifest_refs mr WHERE mr.repository_id = t.repository_id
@@ -155,6 +165,7 @@ export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
       scanStatus: (r.scan_status as string) ?? null,
       scanSummary: (r.scan_summary as SeveritySummary) ?? null,
       blocked: (r.blocked as string | null) ?? null,
+      proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
     };
   });
 }

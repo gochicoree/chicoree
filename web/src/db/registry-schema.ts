@@ -146,6 +146,10 @@ export const tags = pgTable(
     manifestDigest: text("manifest_digest").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Proxy caches: when the upstream last confirmed this tag → digest mapping. */
+    proxyCheckedAt: timestamp("proxy_checked_at", { withTimezone: true }),
+    /** Proxy caches: last pull of this tag (the proxy-evict job uses it). */
+    lastPulledAt: timestamp("last_pulled_at", { withTimezone: true }),
   },
   (t) => [
     primaryKey({ columns: [t.repositoryId, t.name] }),
@@ -165,7 +169,7 @@ export const events = pgTable(
       .notNull()
       .references(() => repositories.id, { onDelete: "cascade" }),
     type: text("type", { enum: ["push", "pull", "delete"] }).notNull(),
-    actorType: text("actor_type", { enum: ["user", "sa", "anonymous"] }).notNull(),
+    actorType: text("actor_type", { enum: ["user", "sa", "anonymous", "mirror", "proxy"] }).notNull(),
     actorId: text("actor_id"),
     manifestDigest: text("manifest_digest"),
     tag: text("tag"),
@@ -463,3 +467,34 @@ export interface MirrorLogEntry {
   status: "imported" | "skipped" | "failed";
   detail?: string;
 }
+
+// --- Proxy caches: an organization that mirrors an upstream registry on demand ---
+
+/**
+ * One row turns the organization into a pull-through cache of `upstreamUrl`.
+ * registryd reads the configuration through GET /api/internal/proxies (the
+ * credentials are encrypted with the web app's key) and writes
+ * last_checked_at / last_error; tags.proxy_checked_at and tags.last_pulled_at
+ * carry the per-tag state.
+ */
+export const organizationProxies = pgTable("organization_proxies", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  /** Distribution API root, e.g. https://registry-1.docker.io or https://ghcr.io */
+  upstreamUrl: text("upstream_url").notNull(),
+  preset: text("preset", { enum: ["dockerhub", "ghcr", "quay", "custom"] }).notNull().default("custom"),
+  /** Encrypted "user:password" (or a bare token) for the upstream; null = anonymous. */
+  auth: text("auth"),
+  /** Space-separated globs on the upstream path (library/* bitnami/*); empty = everything. */
+  allowedPatterns: text("allowed_patterns").notNull().default(""),
+  /** How long a cached tag → digest mapping is trusted before re-checking upstream. */
+  tagTtlSeconds: integer("tag_ttl_seconds").notNull().default(300),
+  enabled: boolean("enabled").notNull().default(true),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Outcome of the latest upstream contact, maintained by registryd. */
+  lastError: text("last_error"),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+});

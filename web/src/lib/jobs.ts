@@ -8,6 +8,7 @@ import { triggerGarbageCollection } from "./registry-client";
 import { runScan } from "./scan";
 import { env } from "./env";
 import { runAllMirrors } from "./mirror";
+import { evictProxyTags } from "./proxy";
 
 export interface JobDefinition {
   name: string;
@@ -103,6 +104,18 @@ JOBS["mirror-sync"] = {
   description: "Runs every enabled repository mirror: fetches matching tags from the source registry and imports anything new or changed.",
   params: [],
   run: async () => runAllMirrors(),
+};
+
+JOBS["proxy-evict"] = {
+  name: "proxy-evict",
+  title: "Evict unused proxy-cache tags",
+  description:
+    "Removes tags in proxy-cache organizations that nobody pulled within the window; they are fetched from the upstream again on the next pull. Run prune-untagged and gc afterwards to reclaim the space.",
+  params: [
+    { name: "unusedFor", description: "Remove tags not pulled for this long, e.g. 30d, 12h", default: "30d" },
+    { name: "dryRun", description: "true = only count what would be removed", default: "false" },
+  ],
+  run: async (params) => evictProxyTags(durationToMs(params.unusedFor, 30 * 86_400_000), params.dryRun === "true"),
 };
 
 /** Jobs that make sense in this deployment (scanning needs Clair). */

@@ -15,6 +15,7 @@ import (
 	"registryd/internal/hooks"
 	"registryd/internal/storage"
 	"registryd/internal/store"
+	"registryd/internal/upstream"
 )
 
 // Server wires the API handlers to their dependencies.
@@ -25,10 +26,13 @@ type Server struct {
 	staging  *storage.Staging
 	verifier *auth.Verifier
 	notifier *hooks.Notifier
+	// proxies holds the pull-through proxy configuration (see proxy.go).
+	proxies *proxyRegistry
 }
 
 func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging *storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
-	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier}
+	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
+		proxies: newProxyRegistry(cfg)}
 }
 
 var (
@@ -46,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v2", s.routeV2)
 	mux.HandleFunc("GET /internal/v1/healthz", s.handleHealthz)
 	mux.HandleFunc("POST /internal/v1/gc", s.handleGC)
+	mux.HandleFunc("POST /internal/v1/proxies/reload", s.handleProxyReload)
 	return logMiddleware(mux)
 }
 
@@ -71,7 +76,9 @@ func (r *statusRecorder) WriteHeader(code int) {
 }
 
 // routeV2 dispatches OCI distribution paths. Repository names are restricted
-// to exactly two components: <org>/<repo>.
+// to exactly two components, <org>/<repo>, except in proxy-cache
+// organizations, where the upstream path may have any depth
+// (<proxy>/<a>/<b>/…): the repository is everything before the route marker.
 func (s *Server) routeV2(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v2")
 	path = strings.TrimPrefix(path, "/")
@@ -94,6 +101,27 @@ func (s *Server) routeV2(w http.ResponseWriter, r *http.Request) {
 	case len(segs) >= 3 && isRouteMarker(segs[1]):
 		name, org, repo = segs[0], LibraryOrg, segs[0]
 		rest = segs[1:]
+	case len(segs) >= 5 && !isRouteMarker(segs[2]):
+		// Nested name: only proxy-cache organizations accept these.
+		marker := -1
+		for i := 3; i < len(segs); i++ {
+			if isRouteMarker(segs[i]) {
+				marker = i
+				break
+			}
+		}
+		if marker < 0 {
+			writeError(w, http.StatusNotFound, CodeNameUnknown, "unknown route")
+			return
+		}
+		if s.proxies.lookup(r.Context(), segs[0], true) == nil {
+			writeError(w, http.StatusNotFound, CodeNameUnknown,
+				"repository paths are <org>/<repo>; deeper paths are only available in proxy-cache organizations")
+			return
+		}
+		org, repo = segs[0], strings.Join(segs[1:marker], "/")
+		name = org + "/" + repo
+		rest = segs[marker:]
 	case len(segs) >= 4:
 		name, org, repo = segs[0]+"/"+segs[1], segs[0], segs[1]
 		rest = segs[2:]
@@ -212,6 +240,10 @@ func (s *Server) withAuth(w http.ResponseWriter, r *http.Request, name, action s
 	org, repo, ok := strings.Cut(name, "/")
 	if !ok {
 		org, repo = LibraryOrg, name
+	} else if px := s.proxyFor(r.Context(), org); px != nil {
+		// Proxy organizations store Docker Hub library images under their
+		// short name, so <proxy>/library/nginx and <proxy>/nginx coincide.
+		repo = upstream.LocalName(px.DockerHub, repo)
 	}
 	s.withAuthResolved(w, r, name, org, repo, action, next)
 }

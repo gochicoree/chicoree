@@ -12,18 +12,23 @@ import { buttonClasses } from "@/components/ui/button";
 import { WRITER_ROLES } from "@/lib/org-roles";
 import { Download } from "lucide-react";
 import { imagePath } from "@/lib/library";
+import { getOrgProxy } from "@/lib/proxy";
+import { displayHost, isDockerHubUrl } from "@/lib/proxy-shared";
+import { env } from "@/lib/env";
 
 export default async function OrgPage({ params }: { params: Promise<{ org: string }> }) {
   const { org: slug } = await params;
   const ctx = await getOrgContext(slug);
   if (!ctx) notFound();
   const { org, role } = ctx;
-  const canWrite = !!role && WRITER_ROLES.includes(role);
 
-  const [repos, series] = await Promise.all([
+  const [repos, series, proxy] = await Promise.all([
     listOrgRepos(org.id, !!role),
     role ? pullSeries({ orgId: org.id, days: 30 }) : Promise.resolve(null),
+    getOrgProxy(org.id),
   ]);
+  // Proxy caches are filled by pulls, never by pushes or the UI.
+  const canWrite = !!role && WRITER_ROLES.includes(role) && !proxy;
   const totalSize = repos.reduce((sum, r) => sum + r.sizeBytes, 0);
   const totalPulls = repos.reduce((sum, r) => sum + r.pullCount, 0);
 
@@ -56,9 +61,15 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
         {repos.length === 0 ? (
           <div className="rounded-xl border border-dashed border-line px-4 py-10 text-center">
             <p className="text-sm text-ink-2">
-              No repositories yet. Create one here, or just push — repositories are created on first
-              push.
+              {proxy
+                ? `Nothing cached yet. Pull any ${displayHost(proxy.upstreamUrl)} image through this organization and it shows up here.`
+                : "No repositories yet. Create one here, or just push — repositories are created on first push."}
             </p>
+            {proxy && (
+              <code className="mt-3 inline-block max-w-full rounded-md bg-card-2 px-3 py-1.5 font-mono text-[13px] text-ink-2 [overflow-wrap:anywhere]">
+                docker pull {env.registryHost}/{slug}/{isDockerHubUrl(proxy.upstreamUrl) ? "nginx:1.27" : "<namespace>/<image>:<tag>"}
+              </code>
+            )}
             {canWrite && (
               <code className="mt-3 inline-block max-w-full rounded-md bg-card-2 px-3 py-1.5 font-mono text-[13px] text-ink-2 [overflow-wrap:anywhere]">
                 docker push &lt;registry&gt;/{imagePath(slug, "<name>")}:latest

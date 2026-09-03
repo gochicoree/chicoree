@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Container } from "lucide-react";
+import { Container, Globe } from "lucide-react";
 import type { RepoListItem } from "@/lib/data";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
-import { VisibilityBadge } from "@/components/ui/badge";
+import { Badge, VisibilityBadge } from "@/components/ui/badge";
+import { repoHref } from "@/lib/proxy-shared";
 
 /** Repository listing used on org pages and the explore page. */
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
@@ -28,18 +29,30 @@ export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; s
         <tbody>
           {repos.map((repo) => {
             const path = showOrg && repo.orgSlug ? `${repo.orgSlug}/${repo.name}` : repo.name;
-            const href = `/${repo.orgSlug}/${repo.name}`;
+            const href = repoHref(repo.orgSlug ?? "", repo.name);
             return (
               <tr key={repo.id} className="border-b border-line last:border-0 hover:bg-card-2">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
-                    <Container className="size-4 shrink-0 text-ink-3" />
+                    {repo.proxy ? (
+                      <Globe className="size-4 shrink-0 text-accent" />
+                    ) : (
+                      <Container className="size-4 shrink-0 text-ink-3" />
+                    )}
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Link href={href} className="min-w-0 truncate font-medium text-ink hover:underline">
                           {path}
                         </Link>
                         <VisibilityBadge visibility={repo.visibility} />
+                        {repo.proxy && (
+                          <Badge
+                            tone="accent"
+                            title={repo.lastCheckedAt ? `Upstream checked ${relativeTime(repo.lastCheckedAt)}` : "Pull-through cache"}
+                          >
+                            cached{repo.lastCheckedAt ? ` · checked ${relativeTime(repo.lastCheckedAt)}` : ""}
+                          </Badge>
+                        )}
                       </div>
                       {repo.description && (
                         <div className="mt-0.5 truncate text-xs text-ink-2">{repo.description}</div>
