@@ -152,7 +152,18 @@ bindings, or to disable Clair (`COMPOSE_PROFILES=` and `CLAIR_URL=`). While
 experimenting, set `ACME_CA_SERVER` to Let's Encrypt's staging endpoint so
 failed attempts do not count against the production rate limit. Traefik's
 read timeout is disabled on the HTTPS entrypoint so multi-gigabyte layer
-uploads are never cut short. Back up the `pg-data`, `registry-data`,
+uploads are never cut short. Image layers can live on a bigger disk or a mounted share instead of the
+root filesystem: set `REGISTRY_DATA_DIR=/path/on/that/disk` in `.env` (make
+the directory writable by uid 10001, the registry's user, and if it is a
+network or virtiofs mount, order Docker after it with a
+`RequiresMountsFor=` drop-in so a reboot does not start the registry on an
+empty directory). Postgres stays on local disk on purpose.
+
+Container logs are capped at 5 × 20 MB per service, Clair's download scratch
+space is a 3 GB tmpfs, and each deploy prunes old build layers; without these
+a full root disk takes Postgres down and the registry with it.
+
+Back up the `pg-data`, `registry-data`,
 `token-keys` and `traefik-acme` volumes.
 
 ### Deploying with the PaaS
