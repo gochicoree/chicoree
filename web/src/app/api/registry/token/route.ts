@@ -105,7 +105,13 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
     return { kind: "user", userId: u.id, isAdmin: u.role === "admin", patScope: null };
   }
   if ((await getInstanceSettings()).ldap.enabled) return identifyViaLdap(username, password);
-  if (!u) return { error: "invalid credentials" };
+  if (!u) {
+    return {
+      error: username.includes("@")
+        ? "invalid credentials"
+        : "invalid credentials: use your email address as the username (or an access token as the password)",
+    };
+  }
   return { error: "this account has no password; docker login with an access token instead" };
 }
 
