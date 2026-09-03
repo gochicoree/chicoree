@@ -1,0 +1,62 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { ArrowLeft } from "lucide-react";
+import { db } from "@/db";
+import { user as userTable } from "@/db/schema";
+import { requireAdmin } from "@/lib/session";
+import { formatDate } from "@/lib/format";
+import { PageHeader } from "@/components/page-header";
+import { Card, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { NavTabs } from "@/components/ui/nav-tabs";
+import { AdminNav } from "../../admin-nav";
+
+export default async function AdminUserLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ id: string }>;
+}) {
+  await requireAdmin();
+  const { id } = await params;
+  const user = await db.query.user.findFirst({ where: eq(userTable.id, id) });
+  if (!user) notFound();
+  const base = `/admin/users/${user.id}`;
+
+  return (
+    <>
+      <PageHeader eyebrow="Instance" title="Administration" />
+      <AdminNav />
+      <Link href="/admin/users" className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
+        <ArrowLeft className="size-4" /> All users
+      </Link>
+      <div className="space-y-6">
+        <Card>
+          <CardHeader
+            eyebrow="User"
+            title={user.name}
+            description={`${user.email} · joined ${formatDate(user.createdAt)}`}
+            action={
+              <div className="flex items-center gap-2">
+                <Badge tone={user.role === "admin" ? "accent" : "neutral"}>{user.role ?? "user"}</Badge>
+                {user.banned && <Badge tone="danger">banned</Badge>}
+                {user.twoFactorEnabled && <Badge tone="ok">2FA</Badge>}
+              </div>
+            }
+          />
+        </Card>
+        <NavTabs
+          variant="pills"
+          items={[
+            { href: base, label: "Overview", exact: true },
+            { href: `${base}/limits`, label: "Limits" },
+            { href: `${base}/organizations`, label: "Organizations" },
+          ]}
+        />
+        {children}
+      </div>
+    </>
+  );
+}

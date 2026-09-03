@@ -179,5 +179,5 @@ export async function createImport(_prev: MirrorResult | null, formData: FormDat
     await runMirror(mirror.id).catch((err) => console.error("mirror run failed:", err));
   });
   revalidatePath(`/${org.slug}`);
-  redirect(`/${org.slug}/${repo.name}/settings#mirror`);
+  redirect(`/${org.slug}/${repo.name}/settings/mirror`);
 }

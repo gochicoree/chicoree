@@ -12,15 +12,27 @@ export interface NavTab {
 }
 
 /**
- * Underlined section tabs driven by the URL. On narrow screens the strip
- * scrolls sideways and bleeds to the screen edge instead of wrapping.
+ * Section tabs driven by the URL. "underline" is the primary level (org,
+ * settings, admin); "pills" is the secondary level inside a section. On
+ * narrow screens both scroll sideways instead of wrapping.
  */
-export function NavTabs({ items, className }: { items: NavTab[]; className?: string }) {
+export function NavTabs({
+  items,
+  className,
+  variant = "underline",
+}: {
+  items: NavTab[];
+  className?: string;
+  variant?: "underline" | "pills";
+}) {
   const pathname = usePathname();
+  const pills = variant === "pills";
   return (
     <nav
       className={clsx(
-        "-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0",
+        pills
+          ? "flex max-w-full gap-1 overflow-x-auto rounded-lg border border-line bg-card-2 p-1 scrollbar-none sm:inline-flex"
+          : "-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0",
         className,
       )}
     >
@@ -34,8 +46,16 @@ export function NavTabs({ items, className }: { items: NavTab[]; className?: str
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={clsx(
-              "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors sm:py-2",
-              active ? "border-accent text-ink" : "border-transparent text-ink-2 hover:border-line-2 hover:text-ink",
+              "shrink-0 whitespace-nowrap font-medium transition-colors",
+              pills
+                ? clsx(
+                    "rounded-md px-3 py-1.5 text-[13px]",
+                    active ? "bg-card text-ink shadow-card" : "text-ink-2 hover:text-ink",
+                  )
+                : clsx(
+                    "-mb-px border-b-2 px-3 py-2.5 text-sm sm:py-2",
+                    active ? "border-accent text-ink" : "border-transparent text-ink-2 hover:border-line-2 hover:text-ink",
+                  ),
             )}
           >
             {item.label}
