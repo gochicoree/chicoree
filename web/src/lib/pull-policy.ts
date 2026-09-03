@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { manifestBlocks, manifests, organizationSettings, repositories, vulnerabilityScans } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
 import { effectivePolicy, violation } from "./pull-policy-shared";
+import { notify } from "./notify";
 
 export * from "./pull-policy-shared";
 
@@ -58,8 +59,10 @@ export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ b
 
   const existing = await db.query.manifestBlocks.findMany({ where: eq(manifestBlocks.repositoryId, repositoryId) });
   const current = new Map(existing.map((e) => [e.digest, e.reason]));
+  const newlyBlocked: { digest: string; reason: string }[] = [];
   for (const [digest, reason] of blocked) {
     if (current.get(digest) === reason) continue;
+    if (!current.has(digest)) newlyBlocked.push({ digest, reason });
     await db
       .insert(manifestBlocks)
       .values({ repositoryId, digest, reason })
@@ -71,6 +74,11 @@ export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ b
         .delete(manifestBlocks)
         .where(and(eq(manifestBlocks.repositoryId, repositoryId), eq(manifestBlocks.digest, e.digest)));
     }
+  }
+  if (newlyBlocked.length > 0) {
+    await notify({ event: "scan.blocked", repositoryId, blocked: newlyBlocked }).catch((err) =>
+      console.error("scan.blocked notification failed:", err),
+    );
   }
   return { blocked: blocked.size };
 }

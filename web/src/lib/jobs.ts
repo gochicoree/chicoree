@@ -9,6 +9,7 @@ import { runScan } from "./scan";
 import { env } from "./env";
 import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
+import { notify } from "./notify";
 
 export interface JobDefinition {
   name: string;
@@ -152,6 +153,9 @@ export async function runJob(
       .update(jobRuns)
       .set({ status: "failed", error: message, finishedAt: new Date() })
       .where(eq(jobRuns.id, run.id));
+    await notify({ event: "job.failed", job: name, runId: run.id, error: message, triggeredBy }).catch((err) =>
+      console.error("job.failed notification failed:", err),
+    );
     return { id: run.id, status: "failed", error: message };
   }
 }

@@ -161,9 +161,10 @@ export async function GET(req: NextRequest) {
     if (type !== "repository") continue;
     const target = splitImagePath(name);
     if (!target) continue;
-    const requested = actionsRaw
-      .split(",")
-      .filter((a): a is RegistryAction => (VALID_ACTIONS as string[]).includes(a));
+    // "*" is what skopeo/oras ask for on delete: every action the caller may have.
+    const requested = (actionsRaw === "*" ? [...VALID_ACTIONS] : actionsRaw.split(",")).filter(
+      (a): a is RegistryAction => (VALID_ACTIONS as string[]).includes(a),
+    );
     const granted = await allowedRepositoryActions(caller, target.orgSlug, target.repoName, requested);
     if (granted.length > 0) {
       access.push({ type: "repository", name, actions: granted });

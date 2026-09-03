@@ -20,9 +20,11 @@ type Event struct {
 	Repository string `json:"repository"`
 	Digest     string `json:"digest"`
 	Tag        string `json:"tag,omitempty"`
-	MediaType  string `json:"mediaType,omitempty"`
-	Actor      string `json:"actor,omitempty"`
-	OccurredAt string `json:"occurredAt"`
+	// Tags that pointed at the manifest when it was deleted by digest.
+	Tags       []string `json:"tags,omitempty"`
+	MediaType  string   `json:"mediaType,omitempty"`
+	Actor      string   `json:"actor,omitempty"`
+	OccurredAt string   `json:"occurredAt"`
 }
 
 // Notifier posts signed events; deliveries are fire-and-forget with retries.

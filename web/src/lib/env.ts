@@ -50,6 +50,10 @@ export const env = {
   get jobsApiToken() {
     return process.env.JOBS_API_TOKEN ?? "";
   },
+  /** In-app job scheduler; JOB_SCHEDULER=false leaves scheduling to external cron. */
+  get jobSchedulerEnabled() {
+    return process.env.JOB_SCHEDULER !== "false";
+  },
 
   // Clair
   get clairUrl() {

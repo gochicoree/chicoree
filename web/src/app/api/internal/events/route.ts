@@ -5,8 +5,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { env } from "@/lib/env";
 import { cacheManifestConfig, runScan } from "@/lib/scan";
-import { buildPushPayload, dispatchRepositoryWebhooks } from "@/lib/webhooks";
-import { splitImagePath } from "@/lib/library";
+import { buildPushPayload, dispatchRepositoryWebhooks, emitRepositoryEvent, resolveActor } from "@/lib/webhooks";
+import { checkQuotaWarningsForRepository } from "@/lib/notify";
+import { getRepoByPath } from "@/lib/data";
+import { imageReference, splitImagePath } from "@/lib/library";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,8 @@ interface RegistryEvent {
   repository: string;
   digest: string;
   tag?: string;
+  /** Tags that pointed at a manifest deleted by digest. */
+  tags?: string[];
   mediaType?: string;
   actor?: string;
 }
@@ -63,11 +67,40 @@ export async function POST(req: NextRequest) {
           console.error("webhook payload failed:", err);
           return null;
         });
-        if (built) await dispatchRepositoryWebhooks(built.repositoryId, built.payload);
+        if (built) {
+          await dispatchRepositoryWebhooks(built.repositoryId, built.payload);
+          await checkQuotaWarningsForRepository(built.repositoryId).catch((err) =>
+            console.error("quota warning check failed:", err),
+          );
+        }
       }
       await runScan(event.repository, event.digest).catch((err) =>
         console.error("scan failed:", err),
       );
+    });
+  }
+
+  if (event.type === "manifest.delete" && event.repository) {
+    after(async () => {
+      const target = splitImagePath(event.repository);
+      if (!target) return;
+      const found = await getRepoByPath(target.orgSlug, target.repoName);
+      if (!found) return;
+      const tags = event.tags ?? (event.tag ? [event.tag] : []);
+      const digest = event.digest || null;
+      await emitRepositoryEvent(found.repo.id, "delete", {
+        tag: event.tag ?? null,
+        tags,
+        digest,
+        image: digest
+          ? {
+              digest,
+              reference: imageReference(env.registryHost, target.orgSlug, target.repoName, digest),
+              digestReference: imageReference(env.registryHost, target.orgSlug, target.repoName, digest),
+            }
+          : null,
+        actor: await resolveActor(event.actor),
+      }).catch((err) => console.error("delete webhook failed:", err));
     });
   }
 

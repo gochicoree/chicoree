@@ -1,7 +1,10 @@
-// Outbound repository webhooks: build a rich push payload and deliver it to
-// every enabled hook on the repository, recording each attempt.
+// Outbound webhooks: build event payloads and deliver them to every enabled
+// hook of a repository — its own hooks plus the organization-wide ones —
+// recording each attempt. The push payload keeps its original shape; every
+// other event shares the same envelope (event, timestamp, repository, …)
+// with event-specific fields next to it.
 import { randomUUID, createHmac } from "crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   manifests,
@@ -9,28 +12,53 @@ import {
   repositories,
   repositoryWebhooks,
   serviceAccounts,
+  tags as tagsTable,
   user as userTable,
   webhookDeliveries,
 } from "@/db/schema";
 import { decryptSecret } from "./crypto";
 import { env } from "./env";
 import { imagePath, imageReference } from "./library";
+import {
+  MAX_WEBHOOKS_PER_ORG,
+  MAX_WEBHOOKS_PER_REPO,
+  type WebhookEvent,
+  type WebhookRow,
+  type WebhookScope,
+} from "./webhooks-shared";
 
-export const MAX_WEBHOOKS_PER_REPO = 5;
+export { MAX_WEBHOOKS_PER_ORG, MAX_WEBHOOKS_PER_REPO };
+export type { WebhookEvent, WebhookRow, WebhookScope };
 
-export interface WebhookPayload {
-  event: "push" | "test";
+export interface WebhookRepository {
+  id: string;
+  name: string;
+  path: string;
+  organization: { slug: string; name: string };
+  visibility: string;
+  url: string;
+}
+
+/** Fields every delivery carries. Push payloads extend it (see WebhookPayload). */
+export interface WebhookEnvelope {
+  event: string;
   deliveryId: string;
   timestamp: string;
   registry: string;
-  repository: {
-    id: string;
-    name: string;
-    path: string;
-    organization: { slug: string; name: string };
-    visibility: string;
-    url: string;
-  };
+  /** null for organization-level events such as quota.warning */
+  repository: WebhookRepository | null;
+}
+
+export interface WebhookActor {
+  type: string;
+  id: string | null;
+  name: string | null;
+}
+
+/** The push payload — unchanged for backwards compatibility. */
+export interface WebhookPayload extends WebhookEnvelope {
+  event: "push" | "test";
+  repository: WebhookRepository;
   tag: string | null;
   image: {
     reference: string;
@@ -53,7 +81,24 @@ export interface WebhookPayload {
     } | null;
     url: string;
   } | null;
-  actor: { type: string; id: string | null; name: string | null } | null;
+  actor: WebhookActor | null;
+}
+
+/**
+ * Payload of a `retention.completed` event. The retention job calls
+ * emitRepositoryEvent(repositoryId, "retention.completed", payload).
+ */
+export interface RetentionCompletedPayload {
+  dryRun: boolean;
+  /** Tags removed (or that would be removed in a dry run). */
+  deletedTags: string[];
+  /** Manifest digests that lost their last tag. */
+  deletedDigests: string[];
+  /** Tags that survived the run. */
+  keptTags?: number;
+  /** Free-form description of the rule that ran, e.g. "keep 10, older than 30d". */
+  policy?: string;
+  actor?: WebhookActor | null;
 }
 
 interface Descriptor {
@@ -62,7 +107,7 @@ interface Descriptor {
   size?: number;
 }
 
-async function resolveActor(actor: string | undefined): Promise<WebhookPayload["actor"]> {
+export async function resolveActor(actor: string | undefined | null): Promise<WebhookActor | null> {
   if (!actor) return null;
   const [type, id] = actor.split(":");
   if (type === "user" && id) {
@@ -75,6 +120,40 @@ async function resolveActor(actor: string | undefined): Promise<WebhookPayload["
   }
   if (type === "mirror" && id) return { type: "mirror", id, name: null };
   return { type: "anonymous", id: null, name: null };
+}
+
+/** Repository block of the envelope, plus the ids the dispatcher needs. */
+export async function repositoryInfo(
+  repositoryId: string,
+): Promise<{ repository: WebhookRepository; organizationId: string } | null> {
+  const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
+  if (!repo) return null;
+  const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  if (!org) return null;
+  return {
+    organizationId: org.id,
+    repository: {
+      id: repo.id,
+      name: repo.name,
+      path: imagePath(org.slug, repo.name),
+      organization: { slug: org.slug, name: org.name },
+      visibility: repo.visibility,
+      url: `${env.appUrl}/${org.slug}/${repo.name}`,
+    },
+  };
+}
+
+function envelope(event: string, repository: WebhookRepository | null): WebhookEnvelope {
+  return { event, deliveryId: randomUUID(), timestamp: new Date().toISOString(), registry: env.registryHost, repository };
+}
+
+/** Tags of a repository currently pointing at a digest. */
+export async function tagsForDigest(repositoryId: string, digest: string): Promise<string[]> {
+  const rows = await db.query.tags.findMany({
+    where: and(eq(tagsTable.repositoryId, repositoryId), eq(tagsTable.manifestDigest, digest)),
+    orderBy: (t, { asc }) => [asc(t.name)],
+  });
+  return rows.map((r) => r.name);
 }
 
 /** Assemble the payload for a manifest push. */
@@ -153,10 +232,8 @@ export async function buildPushPayload(
   return {
     repositoryId: repo.id,
     payload: {
+      ...envelope(event, null),
       event,
-      deliveryId: randomUUID(),
-      timestamp: new Date().toISOString(),
-      registry: env.registryHost,
       repository: {
         id: repo.id,
         name: repo.name,
@@ -172,12 +249,12 @@ export async function buildPushPayload(
   };
 }
 
-type Hook = typeof repositoryWebhooks.$inferSelect;
+export type Hook = typeof repositoryWebhooks.$inferSelect;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Deliver one payload to one hook with retries; records the delivery. */
-export async function deliverWebhook(hook: Hook, payload: WebhookPayload): Promise<void> {
+export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Promise<void> {
   const body = JSON.stringify(payload);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -222,35 +299,187 @@ export async function deliverWebhook(hook: Hook, payload: WebhookPayload): Promi
     }
   }
   const ok = statusCode !== null && statusCode >= 200 && statusCode < 300;
-  await db.insert(webhookDeliveries).values({
-    webhookId: hook.id,
-    event: payload.event,
-    payload,
-    statusCode,
-    ok,
-    attempts,
-    durationMs: Date.now() - started,
-    error: ok ? null : (error ?? `HTTP ${statusCode}`),
-    responseSnippet: snippet,
-  });
+  const failure = ok ? null : (error ?? `HTTP ${statusCode}`);
+  const [delivery] = await db
+    .insert(webhookDeliveries)
+    .values({
+      webhookId: hook.id,
+      event: payload.event,
+      payload,
+      statusCode,
+      ok,
+      attempts,
+      durationMs: Date.now() - started,
+      error: failure,
+      responseSnippet: snippet,
+    })
+    .returning({ id: webhookDeliveries.id });
   await db
     .update(repositoryWebhooks)
-    .set({ lastStatus: statusCode, lastDeliveredAt: new Date(), lastError: ok ? null : (error ?? `HTTP ${statusCode}`) })
+    .set({ lastStatus: statusCode, lastDeliveredAt: new Date(), lastError: failure })
     .where(eq(repositoryWebhooks.id, hook.id));
   // Keep the delivery log bounded per hook.
   await db.execute(sql`
     DELETE FROM webhook_deliveries WHERE webhook_id = ${hook.id} AND id NOT IN (
       SELECT id FROM webhook_deliveries WHERE webhook_id = ${hook.id} ORDER BY created_at DESC LIMIT 50)`);
+
+  // Retries exhausted or a hard refusal: tell the organization (email only —
+  // this never fans out to webhooks, so a broken receiver cannot loop).
+  if (!ok && payload.event !== "test") {
+    const { notify } = await import("./notify");
+    await notify({
+      event: "webhook.failed",
+      hookId: hook.id,
+      deliveryId: delivery.id,
+      eventName: payload.event,
+      statusCode,
+      error: failure ?? "delivery failed",
+      attempts,
+    }).catch((err) => console.error("webhook.failed notification failed:", err));
+  }
 }
 
-/** Fan a push out to every enabled hook subscribed to the event. */
-export async function dispatchRepositoryWebhooks(repositoryId: string, payload: WebhookPayload): Promise<void> {
-  const hooks = await db.query.repositoryWebhooks.findMany({
-    where: and(eq(repositoryWebhooks.repositoryId, repositoryId), eq(repositoryWebhooks.enabled, true)),
-  });
+/** Enabled hooks that apply to a repository: its own plus its organization's. */
+export async function hooksForRepository(repositoryId: string, organizationId: string): Promise<Hook[]> {
+  const [own, orgWide] = await Promise.all([
+    db.query.repositoryWebhooks.findMany({
+      where: and(eq(repositoryWebhooks.repositoryId, repositoryId), eq(repositoryWebhooks.enabled, true)),
+    }),
+    db.query.repositoryWebhooks.findMany({
+      where: and(
+        eq(repositoryWebhooks.organizationId, organizationId),
+        isNull(repositoryWebhooks.repositoryId),
+        eq(repositoryWebhooks.enabled, true),
+      ),
+    }),
+  ]);
+  return [...own, ...orgWide];
+}
+
+function subscribed(hook: Hook, event: string): boolean {
+  return hook.events.includes(event === "test" ? "push" : event);
+}
+
+async function deliverAll(hooks: Hook[], payload: WebhookEnvelope): Promise<void> {
   await Promise.allSettled(
     hooks
-      .filter((h) => h.events.includes(payload.event === "test" ? "push" : payload.event))
+      .filter((h) => subscribed(h, payload.event))
       .map((h) => deliverWebhook(h, payload).catch((err) => console.error("webhook delivery failed:", err))),
+  );
+}
+
+/** Fan a repository event out to every enabled hook subscribed to it. */
+export async function dispatchRepositoryWebhooks(repositoryId: string, payload: WebhookEnvelope): Promise<void> {
+  const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
+  if (!repo) return;
+  await deliverAll(await hooksForRepository(repositoryId, repo.organizationId), payload);
+}
+
+/** Fan an organization-level event out to the organization's hooks only. */
+export async function dispatchOrganizationWebhooks(organizationId: string, payload: WebhookEnvelope): Promise<void> {
+  const hooks = await db.query.repositoryWebhooks.findMany({
+    where: and(
+      eq(repositoryWebhooks.organizationId, organizationId),
+      isNull(repositoryWebhooks.repositoryId),
+      eq(repositoryWebhooks.enabled, true),
+    ),
+  });
+  await deliverAll(hooks, payload);
+}
+
+/**
+ * Build the standard envelope for a repository event and deliver it. `data`
+ * is merged next to the envelope fields — the documented shapes live in
+ * docs/wip/automation.md. Other modules (scan, mirror, retention) call this.
+ */
+export async function emitRepositoryEvent(
+  repositoryId: string,
+  event: Exclude<WebhookEvent, "push" | "quota.warning">,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const info = await repositoryInfo(repositoryId);
+  if (!info) return;
+  const payload: WebhookEnvelope = { ...data, ...envelope(event, info.repository) };
+  await deliverAll(await hooksForRepository(repositoryId, info.organizationId), payload);
+}
+
+/** Organization-level event (no repository); reaches organization hooks only. */
+export async function emitOrganizationEvent(
+  organizationId: string,
+  event: "quota.warning",
+  data: Record<string, unknown>,
+): Promise<void> {
+  const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
+  if (!org) return;
+  const payload: WebhookEnvelope & { organization: { slug: string; name: string } } = {
+    ...data,
+    ...envelope(event, null),
+    organization: { slug: org.slug, name: org.name },
+  };
+  await dispatchOrganizationWebhooks(organizationId, payload);
+}
+
+// --- Queries for the settings pages ------------------------------------------
+
+function scopeWhere(scope: WebhookScope) {
+  return scope.kind === "repository"
+    ? eq(repositoryWebhooks.repositoryId, scope.repositoryId)
+    : and(eq(repositoryWebhooks.organizationId, scope.organizationId), isNull(repositoryWebhooks.repositoryId));
+}
+
+export function maxWebhooks(scope: WebhookScope): number {
+  return scope.kind === "repository" ? MAX_WEBHOOKS_PER_REPO : MAX_WEBHOOKS_PER_ORG;
+}
+
+export async function countWebhooks(scope: WebhookScope): Promise<number> {
+  return db.$count(repositoryWebhooks, scopeWhere(scope));
+}
+
+/** One hook of the scope, or null (guards every mutation). */
+export async function findScopedWebhook(scope: WebhookScope, id: string): Promise<Hook | null> {
+  const row = await db.query.repositoryWebhooks.findFirst({ where: and(eq(repositoryWebhooks.id, id), scopeWhere(scope)) });
+  return row ?? null;
+}
+
+/** Hooks of a repository or organization with their last 10 deliveries, for the UI. */
+export async function listWebhookRows(scope: WebhookScope): Promise<WebhookRow[]> {
+  const hooks = await db.query.repositoryWebhooks.findMany({
+    where: scopeWhere(scope),
+    orderBy: (t, { asc }) => [asc(t.createdAt)],
+  });
+  return Promise.all(
+    hooks.map(async (h) => {
+      const deliveries = await db.query.webhookDeliveries.findMany({
+        where: eq(webhookDeliveries.webhookId, h.id),
+        orderBy: [desc(webhookDeliveries.createdAt)],
+        limit: 10,
+      });
+      return {
+        id: h.id,
+        name: h.name,
+        url: h.url,
+        method: h.method,
+        headers: h.headers,
+        authType: h.authType,
+        authHeaderName: h.authHeaderName,
+        hasAuthSecret: !!h.authSecret,
+        hasSigningSecret: !!h.signingSecret,
+        events: h.events,
+        enabled: h.enabled,
+        lastStatus: h.lastStatus,
+        lastDeliveredAt: h.lastDeliveredAt?.toISOString() ?? null,
+        lastError: h.lastError,
+        deliveries: deliveries.map((d) => ({
+          id: d.id,
+          event: d.event,
+          ok: d.ok,
+          statusCode: d.statusCode,
+          attempts: d.attempts,
+          durationMs: d.durationMs,
+          error: d.error,
+          createdAt: d.createdAt.toISOString(),
+        })),
+      };
+    }),
   );
 }
