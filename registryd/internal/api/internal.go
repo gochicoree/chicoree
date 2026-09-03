@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// internalAuthorized checks the shared webhook secret on internal routes.
+func (s *Server) internalAuthorized(r *http.Request) bool {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return s.cfg.WebhookSecret != "" && ok &&
+		subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.WebhookSecret)) == 1
+}
+
 // handleHealthz is the liveness endpoint used by compose/k8s health checks.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -14,6 +14,7 @@ import {
   trafficSeries,
 } from "@/lib/admin-stats";
 import { formatBytes, formatCount } from "@/lib/format";
+import { repoHref } from "@/lib/proxy-shared";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
@@ -113,7 +114,7 @@ export default async function AdminMetricsPage() {
                   {top.byPulls.map((r) => (
                     <tr key={r.id}>
                       <td className={`${td} min-w-0`}>
-                        <Link href={`/${r.org}/${r.name}`} className="font-mono text-[13px] hover:underline">
+                        <Link href={repoHref(r.org, r.name)} className="font-mono text-[13px] hover:underline">
                           {r.org}/{r.name}
                         </Link>
                       </td>
@@ -143,7 +144,7 @@ export default async function AdminMetricsPage() {
                     <tr key={r.id}>
                       <td className={`${td} min-w-0`}>
                         <span className="flex items-center gap-2">
-                          <Link href={`/${r.org}/${r.name}`} className="font-mono text-[13px] hover:underline">
+                          <Link href={repoHref(r.org, r.name)} className="font-mono text-[13px] hover:underline">
                             {r.org}/{r.name}
                           </Link>
                           <VisibilityBadge visibility={r.visibility} />

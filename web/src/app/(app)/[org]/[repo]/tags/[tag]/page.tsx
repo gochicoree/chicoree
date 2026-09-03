@@ -18,6 +18,7 @@ import { SeverityChips, totalFindings, type SeveritySummary } from "@/components
 import { Button } from "@/components/ui/button";
 import { VulnerabilityPanel } from "./vulnerability-panel";
 import { imageReference } from "@/lib/library";
+import { decodeRepoParam, repoHref } from "@/lib/proxy-shared";
 import { manifestBlockReason } from "@/lib/pull-policy";
 import { ShieldBan } from "lucide-react";
 
@@ -48,6 +49,8 @@ async function resolveActor(pushedBy: string | null): Promise<string | null> {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });
     return sa ? `${sa.name} (service account)` : null;
   }
+  if (kind === "proxy") return "the proxy cache";
+  if (kind === "mirror") return "a mirror";
   return null;
 }
 
@@ -56,7 +59,8 @@ export default async function TagDetailPage({
 }: {
   params: Promise<{ org: string; repo: string; tag: string }>;
 }) {
-  const { org: orgSlug, repo: repoName, tag: rawTag } = await params;
+  const { org: orgSlug, repo: rawRepo, tag: rawTag } = await params;
+  const repoName = decodeRepoParam(rawRepo);
   const reference = decodeURIComponent(rawTag);
 
   const found = await getRepoByPath(orgSlug, repoName);
@@ -93,6 +97,7 @@ export default async function TagDetailPage({
   }
   const isIndex = Array.isArray(payload.manifests);
   const path = `${orgSlug}/${repoName}`;
+  const base = repoHref(orgSlug, repoName);
   const pullRef = imageReference(env.registryHost, orgSlug, repoName, isDigestRef ? digest : reference);
 
   // Image config: prefer the cached copy, fall back to a live registry read.
@@ -149,7 +154,7 @@ export default async function TagDetailPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/${path}`}
+          href={base}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink"
         >
           <ArrowLeft className="size-4" /> {path}
@@ -222,7 +227,7 @@ export default async function TagDetailPage({
                     <tr key={child.digest} className="border-b border-line last:border-0">
                       <td className="py-2.5 pr-4 font-mono text-[13px]">
                         <Link
-                          href={`/${path}/tags/${encodeURIComponent(child.digest ?? "")}`}
+                          href={`${base}/tags/${encodeURIComponent(child.digest ?? "")}`}
                           className="font-medium text-ink hover:underline"
                         >
                           {child.platform ? `${child.platform.os}/${child.platform.architecture}${child.platform.variant ? `/${child.platform.variant}` : ""}` : "unknown"}

@@ -6,10 +6,13 @@ import { ROLE_REGISTRY_ACTIONS, type OrgRole } from "./org-roles";
 import {
   member,
   organization,
+  organizationProxies,
+  organizationSettings,
   repositories,
   serviceAccounts,
   user as userTable,
 } from "@/db/schema";
+import { isDockerHubUrl, proxyLocalName } from "./proxy-shared";
 
 export type RegistryAction = "pull" | "push" | "delete";
 
@@ -51,15 +54,33 @@ export async function allowedRepositoryActions(
   const org = await db.query.organization.findFirst({ where: eq(organization.slug, orgSlug) });
   if (!org) return [];
 
+  // Proxy caches: nested names are only valid there, Docker Hub library
+  // images are stored under their short name, and nobody pushes — the
+  // registry fills the cache itself.
+  const proxy = await db.query.organizationProxies.findFirst({
+    where: eq(organizationProxies.organizationId, org.id),
+  });
+  if (repoName.includes("/") && !proxy) return [];
+  if (proxy) repoName = proxyLocalName(isDockerHubUrl(proxy.upstreamUrl), repoName);
+
   const repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.organizationId, org.id), eq(repositories.name, repoName)),
   });
+  // A repository the proxy has not cached yet is as visible as it will be
+  // once created: the organization's default visibility.
+  let visibility: string | undefined = repo?.visibility;
+  if (!repo && proxy) {
+    const settings = await db.query.organizationSettings.findFirst({
+      where: eq(organizationSettings.organizationId, org.id),
+    });
+    visibility = settings?.defaultVisibility ?? "private";
+  }
 
   let allowed: RegistryAction[] = [];
 
   switch (caller.kind) {
     case "anonymous":
-      allowed = repo?.visibility === "public" ? ["pull"] : [];
+      allowed = visibility === "public" ? ["pull"] : [];
       break;
 
     case "user": {
@@ -70,7 +91,7 @@ export async function allowedRepositoryActions(
           where: and(eq(member.organizationId, org.id), eq(member.userId, caller.userId)),
         });
         allowed = membership ? [...(ROLE_REGISTRY_ACTIONS[membership.role as OrgRole] ?? ["pull"])] : [];
-        if (allowed.length === 0 && repo?.visibility === "public") allowed = ["pull"];
+        if (allowed.length === 0 && visibility === "public") allowed = ["pull"];
       }
       if (caller.patScope === "read") allowed = allowed.filter((a) => a === "pull");
       break;
@@ -78,7 +99,7 @@ export async function allowedRepositoryActions(
 
     case "sa": {
       if (caller.organizationId !== org.id) {
-        allowed = repo?.visibility === "public" ? ["pull"] : [];
+        allowed = visibility === "public" ? ["pull"] : [];
         break;
       }
       if (caller.repositoryIds) {
@@ -99,6 +120,7 @@ export async function allowedRepositoryActions(
     }
   }
 
+  if (proxy) allowed = allowed.filter((a) => a === "pull");
   return requested.filter((a) => allowed.includes(a));
 }
 

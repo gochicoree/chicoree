@@ -8,7 +8,7 @@ export default async function OrgSettingsLayout({
   children: React.ReactNode;
   params: Promise<{ org: string }>;
 }) {
-  const { base, canDelete } = await orgSettingsContext(params);
+  const { base, canDelete, library } = await orgSettingsContext(params);
   return (
     <div>
       <NavTabs
@@ -17,6 +17,7 @@ export default async function OrgSettingsLayout({
         items={[
           { href: base, label: "General", exact: true },
           { href: `${base}/policies`, label: "Policies" },
+          ...(library ? [] : [{ href: `${base}/proxy`, label: "Proxy" }]),
           ...(canDelete ? [{ href: `${base}/danger`, label: "Danger zone" }] : []),
         ]}
       />

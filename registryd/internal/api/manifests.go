@@ -32,6 +32,12 @@ var errTagInvalid = errors.New("invalid tag")
 
 // handleManifestGet serves GET/HEAD /v2/<name>/manifests/<ref>.
 func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
+	// Proxy-cache organizations fill the local copy from the upstream first
+	// (see proxy.go); everything below then serves it like any other image.
+	px := s.proxyFor(r.Context(), rc.org)
+	if px != nil && !s.ensureProxiedManifest(w, r, rc, px, ref) {
+		return
+	}
 	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
@@ -98,6 +104,9 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 		defer cancel()
 		_ = s.store.IncrementPullCount(ctx, repoID)
 	}()
+	if px != nil && !isDigest(ref) {
+		s.noteProxyPull(repoID, ref)
+	}
 }
 
 func tagOrEmpty(ref string) string {

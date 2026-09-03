@@ -10,10 +10,10 @@ export default async function RepoSettingsLayout({
   children: React.ReactNode;
   params: Promise<{ org: string; repo: string }>;
 }) {
-  const { orgSlug, repoName, base } = await repoSettingsContext(params);
+  const { orgSlug, repoName, base, href } = await repoSettingsContext(params);
   return (
     <div>
-      <Link href={`/${orgSlug}/${repoName}`} className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
+      <Link href={href} className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
         <ArrowLeft className="size-4" /> {orgSlug}/{repoName}
       </Link>
       <div className="mb-4">

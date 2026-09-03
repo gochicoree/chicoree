@@ -63,10 +63,18 @@ export function imageReference(host: string, orgSlug: string, repoName: string, 
   return ref.startsWith("sha256:") ? `${base}@${ref}` : `${base}:${ref}`;
 }
 
-/** Split a scope/repo name into org + repo; single segments belong to library. */
+/**
+ * Split a scope/repo name into org + repo; single segments belong to library.
+ * Deeper paths (`dockerhub/bitnami/redis`) keep everything after the
+ * organization as the repository name — the registry only accepts those in
+ * proxy-cache organizations.
+ */
 export function splitImagePath(name: string): { orgSlug: string; repoName: string } | null {
   const parts = name.split("/");
-  if (parts.length === 1 && parts[0]) return { orgSlug: LIBRARY_SLUG, repoName: parts[0] };
-  if (parts.length === 2 && parts[0] && parts[1]) return { orgSlug: parts[0], repoName: parts[1] };
+  if (parts.some((p) => !p)) return null;
+  if (parts.length === 1) return { orgSlug: LIBRARY_SLUG, repoName: parts[0] };
+  if (parts.length >= 2) return { orgSlug: parts[0], repoName: parts.slice(1).join("/") };
   return null;
 }
+
+export { repoHref } from "./proxy-shared";

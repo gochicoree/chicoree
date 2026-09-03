@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,10 @@ type Config struct {
 	// Webhook to the web app
 	WebhookURL    string
 	WebhookSecret string
+	// InternalAPIURL is the base of the web app's internal API
+	// (…/api/internal); registryd reads proxy-cache configuration from it.
+	// Defaults to WEBHOOK_URL with its last path segment dropped.
+	InternalAPIURL string
 
 	// Upload housekeeping
 	UploadSessionTTL time.Duration
@@ -86,8 +91,9 @@ func Load() (*Config, error) {
 		JWTPublicKey: env("JWT_PUBLIC_KEY_FILE", "/run/secrets/registry-token.pub"),
 		AuthDisabled: envBool("AUTH_DISABLED", false),
 
-		WebhookURL:    os.Getenv("WEBHOOK_URL"),
-		WebhookSecret: os.Getenv("WEBHOOK_SECRET"),
+		WebhookURL:     os.Getenv("WEBHOOK_URL"),
+		WebhookSecret:  os.Getenv("WEBHOOK_SECRET"),
+		InternalAPIURL: os.Getenv("INTERNAL_API_URL"),
 
 		UploadSessionTTL: envDuration("UPLOAD_SESSION_TTL", 24*time.Hour),
 		GCGracePeriod:    envDuration("GC_GRACE_PERIOD", time.Hour),
@@ -99,5 +105,25 @@ func Load() (*Config, error) {
 	if !c.AuthDisabled && c.TokenRealm == "" {
 		return nil, fmt.Errorf("TOKEN_REALM is required unless AUTH_DISABLED=true")
 	}
+	if c.InternalAPIURL == "" {
+		c.InternalAPIURL = DeriveInternalAPIURL(c.WebhookURL)
+	}
 	return c, nil
+}
+
+// DeriveInternalAPIURL turns http://web:3000/api/internal/events into
+// http://web:3000/api/internal (the webhook is one route of that API).
+func DeriveInternalAPIURL(webhookURL string) string {
+	u := strings.TrimRight(strings.TrimSpace(webhookURL), "/")
+	if u == "" {
+		return ""
+	}
+	scheme, rest, ok := strings.Cut(u, "://")
+	if !ok {
+		return u
+	}
+	if i := strings.LastIndex(rest, "/"); i > 0 {
+		return scheme + "://" + rest[:i]
+	}
+	return u
 }

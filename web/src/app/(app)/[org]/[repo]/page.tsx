@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Settings, Tag as TagIcon } from "lucide-react";
+import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
 import { getRepoByPath, listRepoTags, pullSeries } from "@/lib/data";
 import { env } from "@/lib/env";
@@ -13,6 +13,8 @@ import { SeverityChips } from "@/components/severity";
 import { PullsChart } from "@/components/pulls-chart";
 import { buttonClasses } from "@/components/ui/button";
 import { imageReference } from "@/lib/library";
+import { getOrgProxy } from "@/lib/proxy";
+import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
 import { DeleteTagButton } from "./tag-actions";
 
 export default async function RepoPage({
@@ -20,18 +22,25 @@ export default async function RepoPage({
 }: {
   params: Promise<{ org: string; repo: string }>;
 }) {
-  const { org: orgSlug, repo: repoName } = await params;
+  const { org: orgSlug, repo: rawRepo } = await params;
+  const repoName = decodeRepoParam(rawRepo);
   const found = await getRepoByPath(orgSlug, repoName);
   if (!found) notFound();
   const ctx = await getOrgContext(orgSlug);
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
 
-  const [tagList, series] = await Promise.all([
+  const [tagList, series, proxy] = await Promise.all([
     listRepoTags(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
+    getOrgProxy(found.org.id),
   ]);
   const path = `${orgSlug}/${repoName}`;
+  const base = repoHref(orgSlug, repoName);
+  const lastChecked = tagList.reduce<Date | null>(
+    (latest, t) => (t.proxyCheckedAt && (!latest || t.proxyCheckedAt > latest) ? t.proxyCheckedAt : latest),
+    null,
+  );
   const scanning = env.clairEnabled;
   // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
   const canDelete = role === "owner" || role === "admin";
@@ -51,14 +60,20 @@ export default async function RepoPage({
               {repoName}
             </h1>
             <VisibilityBadge visibility={found.repo.visibility} />
+            {proxy && (
+              <Badge tone="accent" title={`${proxy.upstreamUrl}/v2/${proxyUpstreamPath(isDockerHubUrl(proxy.upstreamUrl), repoName)}`}>
+                <Globe className="size-3" /> cached from {displayHost(proxy.upstreamUrl)}
+              </Badge>
+            )}
           </div>
           {found.repo.description && <p className="mt-1 text-sm text-ink-2">{found.repo.description}</p>}
           <p className="mt-1 font-mono text-xs text-ink-3">
             {formatCount(found.repo.pullCount)} pulls · updated {relativeTime(found.repo.updatedAt)}
+            {proxy && ` · upstream checked ${lastChecked ? relativeTime(lastChecked) : "never"}`}
           </p>
         </div>
         {(role === "owner" || role === "admin") && (
-          <Link href={`/${path}/settings`} className={buttonClasses("secondary", "sm")}>
+          <Link href={`${base}/settings`} className={buttonClasses("secondary", "sm")}>
             <Settings className="size-3.5" /> Settings
           </Link>
         )}
@@ -71,8 +86,18 @@ export default async function RepoPage({
         {tagList.length === 0 ? (
           <CardBody>
             <p className="text-sm text-ink-3">
-              Nothing pushed yet. Tag an image as{" "}
-              <code className="font-mono">{imageReference(env.registryHost, orgSlug, repoName, "latest")}</code> and push it.
+              {proxy ? (
+                <>
+                  Nothing cached yet. Pull{" "}
+                  <code className="font-mono">{imageReference(env.registryHost, orgSlug, repoName, "latest")}</code> to fetch it from{" "}
+                  {displayHost(proxy.upstreamUrl)}.
+                </>
+              ) : (
+                <>
+                  Nothing pushed yet. Tag an image as{" "}
+                  <code className="font-mono">{imageReference(env.registryHost, orgSlug, repoName, "latest")}</code> and push it.
+                </>
+              )}
             </p>
           </CardBody>
         ) : (
@@ -94,7 +119,7 @@ export default async function RepoPage({
                   <tr key={tag.name} className="border-b border-line last:border-0 hover:bg-card-2">
                     <td className="px-4 py-3 sm:px-5">
                       <Link
-                        href={`/${path}/tags/${encodeURIComponent(tag.name)}`}
+                        href={`${base}/tags/${encodeURIComponent(tag.name)}`}
                         className="inline-flex items-start gap-1.5 break-all font-mono text-[13px] font-medium text-ink hover:underline"
                       >
                         <TagIcon className="mt-0.5 size-3.5 shrink-0 text-ink-3" />

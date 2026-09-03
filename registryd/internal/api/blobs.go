@@ -29,6 +29,15 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 	}
 	size, err := s.store.LinkedBlobSize(r.Context(), repo.ID, digest)
 	if errors.Is(err, store.ErrNotFound) {
+		// Proxy-cache miss: fetch the layer from the upstream (see proxy.go).
+		if px := s.proxyFor(r.Context(), rc.org); px != nil {
+			if !s.ensureProxiedBlob(w, r, rc, px, repo, digest) {
+				return
+			}
+			size, err = s.store.LinkedBlobSize(r.Context(), repo.ID, digest)
+		}
+	}
+	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeBlobUnknown, "blob unknown to repository")
 		return
 	} else if err != nil {
