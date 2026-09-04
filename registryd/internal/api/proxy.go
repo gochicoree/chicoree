@@ -585,18 +585,18 @@ func (s *Server) downloadProxiedBlob(ctx context.Context, px *proxyOrg, orgID, u
 	}
 
 	id := uuid.NewString()
-	if err := s.staging.Create(id, "proxy:"+digest); err != nil {
+	if err := s.staging.Create(ctx, id, "proxy", digest); err != nil {
 		return nil, err
 	}
-	defer s.staging.Remove(id)
-	n, err := s.staging.Append(id, body)
+	defer s.staging.Remove(ctx, id)
+	n, err := s.staging.Append(ctx, id, 0, body)
 	if err != nil {
 		return nil, fmt.Errorf("upstream transfer of %s failed: %w", digest, err)
 	}
 	if size >= 0 && n != size {
 		return nil, fmt.Errorf("upstream transfer of %s ended after %d of %d bytes", digest, n, size)
 	}
-	actual, n, err := s.staging.Digest(id)
+	actual, n, err := storage.StagedDigest(ctx, s.staging, id)
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +609,7 @@ func (s *Server) downloadProxiedBlob(ctx context.Context, px *proxyOrg, orgID, u
 		}
 	}
 	if _, err := s.driver.Stat(ctx, digest); errors.Is(err, storage.ErrNotFound) {
-		content, err := s.staging.Open(id)
+		content, _, err := s.staging.Open(ctx, id)
 		if err != nil {
 			return nil, err
 		}

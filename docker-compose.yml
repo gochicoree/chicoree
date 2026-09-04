@@ -98,6 +98,8 @@ services:
       # Storage plugin selection; each plugin reads <NAME>_* variables
       # (run `docker compose run --rm registryd plugins` for the full list).
       STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      # local (default) or shared — shared is what several replicas need.
+      STORAGE_STAGING: ${STORAGE_STAGING:-local}
       FILESYSTEM_ROOT: /var/lib/registry
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-us-east-1}

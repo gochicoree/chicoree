@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -46,15 +49,15 @@ func (s *Server) handleUploadStart(w http.ResponseWriter, r *http.Request, rc *r
 	}
 
 	id := uuid.NewString()
-	if err := s.staging.Create(id, rc.name); err != nil {
+	if err := s.staging.Create(r.Context(), id, rc.org, rc.repo); err != nil {
 		writeInternal(w, r, err)
 		return
 	}
 
 	if digest := q.Get("digest"); digest != "" {
-		// Monolithic: the entire blob is the request body.
-		if _, err := s.staging.Append(id, http.MaxBytesReader(w, r.Body, maxBlobBytes)); err != nil {
-			s.staging.Remove(id)
+		// Monolithic: the entire blob is the request body, staged as one chunk.
+		if _, err := s.staging.Append(r.Context(), id, 0, http.MaxBytesReader(w, r.Body, maxBlobBytes)); err != nil {
+			s.discardUpload(id)
 			writeInternal(w, r, err)
 			return
 		}
@@ -104,27 +107,63 @@ func (s *Server) tryMount(w http.ResponseWriter, r *http.Request, rc *reqCtx, di
 // unbounded, but protects against runaway streams).
 const maxBlobBytes = 100 << 30
 
-// checkSession verifies the upload belongs to the repository in the URL.
-func (s *Server) checkSession(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) bool {
-	repo, err := s.staging.Repository(id)
+// checkSession loads the upload session and verifies it belongs to the
+// repository in the URL. Returns nil after writing the error response.
+func (s *Server) checkSession(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) *storage.UploadSession {
+	sess, err := s.staging.Get(r.Context(), id)
 	if errors.Is(err, storage.ErrUploadNotFound) {
 		writeError(w, http.StatusNotFound, CodeBlobUploadUnknown, "upload session not found")
-		return false
+		return nil
 	} else if err != nil {
 		writeInternal(w, r, err)
-		return false
+		return nil
 	}
-	if repo != rc.name {
+	if sess.Org != rc.org || sess.Repo != rc.repo {
 		writeError(w, http.StatusNotFound, CodeBlobUploadUnknown, "upload session belongs to a different repository")
-		return false
+		return nil
 	}
-	return true
+	return sess
+}
+
+// discardUpload drops a session and its staged content once the request is
+// done with it. It runs on its own context so a client that hung up still
+// gets cleaned up; anything it misses is swept by GC.
+func (s *Server) discardUpload(id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.staging.Remove(ctx, id); err != nil {
+		slog.Warn("upload: discard session failed (gc will retry)", "id", id, "err", err)
+	}
+}
+
+// appendChunk stages a request body at the session's current offset and
+// answers the range errors the spec defines when it does not fit; it returns
+// the new offset and false once a response has been written.
+func (s *Server) appendChunk(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string, expected int64) (int64, bool) {
+	size, err := s.staging.Append(r.Context(), id, expected, http.MaxBytesReader(w, r.Body, maxBlobBytes))
+	switch {
+	case errors.Is(err, storage.ErrUploadNotFound):
+		writeError(w, http.StatusNotFound, CodeBlobUploadUnknown, "upload session not found")
+		return 0, false
+	case errors.Is(err, storage.ErrOffsetMismatch):
+		// Another request appended first (two replicas, or a retried
+		// chunk): report where the upload stands so the client resumes.
+		setUploadHeaders(w, rc.name, id, size)
+		writeError(w, http.StatusRequestedRangeNotSatisfiable, CodeRangeInvalid,
+			fmt.Sprintf("upload advanced concurrently; resume from offset %d", size))
+		return 0, false
+	case err != nil:
+		writeInternal(w, r, err)
+		return 0, false
+	}
+	return size, true
 }
 
 // handleUploadPatch appends a chunk. Content-Range, when present, must line
 // up with the bytes staged so far.
 func (s *Server) handleUploadPatch(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) {
-	if !s.checkSession(w, r, rc, id) {
+	sess := s.checkSession(w, r, rc, id)
+	if sess == nil {
 		return
 	}
 	if cr := r.Header.Get("Content-Range"); cr != "" {
@@ -133,24 +172,15 @@ func (s *Server) handleUploadPatch(w http.ResponseWriter, r *http.Request, rc *r
 			writeError(w, http.StatusBadRequest, CodeRangeInvalid, "malformed Content-Range")
 			return
 		}
-		current, err := s.staging.Size(id)
-		if err != nil {
-			writeInternal(w, r, err)
-			return
-		}
-		if start != current {
-			setUploadHeaders(w, rc.name, id, current)
+		if start != sess.Offset {
+			setUploadHeaders(w, rc.name, id, sess.Offset)
 			writeError(w, http.StatusRequestedRangeNotSatisfiable, CodeRangeInvalid,
-				fmt.Sprintf("chunk start %d does not match staged size %d", start, current))
+				fmt.Sprintf("chunk start %d does not match staged size %d", start, sess.Offset))
 			return
 		}
 	}
-	size, err := s.staging.Append(id, http.MaxBytesReader(w, r.Body, maxBlobBytes))
-	if errors.Is(err, storage.ErrUploadNotFound) {
-		writeError(w, http.StatusNotFound, CodeBlobUploadUnknown, "upload session not found")
-		return
-	} else if err != nil {
-		writeInternal(w, r, err)
+	size, ok := s.appendChunk(w, r, rc, id, sess.Offset)
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Length", "0")
@@ -181,95 +211,124 @@ func parseContentRange(v string) (start, end int64, ok bool) {
 // handleUploadCommit implements PUT ...?digest=<d>: append any final body,
 // verify the digest, and hand the content to the storage driver.
 func (s *Server) handleUploadCommit(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) {
-	if !s.checkSession(w, r, rc, id) {
+	sess := s.checkSession(w, r, rc, id)
+	if sess == nil {
 		return
 	}
-	if _, err := s.staging.Append(id, http.MaxBytesReader(w, r.Body, maxBlobBytes)); err != nil {
-		writeInternal(w, r, err)
-		return
+	// A PUT without a body (the common docker/containerd shape) stages no
+	// empty chunk; one with a body appends it like a final PATCH.
+	if r.ContentLength != 0 {
+		if _, ok := s.appendChunk(w, r, rc, id, sess.Offset); !ok {
+			return
+		}
 	}
 	s.commitUpload(w, r, rc, id, r.URL.Query().Get("digest"))
 }
 
+// commitUpload verifies the staged content against the client's digest and
+// stores it. The bytes are hashed while they stream into the driver (one
+// pass, whichever staging mode is in use); the driver publishes the blob
+// only once the reader has finished cleanly, so a mismatch never leaves
+// content behind. When the blob already exists the content is still hashed:
+// a wrong digest must never link content the client did not send.
 func (s *Server) commitUpload(w http.ResponseWriter, r *http.Request, rc *reqCtx, id, expected string) {
 	expected = strings.ToLower(strings.TrimSpace(expected))
 	if !strings.HasPrefix(expected, "sha256:") || !isDigest(expected) {
 		writeError(w, http.StatusBadRequest, CodeDigestInvalid, "a sha256 digest query parameter is required")
 		return
 	}
-	actual, size, err := s.staging.Digest(id)
-	if err != nil {
-		writeInternal(w, r, err)
+	ctx := r.Context()
+	sess, err := s.staging.Get(ctx, id)
+	if errors.Is(err, storage.ErrUploadNotFound) {
+		writeError(w, http.StatusNotFound, CodeBlobUploadUnknown, "upload session not found")
 		return
-	}
-	if actual != expected {
-		s.staging.Remove(id)
-		writeError(w, http.StatusBadRequest, CodeDigestInvalid,
-			fmt.Sprintf("digest mismatch: client sent %s, content is %s", expected, actual))
-		return
-	}
-
-	// Resolve (or, on first push, create) the repository — but only after every
-	// quota check passes, so a denied push leaves nothing behind.
-	repo, err := s.resolveRepoForWrite(w, r, rc, actual, size)
-	if err != nil {
-		s.staging.Remove(id)
-		return
-	}
-
-	// Skip the backend write when the content already exists (dedup).
-	if _, err := s.driver.Stat(r.Context(), actual); errors.Is(err, storage.ErrNotFound) {
-		content, err := s.staging.Open(id)
-		if err != nil {
-			writeInternal(w, r, err)
-			return
-		}
-		err = s.driver.Put(r.Context(), actual, content, size)
-		content.Close()
-		if err != nil {
-			writeInternal(w, r, err)
-			return
-		}
 	} else if err != nil {
 		writeInternal(w, r, err)
 		return
 	}
+	size := sess.Offset
 
-	if err := s.store.UpsertBlob(r.Context(), repo.ID, actual, size, ""); err != nil {
+	_, err = s.driver.Stat(ctx, expected)
+	exists := err == nil
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		writeInternal(w, r, err)
 		return
 	}
-	s.staging.Remove(id)
+	if exists {
+		actual, n, err := storage.StagedDigest(ctx, s.staging, id)
+		if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+		if actual != expected || n != size {
+			s.discardUpload(id)
+			writeError(w, http.StatusBadRequest, CodeDigestInvalid,
+				fmt.Sprintf("digest mismatch: client sent %s, content is %s", expected, actual))
+			return
+		}
+	}
+
+	// Resolve (or, on first push, create) the repository — but only after every
+	// quota check passes, so a denied push leaves nothing behind.
+	repo, err := s.resolveRepoForWrite(w, r, rc, expected, size)
+	if err != nil {
+		s.discardUpload(id)
+		return
+	}
+
+	if !exists {
+		content, _, err := s.staging.Open(ctx, id)
+		if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+		verifier := storage.NewVerifyingReader(content, expected)
+		err = s.driver.Put(ctx, expected, verifier, size)
+		content.Close()
+		if errors.Is(err, storage.ErrDigestMismatch) {
+			s.discardUpload(id)
+			writeError(w, http.StatusBadRequest, CodeDigestInvalid, err.Error())
+			return
+		} else if err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+	}
+
+	if err := s.store.UpsertBlob(ctx, repo.ID, expected, size, ""); err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+	s.discardUpload(id)
 	// Ingress is counted once per successful upload: the bytes the client
 	// sent across every PATCH/PUT of this session (mounts send nothing).
 	s.countTraffic(repo.ID, traffic.Delta{PushBytes: size})
 
-	w.Header().Set("Location", blobLocation(rc.name, actual))
-	w.Header().Set("Docker-Content-Digest", actual)
+	w.Header().Set("Location", blobLocation(rc.name, expected))
+	w.Header().Set("Docker-Content-Digest", expected)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusCreated)
 }
 
 // handleUploadStatus reports staged progress for resumable uploads.
 func (s *Server) handleUploadStatus(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) {
-	if !s.checkSession(w, r, rc, id) {
+	sess := s.checkSession(w, r, rc, id)
+	if sess == nil {
 		return
 	}
-	size, err := s.staging.Size(id)
-	if err != nil {
-		writeInternal(w, r, err)
-		return
-	}
-	setUploadHeaders(w, rc.name, id, size)
+	setUploadHeaders(w, rc.name, id, sess.Offset)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleUploadCancel aborts an upload session.
 func (s *Server) handleUploadCancel(w http.ResponseWriter, r *http.Request, rc *reqCtx, id string) {
-	if !s.checkSession(w, r, rc, id) {
+	if s.checkSession(w, r, rc, id) == nil {
 		return
 	}
-	s.staging.Remove(id)
+	if err := s.staging.Remove(r.Context(), id); err != nil {
+		writeInternal(w, r, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

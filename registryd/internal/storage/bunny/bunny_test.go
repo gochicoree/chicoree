@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,12 +40,22 @@ func (z *fakeZone) handler(t *testing.T) http.Handler {
 		case http.MethodGet:
 			if strings.HasSuffix(p, "/") || p == "" {
 				var entries []map[string]any
+				dirs := map[string]bool{}
 				for name, data := range z.objects {
-					if strings.HasPrefix(name, p) && !strings.Contains(strings.TrimPrefix(name, p), "/") {
-						entries = append(entries, map[string]any{
-							"ObjectName": strings.TrimPrefix(name, p), "Length": len(data), "IsDirectory": false,
-						})
+					if !strings.HasPrefix(name, p) {
+						continue
 					}
+					rest := strings.TrimPrefix(name, p)
+					if dir, _, nested := strings.Cut(rest, "/"); nested {
+						if !dirs[dir] {
+							dirs[dir] = true
+							entries = append(entries, map[string]any{"ObjectName": dir, "Length": 0, "IsDirectory": true})
+						}
+						continue
+					}
+					entries = append(entries, map[string]any{
+						"ObjectName": rest, "Length": len(data), "IsDirectory": false,
+					})
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(entries)
@@ -156,6 +167,71 @@ func TestChecksumRejected(t *testing.T) {
 	err = d.Put(context.Background(), "sha256:"+strings.Repeat("ab", 32), strings.NewReader("other"), 5)
 	if err == nil {
 		t.Fatal("expected checksum rejection")
+	}
+}
+
+func TestObjectStore(t *testing.T) {
+	zone := &fakeZone{objects: map[string][]byte{}, key: "secret", headOK: true}
+	srv := httptest.NewServer(zone.handler(t))
+	defer srv.Close()
+	d, err := New(context.Background(), Options{StorageZone: "zone1", AccessKey: "secret", Endpoint: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var _ storage.ObjectStore = d
+	ctx := context.Background()
+
+	// Unknown size is spooled so the request carries a Content-Length.
+	if n, err := d.PutObject(ctx, "_uploads/s1/0-aa", strings.NewReader("hello"), -1); err != nil || n != 5 {
+		t.Fatalf("PutObject = %d, %v", n, err)
+	}
+	if _, err := d.PutObject(ctx, "_uploads/s1/1-bb", strings.NewReader("world"), 5); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.PutObject(ctx, "_uploads/s2/0-cc", strings.NewReader("x"), 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.PutObject(ctx, "../escape", strings.NewReader("x"), 1); err == nil {
+		t.Fatal("invalid key accepted")
+	}
+	if string(zone.objects["_uploads/s1/0-aa"]) != "hello" {
+		t.Fatalf("stored objects: %v", zone.objects)
+	}
+	rc, size, err := d.GetObject(ctx, "_uploads/s1/0-aa")
+	if err != nil || size != 5 {
+		t.Fatalf("GetObject = %d, %v", size, err)
+	}
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	if string(got) != "hello" {
+		t.Fatalf("GetObject content = %q", got)
+	}
+	if _, _, err := d.GetObject(ctx, "_uploads/none"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("missing GetObject = %v", err)
+	}
+	list, err := d.ListObjects(ctx, "_uploads/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, 0, len(list))
+	for _, o := range list {
+		keys = append(keys, o.Key)
+	}
+	sort.Strings(keys)
+	if strings.Join(keys, ",") != "_uploads/s1/0-aa,_uploads/s1/1-bb,_uploads/s2/0-cc" {
+		t.Fatalf("ListObjects = %v", keys)
+	}
+	if list, _ := d.ListObjects(ctx, "_uploads/s1/"); len(list) != 2 {
+		t.Fatalf("prefix listing = %d", len(list))
+	}
+	if err := d.DeleteObject(ctx, "_uploads/s1/0-aa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteObject(ctx, "_uploads/s1/0-aa"); err != nil {
+		t.Fatalf("second delete: %v", err)
+	}
+	if list, _ := d.ListObjects(ctx, "_uploads/"); len(list) != 2 {
+		t.Fatalf("after delete = %d", len(list))
 	}
 }
 

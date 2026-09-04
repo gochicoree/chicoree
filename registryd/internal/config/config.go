@@ -19,7 +19,11 @@ type Config struct {
 
 	// Storage: the plugin name; plugin options come from <NAME>_* env vars.
 	StorageDriver string
-	StagingDir    string // local scratch space for in-progress uploads
+	// StorageStaging selects where in-flight uploads live: "local" (files
+	// under StagingDir, node-local) or "shared" (sessions in Postgres, chunks
+	// in the storage backend, so any replica can serve any upload request).
+	StorageStaging string
+	StagingDir     string // local scratch space for in-progress uploads
 
 	// Token auth
 	TokenRealm   string // absolute URL of the web token endpoint
@@ -89,8 +93,9 @@ func Load() (*Config, error) {
 
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 
-		StorageDriver: env("STORAGE_DRIVER", "filesystem"),
-		StagingDir:    env("STORAGE_STAGING_DIR", "/var/lib/registry/_uploads"),
+		StorageDriver:  env("STORAGE_DRIVER", "filesystem"),
+		StorageStaging: strings.ToLower(env("STORAGE_STAGING", "local")),
+		StagingDir:     env("STORAGE_STAGING_DIR", "/var/lib/registry/_uploads"),
 
 		TokenRealm:   os.Getenv("TOKEN_REALM"),
 		TokenService: env("TOKEN_SERVICE", "chicoree-registry"),
@@ -112,6 +117,9 @@ func Load() (*Config, error) {
 
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if c.StorageStaging != "local" && c.StorageStaging != "shared" {
+		return nil, fmt.Errorf("STORAGE_STAGING must be local or shared, got %q", c.StorageStaging)
 	}
 	if !c.AuthDisabled && c.TokenRealm == "" {
 		return nil, fmt.Errorf("TOKEN_REALM is required unless AUTH_DISABLED=true")

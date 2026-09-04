@@ -38,12 +38,18 @@ func internalAuthorized(r *http.Request, secret string) bool {
 // StatusResponse is what /internal/v1/status returns to the web app's health
 // page. Numbers are -1 when they could not be determined.
 type StatusResponse struct {
-	Status               string  `json:"status"`
-	Version              string  `json:"version"`
-	GoVersion            string  `json:"goVersion"`
-	Storage              string  `json:"storage"`
-	StagingDir           string  `json:"stagingDir"`
-	StagingFreeBytes     int64   `json:"stagingFreeBytes"`
+	Status    string `json:"status"`
+	Version   string `json:"version"`
+	GoVersion string `json:"goVersion"`
+	Storage   string `json:"storage"`
+	// Staging is "local" (node-local files under StagingDir) or "shared"
+	// (sessions in Postgres, chunks in the backend); StagingDir and the
+	// free-space figure only apply to local staging.
+	Staging          string `json:"staging"`
+	StagingDir       string `json:"stagingDir"`
+	StagingFreeBytes int64  `json:"stagingFreeBytes"`
+	// UploadSessions counts in-flight shared upload sessions (-1 in local mode).
+	UploadSessions       int64   `json:"uploadSessions"`
 	BlobCount            int64   `json:"blobCount"`
 	BlobBytes            int64   `json:"blobBytes"`
 	StartedAt            string  `json:"startedAt"`
@@ -65,8 +71,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Version:              version.Version,
 		GoVersion:            runtime.Version(),
 		Storage:              s.driver.Name(),
+		Staging:              s.staging.Mode(),
 		StagingDir:           s.cfg.StagingDir,
 		StagingFreeBytes:     diskFreeBytes(s.cfg.StagingDir),
+		UploadSessions:       -1,
 		BlobCount:            -1,
 		BlobBytes:            -1,
 		StartedAt:            s.started.UTC().Format(time.RFC3339),
@@ -79,6 +87,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		resp.DatabaseError = err.Error()
 	} else {
 		resp.BlobCount, resp.BlobBytes = count, bytes
+	}
+	if resp.Staging == "shared" {
+		resp.StagingDir, resp.StagingFreeBytes = "", -1
+		if n, err := s.store.UploadSessionCount(r.Context()); err == nil {
+			resp.UploadSessions = n
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -114,7 +128,11 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 		}
 		deleted++
 	}
-	res.SweptUploads = s.staging.Sweep(s.cfg.UploadSessionTTL)
+	swept, err := s.staging.Sweep(r.Context())
+	if err != nil {
+		slog.Warn("gc: upload session sweep failed", "err", err)
+	}
+	res.SweptUploads = swept
 	slog.Info("gc complete", "unlinked", res.UnlinkedBlobs, "deletedRows", res.DeletedBlobs,
 		"deletedObjects", deleted, "sweptUploads", res.SweptUploads)
 

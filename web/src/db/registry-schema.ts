@@ -683,3 +683,38 @@ export const repositoryVisits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.repositoryId] }), index("repository_visits_user_idx").on(t.userId, t.lastVisitedAt)],
 );
+
+// --- Shared upload staging (STORAGE_STAGING=shared) ---
+
+/**
+ * In-flight blob uploads when registryd runs with STORAGE_STAGING=shared.
+ * The row is the source of truth for the byte offset and the ordered chunk
+ * objects (`_uploads/<id>/<seq>-<nonce>` in the storage backend), so any
+ * replica can continue, inspect, cancel or commit an upload. Written by
+ * registryd only (internal/store/uploads.go); rows disappear on commit,
+ * cancel or the GC sweep (expired sessions and orphaned chunks).
+ */
+export const uploadSessions = pgTable(
+  "upload_sessions",
+  {
+    /** The Docker-Upload-UUID handed to the client. */
+    id: text("id").primaryKey(),
+    /** Resolved organization slug and repository name; every request on the session must match. */
+    organization: text("organization").notNull(),
+    repository: text("repository").notNull(),
+    /** Bytes staged so far; appends are an optimistic `UPDATE … WHERE offset = <seen>`. */
+    offset: bigint("offset", { mode: "number" }).notNull().default(0),
+    /** Ordered chunk objects: [{ seq, size, key }]. */
+    chunks: jsonb("chunks")
+      .$type<{ seq: number; size: number; key: string }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Hostname of the replica that opened the session (diagnostics only). */
+    node: text("node"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Idle deadline, pushed forward by every append; GC deletes rows past it. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("upload_sessions_expires_idx").on(t.expiresAt)],
+);
