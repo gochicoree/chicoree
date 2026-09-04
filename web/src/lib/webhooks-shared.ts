@@ -9,6 +9,8 @@ export type WebhookEvent =
   | "mirror.completed"
   | "mirror.failed"
   | "retention.completed"
+  | "repository.renamed"
+  | "repository.transferred"
   | "quota.warning";
 
 export interface WebhookEventInfo {
@@ -27,6 +29,8 @@ export const WEBHOOK_EVENTS: WebhookEventInfo[] = [
   { value: "mirror.completed", label: "Mirror completed", description: "A mirror sync finished" },
   { value: "mirror.failed", label: "Mirror failed", description: "A mirror sync failed" },
   { value: "retention.completed", label: "Retention completed", description: "A retention run deleted (or would delete) tags" },
+  { value: "repository.renamed", label: "Repository renamed", description: "The repository got a new name (the old one redirects)" },
+  { value: "repository.transferred", label: "Repository transferred", description: "The repository moved to another organization" },
   { value: "quota.warning", label: "Quota warning", description: "Usage reached 80 % / 95 % of a limit", organizationOnly: true },
 ];
 

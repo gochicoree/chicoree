@@ -35,11 +35,16 @@ type Server struct {
 	// (see traffic.go); nil disables the feature.
 	limiter *ratelimit.Manager
 	traffic *traffic.Counter
+	// Rename/transfer redirects (see redirects.go): the cached tables and the
+	// lookups resolution needs (the store, or a fake in tests).
+	redirects  *redirectCache
+	repoLookup store.RepoLookup
 }
 
 func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
 	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
-		proxies: newProxyRegistry(cfg), started: time.Now()}
+		proxies: newProxyRegistry(cfg), started: time.Now(),
+		redirects: newRedirectCache(st.LoadRedirects), repoLookup: st}
 }
 
 var (
@@ -270,6 +275,15 @@ func (s *Server) withAuthResolved(w http.ResponseWriter, r *http.Request, name, 
 		return
 	}
 	if !s.verifier.Disabled() && !identity.Can("repository", name, action) {
+		// Tokens for a former repository name only ever carry pull (the token
+		// endpoint authorizes the old name against the target, read-only), so
+		// a push or delete lands here: say where the repository went.
+		if action != "pull" {
+			if moved, err := s.resolveMoved(r.Context(), org, repo); err == nil && moved != nil {
+				writeError(w, http.StatusForbidden, CodeDenied, movedMessage(moved))
+				return
+			}
+		}
 		writeError(w, http.StatusForbidden, CodeDenied, "access to the requested resource is denied")
 		return
 	}

@@ -25,10 +25,11 @@ import { needsGoogleGroupsApi, syncOAuthGroups } from "./oauth-groups";
 import { getInstanceSettings, settingsVersion, type EffectiveSettings } from "./instance-settings";
 import { auditAfterHook, auditBeforeHook, auditOrganizationHooks, auditSessionCreated, auditSessionDeleted, auditUserCreated, auditUserUpdate } from "./auth-audit";
 import { canCreateOrganization, enforceSignUpPolicy, INVITATION_HEADER, ORG_CREATION_DENIED } from "./signup-policy";
+import { clearOrganizationRedirect } from "./redirects";
 
 // Org slugs become both URL paths and image namespaces; these collide with
 // app routes or registry internals.
-const RESERVED_SLUGS = new Set([
+export const RESERVED_SLUGS = new Set([
   "dashboard", "settings", "admin", "explore", "orgs", "api", "sign-in", "sign-up",
   "two-factor", "email-otp", "forgot-password", "reset-password", "verify-email",
   "accept-invitation", "v2", "internal", "_next", "favicon.ico", "assets", "static",
@@ -196,6 +197,9 @@ function buildAuth(settings: EffectiveSettings) {
             const quota = await checkOrgCreationQuota(user.id);
             if (quota) throw new APIError("FORBIDDEN", { message: quota });
           }
+          // A former slug of a renamed organization can be reused; the
+          // redirect ends here (lib/redirects.ts).
+          await clearOrganizationRedirect(slug);
           return { data: organization };
         },
         beforeDeleteOrganization: async ({ organization }) => {

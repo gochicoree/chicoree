@@ -14,6 +14,7 @@ import { checkQuotaWarnings } from "@/lib/notify";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
 import { recordAudit } from "@/lib/audit";
+import { clearRepositoryRedirects } from "@/lib/redirects";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -73,6 +74,8 @@ export async function createRepository(
   if (quota) return { error: quota };
 
   const [created] = await db.insert(repositories).values({ organizationId: orgId, name, description, visibility }).returning({ id: repositories.id });
+  // Old names of renamed / transferred repositories can be reused: the redirect ends here.
+  await clearRepositoryRedirects(orgId, org.slug, name);
   await recordAudit({ action: "repo.create", organizationId: orgId, targetType: "repository", targetId: created.id, targetLabel: `${org.slug}/${name}`, details: { visibility } });
   after(() => checkQuotaWarnings(orgId).catch((err) => console.error("quota warning check failed:", err)));
   revalidatePath(`/${org.slug}`);

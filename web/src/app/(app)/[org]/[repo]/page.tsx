@@ -26,6 +26,9 @@ import { imageAbout, renderReadme } from "@/lib/readme";
 import { recordRepositoryVisit, repoStarState } from "@/lib/stars";
 import { ReadmeCard } from "@/components/readme/readme-card";
 import { StarButton } from "@/components/star-button";
+import { redirectMovedRepository } from "@/lib/redirects";
+import { repositoryStorage } from "@/lib/shared-layers";
+import { CompareBar } from "./compare/compare-bar";
 
 export default async function RepoPage({
   params,
@@ -35,13 +38,14 @@ export default async function RepoPage({
   const { org: orgSlug, repo: rawRepo } = await params;
   const repoName = decodeRepoParam(rawRepo);
   const found = await getRepoByPath(orgSlug, repoName);
-  if (!found) notFound();
+  // Renamed / transferred repositories: 308 to the new address.
+  if (!found) return redirectMovedRepository(orgSlug, repoName);
   const ctx = await getOrgContext(orgSlug);
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
   const session = await getSession();
 
-  const [tagList, series, proxy, egress, traffic, rules, untagged, star, about] = await Promise.all([
+  const [tagList, series, proxy, egress, traffic, rules, untagged, star, about, storage] = await Promise.all([
     listRepoTags(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
@@ -52,6 +56,7 @@ export default async function RepoPage({
     repoStarState(found.repo.id, session?.user.id ?? null),
     // The About block only matters when there is no README.
     found.repo.readme ? Promise.resolve(null) : imageAbout(found.repo.id),
+    repositoryStorage(found.repo.id),
   ]);
   const readmeHtml = found.repo.readme ? renderReadme(found.repo.readme) : null;
   // "Recently viewed" on the dashboard; throttled to one write per minute inside.
@@ -101,6 +106,16 @@ export default async function RepoPage({
             {" · "}updated {relativeTime(found.repo.updatedAt)}
             {proxy && ` · upstream checked ${lastChecked ? relativeTime(lastChecked) : "never"}`}
           </p>
+          {storage.physicalBytes > 0 && (
+            <p
+              className="mt-0.5 font-mono text-xs text-ink-3"
+              title="Logical: every tag counted on its own. Stored: distinct layers, deduplicated. Shared: layers other repositories also use."
+            >
+              Storage: {formatBytes(storage.logicalBytes)} logical · {formatBytes(storage.physicalBytes)} stored
+              {storage.sharedBytes > 0 &&
+                ` · ${formatBytes(storage.sharedBytes)} shared with ${storage.sharedWithRepos} other ${storage.sharedWithRepos === 1 ? "repository" : "repositories"}`}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {session && <StarButton repositoryId={found.repo.id} starred={star.starred} count={star.count} />}
@@ -115,7 +130,15 @@ export default async function RepoPage({
       <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, tagList[0]?.name)}`} />
 
       <Card>
-        <CardHeader eyebrow="Tags" title={`Tags (${tagList.length})`} />
+        <CardHeader
+          eyebrow="Tags"
+          title={`Tags (${tagList.length})`}
+          action={
+            tagList.length >= 2 ? (
+              <CompareBar base={base} tags={tagList.map((t) => t.name)} from={tagList[1]?.name} to={tagList[0]?.name} compact />
+            ) : undefined
+          }
+        />
         {tagList.length === 0 ? (
           <CardBody>
             <p className="text-sm text-ink-3">

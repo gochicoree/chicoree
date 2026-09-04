@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { Container, Globe } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,7 @@ import { OrgTabs } from "./org-tabs";
 import { isLibrary } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { displayHost } from "@/lib/proxy-shared";
+import { redirectMovedOrganization } from "@/lib/redirects";
 
 export default async function OrgLayout({
   children,
@@ -16,7 +17,13 @@ export default async function OrgLayout({
 }) {
   const { org: slug } = await params;
   const ctx = await getOrgContext(slug);
-  if (!ctx) notFound();
+  if (!ctx) {
+    // A renamed organization: 308 to the same page under the new slug. The
+    // request path comes from proxy.ts (layouts cannot see the URL).
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    const suffix = pathname.startsWith(`/${slug}/`) ? pathname.slice(slug.length + 1) : "";
+    return redirectMovedOrganization(slug, suffix);
+  }
   const { org, role } = ctx;
   const proxy = await getOrgProxy(org.id);
   const upstream = proxy ? displayHost(proxy.upstreamUrl) : null;

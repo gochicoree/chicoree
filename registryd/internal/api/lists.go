@@ -30,7 +30,8 @@ func paginationParams(r *http.Request) (n int, last string) {
 
 // handleTagsList implements GET /v2/<name>/tags/list.
 func (s *Server) handleTagsList(w http.ResponseWriter, r *http.Request, rc *reqCtx) {
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	// Former names (renamed / transferred repositories) resolve to the target.
+	repo, err := s.lookupRepoRead(r.Context(), rc)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return
@@ -58,7 +59,8 @@ func (s *Server) handleReferrers(w http.ResponseWriter, r *http.Request, rc *req
 		writeError(w, http.StatusBadRequest, CodeDigestInvalid, "invalid digest")
 		return
 	}
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	// Former names (renamed / transferred repositories) resolve to the target.
+	repo, err := s.lookupRepoRead(r.Context(), rc)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return

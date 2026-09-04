@@ -335,8 +335,10 @@ func (s *Server) handleUploadCancel(w http.ResponseWriter, r *http.Request, rc *
 // resolveRepoForWrite returns the target repository for a blob write,
 // enforcing repository-count and storage quotas first. When it returns an
 // error the response has already been written.
+var errRepositoryMoved = errors.New("repository moved")
+
 func (s *Server) resolveRepoForWrite(w http.ResponseWriter, r *http.Request, rc *reqCtx, digest string, size int64) (*store.Repository, error) {
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	repo, err := s.repoLookup.GetRepository(r.Context(), rc.org, rc.repo)
 	switch {
 	case err == nil:
 		// Existing repo: only genuinely new content counts against storage.
@@ -353,6 +355,11 @@ func (s *Server) resolveRepoForWrite(w http.ResponseWriter, r *http.Request, rc 
 		}
 		return repo, nil
 	case errors.Is(err, store.ErrNotFound):
+		// A former name of a renamed or transferred repository is never
+		// re-created by a push: the old reference is read-only.
+		if s.writeMovedIfRedirected(w, r, rc) {
+			return nil, errRepositoryMoved
+		}
 		orgID, err := s.store.OrgIDBySlug(r.Context(), rc.org)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, CodeNameUnknown,
