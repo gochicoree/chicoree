@@ -29,7 +29,11 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 		return
 	}
 	size, err := s.store.LinkedBlobSize(r.Context(), repo.ID, digest)
-	if errors.Is(err, store.ErrNotFound) {
+	if err == nil {
+		if s.proxyFor(r.Context(), rc.org) != nil {
+			s.metrics.CacheHit("blob")
+		}
+	} else if errors.Is(err, store.ErrNotFound) {
 		// Proxy-cache miss: fetch the layer from the upstream (see proxy.go).
 		if px := s.proxyFor(r.Context(), rc.org); px != nil {
 			if !s.ensureProxiedBlob(w, r, rc, px, repo, digest) {
@@ -62,6 +66,7 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 	if url, err := s.driver.RedirectURL(r.Context(), digest); err == nil && url != "" {
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		s.countTraffic(repo.ID, traffic.Delta{RedirectBytes: size, BlobPulls: 1})
+		s.metrics.AddBlobBytes("redirect", size)
 		return
 	}
 
@@ -76,6 +81,7 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 	}
 	if status == http.StatusOK || status == http.StatusPartialContent {
 		s.countTraffic(repo.ID, traffic.Delta{PullBytes: written, BlobPulls: 1})
+		s.metrics.AddBlobBytes("stream", written)
 	}
 }
 

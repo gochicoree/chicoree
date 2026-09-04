@@ -1,0 +1,192 @@
+# Alert rules for a Chicorée instance. Thresholds are starting points —
+# tune them to your traffic. Every rule carries a `severity` label
+# (critical / warning) for routing in Alertmanager.
+#
+# Metric sources: chicoree_* from the web app (job "chicoree"),
+# chicoree_registryd_* and Go runtime series from registryd (job
+# "chicoree-registryd").
+
+groups:
+  - name: chicoree-availability
+    rules:
+      - alert: ChicoreeWebScrapeFailing
+        expr: up{job="chicoree"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Chicorée web app is not answering scrapes"
+          description: "Prometheus could not scrape {{ $labels.instance }} for 3 minutes. Check the web container; a wrong scrape token also shows up here (401)."
+
+      - alert: ChicoreeRegistryDown
+        expr: chicoree_registry_up == 0 or up{job="chicoree-registryd"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "registryd is down"
+          description: "The registry has not answered its health check (or its /metrics scrape) for 3 minutes. Pushes and pulls are failing."
+
+      - alert: ChicoreeClairDown
+        expr: chicoree_clair_up == 0 and chicoree_vulnerability_scans_total{status="pending"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Clair is unreachable while scans are waiting"
+          description: "{{ $value }} scans are pending but the Clair indexer has not answered for 15 minutes."
+
+  - name: chicoree-scanning
+    rules:
+      - alert: ChicoreeScansFailing
+        expr: delta(chicoree_vulnerability_scans_total{status="failed"}[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vulnerability scans are failing"
+          description: "{{ $value | humanize }} scans failed in the last hour. Check Clair's updater state and the failed scans on Administration → Jobs."
+
+      - alert: ChicoreeScanBacklogGrowing
+        expr: chicoree_vulnerability_scans_total{status="pending"} > 10 and delta(chicoree_vulnerability_scans_total{status="pending"}[1h]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scan backlog is growing"
+          description: "{{ $value }} manifests are waiting to be scanned and the queue grew over the last hour."
+
+      - alert: ChicoreeScanBacklogStale
+        expr: chicoree_vulnerability_scan_pending_oldest_seconds > 6 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A pending scan is older than 6 hours"
+          description: "The oldest pending scan has waited {{ $value | humanizeDuration }}; the scan-stale job or Clair may be stuck."
+
+  - name: chicoree-automation
+    rules:
+      - alert: ChicoreeWebhookDeliveriesFailing
+        expr: chicoree_webhook_deliveries_recent{status="failed"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook deliveries failed in the last hour"
+          description: "{{ $value }} webhook deliveries failed in the last hour; {{ with query \"chicoree_webhooks_failing\" }}{{ . | first | value }}{{ end }} webhooks currently have a failing endpoint."
+
+      - alert: ChicoreeJobFailed
+        expr: chicoree_job_last_run_status{status="failed"} == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job {{ $labels.job }} failed"
+          description: "The most recent run of the {{ $labels.job }} job failed. Details are on Administration → Jobs."
+
+      - alert: ChicoreeMirrorFailed
+        expr: chicoree_mirror_last_status{status="failed"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mirror syncs are failing"
+          description: "{{ $value }} enabled mirrors failed their last sync."
+
+      - alert: ChicoreeProxyUpstreamFailing
+        expr: chicoree_proxy_organizations_failing > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Proxy-cache upstream errors"
+          description: "{{ $value }} proxy organizations could not reach their upstream on the last attempt (credentials, rate limits or connectivity)."
+
+      - alert: ChicoreeGarbageCollectionOverdue
+        expr: (time() - chicoree_job_last_success_timestamp_seconds{job="gc"}) > 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful garbage collection in 7 days"
+          description: "Unreferenced blobs are not reclaimed until GC runs. Schedule it on Administration → Jobs or run it now."
+
+  - name: chicoree-traffic
+    rules:
+      - alert: ChicoreeHighRateLimitRejections
+        expr: |
+          sum(rate(chicoree_registryd_http_requests_total{status="429"}[10m]))
+            / sum(rate(chicoree_registryd_http_requests_total[10m])) > 0.05
+          and sum(rate(chicoree_registryd_http_requests_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of requests are rate limited"
+          description: "{{ $value | humanizePercentage }} of registry requests were answered with 429 over the last 10 minutes. Raise the limits on Administration → Rate limits or find the client."
+
+      - alert: ChicoreeServerErrors
+        expr: |
+          sum(rate(chicoree_registryd_http_requests_total{status=~"5.."}[10m]))
+            / sum(rate(chicoree_registryd_http_requests_total[10m])) > 0.05
+          and sum(rate(chicoree_registryd_http_requests_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "registryd is returning 5xx errors"
+          description: "{{ $value | humanizePercentage }} of registry requests failed with a server error over the last 10 minutes; check the registryd logs, the database and the storage backend."
+
+      - alert: ChicoreeManifestLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(chicoree_registryd_http_request_duration_seconds_bucket{route="manifest"}[10m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Manifest requests are slow"
+          description: "p95 manifest latency is {{ $value | humanizeDuration }} — the database or an upstream proxy is slow."
+
+      - alert: ChicoreeEgressSpike
+        expr: |
+          sum(rate(chicoree_registryd_blob_bytes_served_total[15m]))
+            > 3 * sum(rate(chicoree_registryd_blob_bytes_served_total[6h]))
+          and sum(rate(chicoree_registryd_blob_bytes_served_total[15m])) > 10 * 1024 * 1024
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Egress is three times the 6-hour average"
+          description: "Blob egress is {{ $value | humanize }}B/s over the last 15 minutes. Administration → Metrics lists the repositories responsible."
+
+      - alert: ChicoreeProxyUpstreamErrorRatio
+        expr: |
+          sum(rate(chicoree_registryd_proxy_upstream_requests_total{result!~"ok|not_found"}[15m]))
+            / sum(rate(chicoree_registryd_proxy_upstream_requests_total[15m])) > 0.2
+          and sum(rate(chicoree_registryd_proxy_upstream_requests_total[15m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Proxy upstream requests are failing"
+          description: "{{ $value | humanizePercentage }} of upstream requests failed over the last 15 minutes (rate limits, credentials or connectivity)."
+
+  - name: chicoree-capacity
+    rules:
+      - alert: ChicoreeStagingDiskLow
+        expr: chicoree_registryd_staging_free_bytes >= 0 and chicoree_registryd_staging_free_bytes < 5 * 1024 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Upload staging disk below 5 GiB"
+          description: "Only {{ $value | humanize1024 }}B are free on the filesystem holding STORAGE_STAGING_DIR; large pushes will fail."
+
+      - alert: ChicoreeOrganizationStorageNearLimit
+        expr: chicoree_organization_storage_ratio > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Organization {{ $labels.organization }} is near its storage limit"
+          description: "{{ $labels.organization }} uses {{ $value | humanizePercentage }} of its storage quota; pushes are refused at 100%."

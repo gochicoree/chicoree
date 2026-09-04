@@ -1,0 +1,49 @@
+# Prometheus configuration for a Chicorée instance.
+#
+# Two scrape targets, one bearer token (Administration → Metrics generates
+# it; METRICS_TOKEN in the environment is the fallback on both services):
+#   - the web app at /api/metrics: repositories, storage, pulls, traffic,
+#     scans, jobs, webhooks, mirrors — computed from the database
+#   - registryd at /metrics: requests, latency, bytes moved, rate limits,
+#     proxy cache, Go runtime — counted in the process
+#
+# Put the token in a file (the docker-compose.observability.yml overlay
+# mounts ./secrets/metrics-token) or replace `credentials_file` with
+# `credentials: <token>`.
+#
+# The targets below are the compose service names. Point them at
+# host.docker.internal:3000 / :5000 when Prometheus runs in Docker against
+# a stack on the host, or at your public hostnames when it runs elsewhere.
+
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+rule_files:
+  - alerts.yml
+
+# Alerts evaluate inside Prometheus; to get notified, point it at an
+# Alertmanager:
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: chicoree
+    metrics_path: /api/metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics-token
+    static_configs:
+      - targets: ["web:3000"]
+
+  - job_name: chicoree-registryd
+    metrics_path: /metrics
+    scheme: http
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics-token
+    static_configs:
+      - targets: ["registryd:5000"]

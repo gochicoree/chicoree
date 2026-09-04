@@ -57,6 +57,10 @@ type Config struct {
 	RateLimitAnonymous      string
 	RateLimitAuthenticated  string
 	RateLimitTrustedProxies string
+
+	// MetricsToken enables GET /metrics with this bearer token when the
+	// admin panel's "metrics" section is not used (see api/metrics.go).
+	MetricsToken string
 }
 
 func env(key, def string) string {
@@ -121,6 +125,8 @@ func Load() (*Config, error) {
 		RateLimitAnonymous:      os.Getenv("RATE_LIMIT_ANONYMOUS"),
 		RateLimitAuthenticated:  os.Getenv("RATE_LIMIT_AUTHENTICATED"),
 		RateLimitTrustedProxies: os.Getenv("RATE_LIMIT_TRUSTED_PROXIES"),
+
+		MetricsToken: os.Getenv("METRICS_TOKEN"),
 	}
 
 	if c.DatabaseURL == "" {

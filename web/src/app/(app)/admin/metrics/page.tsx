@@ -419,6 +419,7 @@ export default async function AdminMetricsPage() {
           enabled={settings.metrics.enabled}
           token={settings.metrics.token}
           scrapeUrl={`${env.appUrl}/api/metrics`}
+          registryTarget={env.registryInternalUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}
           source={settings.sources.metrics}
         />
       </section>

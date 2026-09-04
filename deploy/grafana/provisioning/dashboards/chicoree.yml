@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning: loads every JSON file mounted under
+# /var/lib/grafana/dashboards (the overlay mounts deploy/grafana/chicoree.json
+# there) into a "Chicorée" folder. Edits made in the UI are not written
+# back to the file; copy the dashboard ("Save as") to customise it.
+apiVersion: 1
+
+providers:
+  - name: chicoree
+    folder: Chicorée
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

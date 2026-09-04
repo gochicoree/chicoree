@@ -3,6 +3,8 @@
 // counters, so the numbers stay correct across restarts and replicas).
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { env } from "./env";
+import { getInstanceSettings } from "./instance-settings";
 import { registryHealth } from "./registry-client";
 import { getScanner } from "./scanners";
 
@@ -184,6 +186,89 @@ export async function renderMetrics(): Promise<string> {
     [{ direction: "ingress" }, num(tt.ingress)],
     [{ direction: "redirect" }, num(tt.redirect)],
   ]);
+  await addOperationalMetrics(x);
   x.add("chicoree_scrape_duration_seconds", "gauge", "Time spent collecting this exposition.", [[{}, (performance.now() - started) / 1000]]);
   return x.toString();
+}
+
+/**
+ * Signals the alert rules and the Grafana dashboard need beyond the totals
+ * above: last-run state per job, scan backlog age, recent webhook failures,
+ * mirror and proxy health, storage against organization quotas, today's
+ * activity, and the effective rate-limit configuration.
+ */
+async function addOperationalMetrics(x: Exposition): Promise<void> {
+  const [lastRuns, lastSuccess, pendingAge, webhooksFailing, recentDeliveries, mirrorStatus, proxies, orgStorage, today, trafficToday, audit, settings] =
+    await Promise.all([
+      db.execute(sql`SELECT DISTINCT ON (job) job, status FROM job_runs ORDER BY job, started_at DESC`),
+      db.execute(sql`SELECT job, extract(epoch FROM max(finished_at))::bigint AS at FROM job_runs WHERE status = 'succeeded' GROUP BY job`),
+      db.execute(sql`SELECT COALESCE(extract(epoch FROM now() - min(created_at)), 0)::bigint AS age FROM vulnerability_scans WHERE status = 'pending'`),
+      db.execute(sql`SELECT count(*)::int AS n FROM repository_webhooks WHERE enabled AND (last_error IS NOT NULL OR last_status >= 400)`),
+      db.execute(sql`SELECT ok, count(*)::int AS n FROM webhook_deliveries WHERE created_at > now() - interval '1 hour' GROUP BY ok`),
+      db.execute(sql`SELECT COALESCE(last_status, 'never') AS status, count(*)::int AS n FROM mirrors WHERE enabled GROUP BY 1`),
+      db.execute(sql`
+        SELECT enabled, (last_error IS NOT NULL AND last_error <> '') AS failing, count(*)::int AS n
+        FROM organization_proxies GROUP BY 1, 2`),
+      db.execute(sql`
+        SELECT o.slug, l.max_storage_bytes::bigint AS limit_bytes,
+          (SELECT COALESCE(sum(size), 0) FROM (
+            SELECT DISTINCT b.digest, b.size FROM blobs b
+            JOIN repository_blobs rb ON rb.blob_digest = b.digest
+            JOIN repositories r ON r.id = rb.repository_id
+            WHERE r.organization_id = o.id) t)::bigint AS used_bytes
+        FROM organization_limits l JOIN organization o ON o.id = l.organization_id
+        WHERE l.max_storage_bytes IS NOT NULL AND l.max_storage_bytes > 0
+        ORDER BY o.slug`),
+      db.execute(sql`SELECT type, count(*)::int AS n FROM events WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc' GROUP BY type`),
+      db.execute(sql`
+        SELECT COALESCE(sum(pull_bytes), 0)::bigint AS egress, COALESCE(sum(push_bytes), 0)::bigint AS ingress,
+          COALESCE(sum(redirect_bytes), 0)::bigint AS redirect
+        FROM repository_traffic WHERE day = (now() AT TIME ZONE 'utc')::date`),
+      db.execute(sql`SELECT count(*)::bigint AS n FROM audit_log`),
+      getInstanceSettings(),
+    ]);
+
+  const statuses = ["succeeded", "failed", "running"];
+  x.add("chicoree_job_last_run_status", "gauge", "Outcome of the most recent run per job: 1 for the current status, 0 otherwise.",
+    lastRuns.rows.flatMap((r) => statuses.map((s) => [{ job: String(r.job), status: s }, r.status === s ? 1 : 0] as Sample)));
+  x.add("chicoree_job_last_success_timestamp_seconds", "gauge", "Unix time of the last successful run per job (0 when it never succeeded).",
+    ["gc", "scan-stale", "prune-untagged", "mirror-sync", "proxy-evict", "retention"].map(
+      (job) => [{ job }, num(lastSuccess.rows.find((r) => r.job === job)?.at)] as Sample,
+    ));
+  x.add("chicoree_vulnerability_scan_pending_oldest_seconds", "gauge", "Age of the oldest scan still waiting for Clair (0 when nothing is pending).",
+    [[{}, num(pendingAge.rows[0]?.age)]]);
+  x.add("chicoree_webhooks_failing", "gauge", "Enabled webhooks whose most recent delivery failed.", [[{}, num(webhooksFailing.rows[0]?.n)]]);
+  x.add("chicoree_webhook_deliveries_recent", "gauge", "Webhook deliveries attempted in the last hour, by outcome.", [
+    [{ status: "ok" }, num(recentDeliveries.rows.find((r) => r.ok === true)?.n)],
+    [{ status: "failed" }, num(recentDeliveries.rows.find((r) => r.ok === false)?.n)],
+  ]);
+  x.add("chicoree_mirror_last_status", "gauge", "Enabled mirrors by the outcome of their last sync (never = not run yet).",
+    ["succeeded", "failed", "running", "never"].map((s) => [{ status: s }, num(mirrorStatus.rows.find((r) => r.status === s)?.n)] as Sample));
+  const proxyCount = (enabled: boolean, failing?: boolean) =>
+    proxies.rows.filter((r) => r.enabled === enabled && (failing === undefined || r.failing === failing)).reduce((a, r) => a + num(r.n), 0);
+  x.add("chicoree_proxy_organizations", "gauge", "Pull-through proxy organizations by enabled state.", [
+    [{ enabled: "true" }, proxyCount(true)],
+    [{ enabled: "false" }, proxyCount(false)],
+  ]);
+  x.add("chicoree_proxy_organizations_failing", "gauge", "Enabled proxy organizations whose last upstream contact failed.", [[{}, proxyCount(true, true)]]);
+  const orgLabel = (r: Record<string, unknown>) => ({ organization: String(r.slug) });
+  x.add("chicoree_organization_storage_bytes", "gauge", "Deduplicated bytes used by organizations that have a storage limit.",
+    orgStorage.rows.map((r) => [orgLabel(r), num(r.used_bytes)] as Sample));
+  x.add("chicoree_organization_storage_limit_bytes", "gauge", "Configured storage limit per organization.",
+    orgStorage.rows.map((r) => [orgLabel(r), num(r.limit_bytes)] as Sample));
+  x.add("chicoree_organization_storage_ratio", "gauge", "Storage used divided by the organization's limit (1 = full).",
+    orgStorage.rows.map((r) => [orgLabel(r), num(r.limit_bytes) > 0 ? num(r.used_bytes) / num(r.limit_bytes) : 0] as Sample));
+  x.add("chicoree_events_today", "gauge", "Registry events since midnight UTC, by type.",
+    ["pull", "push", "delete"].map((t) => [{ type: t }, num(today.rows.find((r) => r.type === t)?.n)] as Sample));
+  const tt = trafficToday.rows[0];
+  x.add("chicoree_traffic_today_bytes", "gauge", "Bytes moved since midnight UTC, by direction.", [
+    [{ direction: "egress" }, num(tt?.egress)],
+    [{ direction: "ingress" }, num(tt?.ingress)],
+    [{ direction: "redirect" }, num(tt?.redirect)],
+  ]);
+  x.add("chicoree_audit_events_total", "counter", "Audit log entries (pruned entries drop out of the count).", [[{}, num(audit.rows[0]?.n)]]);
+  const rl = settings.ratelimit;
+  x.add("chicoree_rate_limit_config_info", "gauge", "Effective pull rate limits (<count>/<window>, or unlimited); always 1.", [
+    [{ anonymous: rl.anonymous || "unlimited", authenticated: rl.authenticated || "unlimited", source: settings.sources.ratelimit }, 1],
+  ]);
 }

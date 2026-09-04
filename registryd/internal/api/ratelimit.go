@@ -99,6 +99,7 @@ func (s *Server) enforcePullLimit(w http.ResponseWriter, r *http.Request, rc *re
 	if d.Allowed {
 		return true
 	}
+	s.metrics.RateLimited(anonymous)
 	retry := d.RetryAfter(now)
 	w.Header().Set("Retry-After", strconv.FormatInt(retry, 10))
 	msg := fmt.Sprintf("pull rate limit exceeded: %d pulls per %s", d.Limit.Count, ratelimit.FormatWindow(d.Limit.Window))
