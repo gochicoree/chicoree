@@ -114,8 +114,8 @@ export default async function LandingPage() {
             },
             {
               icon: ScanSearch,
-              title: "Clair scanning",
-              text: "Images are indexed on push; CVE reports live next to the tag.",
+              title: "Vulnerability scanning",
+              text: "Clair or Trivy scans every push; CVE reports, search and accepted risks live next to the tag.",
             },
             {
               icon: Users,

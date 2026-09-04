@@ -37,6 +37,8 @@ export type NotifyInput =
       digest: string;
       summary: SeveritySummary | null;
       blockedReason: string | null;
+      /** Backend label for the message ("Clair", "Trivy"). */
+      scanner?: string;
     }
   | { event: "mirror.failed"; mirrorId: string; repositoryId: string; runId: string; error: string }
   | {
@@ -222,12 +224,12 @@ export async function notify(input: NotifyInput): Promise<void> {
         "Scan completed",
         `Scan completed: ${label} (${summaryLine(input.summary)})`,
         [
-          `Clair finished scanning ${label}.`,
+          `${input.scanner ?? "The vulnerability scanner"} finished scanning ${label}.`,
           `Findings: ${summaryLine(input.summary)}.`,
           input.blockedReason ? `Pulls are blocked: ${input.blockedReason}.` : "Pulls are not blocked by the policy.",
         ],
         [
-          `Clair finished scanning ${link(url, label)}.`,
+          `${esc(input.scanner ?? "The vulnerability scanner")} finished scanning ${link(url, label)}.`,
           `Findings: <strong>${esc(summaryLine(input.summary))}</strong>.`,
           input.blockedReason ? `Pulls are blocked: ${esc(input.blockedReason)}.` : "Pulls are not blocked by the policy.",
         ],

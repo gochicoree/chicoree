@@ -3,8 +3,8 @@
 // counters, so the numbers stay correct across restarts and replicas).
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { env } from "./env";
 import { registryHealth } from "./registry-client";
+import { getScanner } from "./scanners";
 
 type Labels = Record<string, string>;
 type Sample = [Labels, number];
@@ -32,16 +32,18 @@ class Exposition {
 
 const num = (v: unknown) => Number(v ?? 0);
 
-async function clairUp(): Promise<number> {
-  if (!env.clairEnabled) return 0;
+/** 1 when the configured scanner backend answers; the label says which one. */
+async function scannerUp(): Promise<{ backend: string; up: number }> {
+  const scanner = await getScanner();
+  if (!scanner) return { backend: "off", up: 0 };
   try {
-    const res = await fetch(`${env.clairUrl.replace(/\/$/, "")}/indexer/api/v1/index_state`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(2000),
-    });
-    return res.ok ? 1 : 0;
+    const health = await Promise.race([
+      scanner.health(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+    ]);
+    return { backend: scanner.name, up: health.status === "error" ? 0 : 1 };
   } catch {
-    return 0;
+    return { backend: scanner.name, up: 0 };
   }
 }
 
@@ -94,7 +96,7 @@ export async function renderMetrics(): Promise<string> {
       UNION ALL
       SELECT 'job', status, job, count(*)::bigint FROM job_runs GROUP BY job, status`),
     registryHealth(),
-    clairUp(),
+    scannerUp(),
     db.execute(sql`
       SELECT o.slug AS org, r.name,
         sum(t.pull_bytes)::bigint AS egress,
@@ -116,7 +118,7 @@ export async function renderMetrics(): Promise<string> {
   const x = new Exposition();
   x.add("chicoree_up", "gauge", "Whether the web app could answer this scrape (always 1 when served).", [[{}, 1]]);
   x.add("chicoree_registry_up", "gauge", "1 when registryd answers its health check.", [[{}, health.ok ? 1 : 0]]);
-  x.add("chicoree_clair_up", "gauge", "1 when the Clair indexer answers (0 when scanning is disabled).", [[{}, clair]]);
+  x.add("chicoree_scanner_up", "gauge", "1 when the vulnerability scanner backend answers (backend label: clair, trivy or off).", [[{ backend: clair.backend }, clair.up]]);
   x.add("chicoree_users_total", "gauge", "Accounts by instance role.", [
     [{ role: "admin" }, num(t.admins)],
     [{ role: "user" }, num(t.users)],

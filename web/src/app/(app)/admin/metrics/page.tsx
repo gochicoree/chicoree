@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/session";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { env } from "@/lib/env";
+import { scannerLabel } from "@/lib/scanners";
 import {
   accountOverview,
   actorBreakdown,
@@ -45,6 +46,7 @@ const num = `${td} text-right font-mono tabular-nums`;
 
 export default async function AdminMetricsPage() {
   await requireAdmin();
+  const scanner = await scannerLabel();
   const [traffic, top, orgs, scans, accounts, automation, actors, settings, bytesSeries, topEgress, orgTraffic] = await Promise.all([
     trafficSeries(30),
     topRepositories(8),
@@ -327,7 +329,7 @@ export default async function AdminMetricsPage() {
             <CardHeader
               eyebrow="Security"
               title="Vulnerability scanning"
-              description={env.clairEnabled ? "Scan records are shared per manifest digest across repositories." : "Scanning is disabled on this instance."}
+              description={scanner !== "off" ? `Scanned with ${scanner}; scan records are shared per manifest digest across repositories.` : "Scanning is disabled on this instance."}
             />
             <CardBody className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

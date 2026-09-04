@@ -8,15 +8,17 @@ import { instanceSettings } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { env } from "./env";
 
-export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding" | "ratelimit";
+export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding" | "ratelimit" | "scanner";
 export type SettingsSource = "database" | "environment" | "none";
 
 // Sign-up controls and branding: shapes live in the *-shared modules so client
 // components can import them without touching the database.
 import { DEFAULT_ACCESS, type AccessSettings } from "./access-shared";
 import { DEFAULT_BRANDING, type BrandingSettings } from "./branding-shared";
+import type { ScannerSettings } from "./scanner-shared";
 export type { AccessSettings } from "./access-shared";
 export type { BrandingSettings } from "./branding-shared";
+export type { ScannerSettings } from "./scanner-shared";
 
 export interface SmtpSettings {
   host: string;
@@ -89,6 +91,8 @@ export interface EffectiveSettings {
   access: AccessSettings;
   branding: BrandingSettings;
   ratelimit: RateLimitSettings;
+  /** Vulnerability scanner backend (Administration → Scanning). */
+  scanner: ScannerSettings;
   sources: Record<SettingsSection, SettingsSource>;
   /** Changes whenever a section is saved; consumers cache on it. */
   version: number;
@@ -106,6 +110,7 @@ const SECRET_FIELDS: Record<SettingsSection, string[]> = {
   access: [],
   branding: [],
   ratelimit: [],
+  scanner: [],
 };
 
 function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
@@ -166,6 +171,12 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       authenticated: env.rateLimitAuthenticated,
       trustedProxies: env.rateLimitTrustedProxies,
     },
+    scanner: {
+      backend: env.scanner,
+      clairUrl: env.clairUrl,
+      trivyServerUrl: env.trivyServerUrl,
+      trivyTimeoutSeconds: env.trivyTimeoutSeconds,
+    },
   };
 }
 
@@ -191,6 +202,8 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE;
     case "ratelimit":
       return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated;
+    case "scanner":
+      return !!process.env.SCANNER || !!d.scanner.clairUrl;
   }
 }
 
@@ -216,7 +229,7 @@ async function loadSettings(): Promise<EffectiveSettings> {
   const sources = {} as Record<SettingsSection, SettingsSource>;
   const merged: Record<string, unknown> = {};
   let version = 0;
-  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit"] as SettingsSection[]) {
+  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit", "scanner"] as SettingsSection[]) {
     const row = stored.get(section);
     if (row) {
       version = Math.max(version, row.updatedAt.getTime());

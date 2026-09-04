@@ -194,10 +194,15 @@ export const vulnerabilityScans = pgTable("vulnerability_scans", {
   })
     .notNull()
     .default("pending"),
-  /** Per-severity finding counts, e.g. {"Critical": 1, "High": 4, …}. */
+  /** Per-severity finding counts computed from `findings`, e.g. {"Critical": 1, "High": 4, …}. */
   summary: jsonb("summary"),
-  /** Full Clair vulnerability report. */
+  /** The scanner's raw report (Clair vulnerability report or Trivy JSON), kept for reference. */
   report: jsonb("report"),
+  /** Normalised findings (lib/scanner-shared.ts `Finding[]`); the UI reads only these. */
+  findings: jsonb("findings"),
+  /** Which backend produced the result: clair | trivy. */
+  scanner: text("scanner"),
+  scannerVersion: text("scanner_version"),
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

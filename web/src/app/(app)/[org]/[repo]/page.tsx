@@ -4,6 +4,7 @@ import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
 import { egressSeries, getRepoByPath, listRepoTags, pullSeries, trafficSummary } from "@/lib/data";
 import { env } from "@/lib/env";
+import { scanningEnabled } from "@/lib/scanners";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { Layers, Link2, ShieldBan } from "lucide-react";
@@ -64,7 +65,7 @@ export default async function RepoPage({
     (latest, t) => (t.proxyCheckedAt && (!latest || t.proxyCheckedAt > latest) ? t.proxyCheckedAt : latest),
     null,
   );
-  const scanning = env.clairEnabled;
+  const scanning = await scanningEnabled();
   // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
   const canDelete = role === "owner" || role === "admin";
   const latestDigest = tagList.find((t) => t.name === "latest")?.manifestDigest ?? null;
