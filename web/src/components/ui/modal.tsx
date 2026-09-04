@@ -17,6 +17,7 @@ export function Modal({
   description,
   children,
   footer,
+  size = "md",
 }: {
   open: boolean;
   onClose: () => void;
@@ -24,6 +25,8 @@ export function Modal({
   description?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
+  /** Panel width on larger screens; phones always use the full width. */
+  size?: "md" | "lg" | "xl";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
@@ -77,7 +80,9 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col rounded-t-2xl border border-line bg-card shadow-card outline-none sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl"
+        className={`relative flex max-h-[calc(100dvh-1.5rem)] w-full flex-col rounded-t-2xl border border-line bg-card shadow-card outline-none sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl ${
+          size === "xl" ? "sm:max-w-4xl" : size === "lg" ? "sm:max-w-2xl" : "sm:max-w-md"
+        }`}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 py-4 sm:px-5">
           <div className="min-w-0">

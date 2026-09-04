@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AdminNav } from "../admin-nav";
+import { CreateUserForm } from "./create-user-form";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -18,6 +19,9 @@ export default async function AdminUsersPage() {
     <>
       <PageHeader eyebrow="Instance" title="Administration" />
       <AdminNav />
+      <div className="mb-6">
+        <CreateUserForm />
+      </div>
       <Card>
         <CardHeader eyebrow="People" title={`Users (${users.length})`} description="Open a user to change their role, set limits, or impersonate them." />
         <div className="overflow-x-auto">
