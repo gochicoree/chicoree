@@ -14,6 +14,7 @@ type Mode = "password" | "ldap" | "magic-link" | "email-otp";
 export function SignInForm({
   providers,
   signUp = { mode: "open", invitationId: "" },
+  local = { mode: "everyone" },
   next = "/dashboard",
 }: {
   providers: {
@@ -26,14 +27,20 @@ export function SignInForm({
   };
   /** Sign-up controls: the "create an account" link follows the mode. */
   signUp?: { mode: "open" | "invite" | "closed"; invitationId: string };
+  /**
+   * Local sign-in policy: everyone; hidden (only on /sign-in/<slug>, which
+   * passes `slug`); off. Passkeys, LDAP and SSO are always offered.
+   */
+  local?: { mode: "everyone" | "hidden" | "off"; slug?: string };
   /** Same-origin path to land on afterwards (e.g. an invitation). */
   next?: string;
 }) {
   const router = useRouter();
   const callbackURL = next;
-  const showSignUp = signUp.mode === "open" || (signUp.mode === "invite" && !!signUp.invitationId);
+  const localAllowed = local.mode === "everyone" || (local.mode === "hidden" && !!local.slug);
+  const showSignUp = localAllowed && (signUp.mode === "open" || (signUp.mode === "invite" && !!signUp.invitationId));
   const signUpHref = signUp.invitationId ? `/sign-up?invitation=${encodeURIComponent(signUp.invitationId)}` : "/sign-up";
-  const [mode, setMode] = useState<Mode>("password");
+  const [mode, setMode] = useState<Mode>(localAllowed ? "password" : "ldap");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -52,9 +59,16 @@ export function SignInForm({
     }
   }
 
+  /** The hidden page proves it knows its slug once; the server then accepts local methods for a while. */
+  async function unlockLocal() {
+    if (!local.slug) return;
+    await fetch("/api/local-signin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ slug: local.slug }) });
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     await withBusy(async () => {
+      if (mode !== "ldap") await unlockLocal();
       if (mode === "password") {
         const { error } = await authClient.signIn.email({ email, password, callbackURL });
         if (error) setError(error.message ?? "Sign-in failed");
@@ -90,11 +104,11 @@ export function SignInForm({
 
   const anySocial = providers.github || providers.google || providers.oidc;
   const modes = [
-    ["password", "Password", KeyRound],
+    ...(localAllowed ? ([["password", "Password", KeyRound]] as const) : []),
     ...(providers.ldap ? ([["ldap", providers.ldapName, Building2]] as const) : []),
-    ["magic-link", "Magic link", Wand2],
-    ["email-otp", "Email code", Mail],
+    ...(localAllowed ? ([["magic-link", "Magic link", Wand2], ["email-otp", "Email code", Mail]] as const) : []),
   ] as const;
+  const gridCols = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4" }[modes.length] ?? "grid-cols-4";
 
   return (
     <Card>
@@ -104,8 +118,14 @@ export function SignInForm({
           <p className="text-sm text-ink-2">Manage images, organizations and access.</p>
         </div>
 
+        {modes.length === 0 && (
+          <p className="rounded-lg border border-line bg-card-2 px-3 py-2.5 text-sm text-ink-2">
+            Sign in with your organization&apos;s identity provider or a passkey.
+          </p>
+        )}
         <div
-          className={`grid gap-1 rounded-lg border border-line bg-card-2 p-1 ${modes.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}
+          className={`grid gap-1 rounded-lg border border-line bg-card-2 p-1 ${gridCols}`}
+          hidden={modes.length === 0}
         >
           {modes.map(([value, label, Icon]) => (
             <button
@@ -122,7 +142,7 @@ export function SignInForm({
           ))}
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={submit} className="space-y-3" hidden={modes.length === 0}>
           {mode === "ldap" ? (
             <Field label="Username" htmlFor="ldap-username" hint="Your directory account, not an email address.">
               <Input

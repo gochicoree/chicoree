@@ -75,7 +75,9 @@ async function userLabel(userId: string): Promise<string> {
 // --- request hooks ---------------------------------------------------------
 
 /** Runs before every auth request; captures state the after hook can no longer see. */
-export const auditBeforeHook = createAuthMiddleware(async (raw) => {
+export const auditBeforeHook = createAuthMiddleware(auditBefore);
+
+export async function auditBefore(raw: unknown): Promise<void> {
   const ctx = raw as unknown as HookCtx;
   try {
     if (ctx.path === "/reset-password") {
@@ -89,7 +91,7 @@ export const auditBeforeHook = createAuthMiddleware(async (raw) => {
   } catch (err) {
     console.error("[audit] before hook failed:", err);
   }
-});
+}
 
 /** Runs after every auth request; records outcomes by route. */
 export const auditAfterHook = createAuthMiddleware(async (raw) => {

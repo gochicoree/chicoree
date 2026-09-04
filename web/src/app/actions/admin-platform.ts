@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import { saveSettingsSection, type AccessSettings, type BrandingSettings } from "@/lib/instance-settings";
-import { parseDomainList, type OrgCreationPolicy, type SignUpMode } from "@/lib/access-shared";
+import { parseDomainList, type OrgCreationPolicy, type SignUpMode, normalizeLocalSignInPath, type LocalSignInMode } from "@/lib/access-shared";
 import {
   ANNOUNCEMENT_MAX_CHARS,
   DEFAULT_BRANDING,
@@ -33,12 +33,16 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
   if (!Number.isInteger(maxTokenLifetimeDays) || maxTokenLifetimeDays < 0 || maxTokenLifetimeDays > 3650) {
     return { error: "The token lifetime cap must be a whole number of days between 0 (unlimited) and 3650." };
   }
+  const localSignIn = str(fd, "localSignIn");
+  if (!["everyone", "hidden", "off"].includes(localSignIn)) return { error: "Unknown local sign-in mode." };
   const access: AccessSettings = {
     signUpMode: mode as SignUpMode,
     allowedEmailDomains: parseDomainList(String(fd.get("domains") ?? "")),
     allowOrganizationCreation: orgs as OrgCreationPolicy,
     maxTokenLifetimeDays,
     requireTokenExpiry: fd.get("requireTokenExpiry") === "on",
+    localSignIn: localSignIn as LocalSignInMode,
+    localSignInPath: normalizeLocalSignInPath(str(fd, "localSignInPath") || "local"),
   };
   await saveSettingsSection("access", { ...access });
   await recordAudit({ action: "settings.update", targetType: "settings", targetId: "access", targetLabel: "access", details: { ...access } });

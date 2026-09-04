@@ -248,6 +248,15 @@ export const env = {
   get tokenRequireExpiry() {
     return process.env.TOKEN_REQUIRE_EXPIRY === "true" || process.env.TOKEN_REQUIRE_EXPIRY === "1";
   },
+  /** everyone | hidden | off — where password / magic-link / email-code sign-in is offered. */
+  get localSignIn() {
+    const v = process.env.LOCAL_SIGNIN ?? "everyone";
+    return v === "hidden" || v === "off" ? v : "everyone";
+  },
+  /** Path segment of the hidden local sign-in page (/sign-in/<segment>). */
+  get localSignInPath() {
+    return process.env.LOCAL_SIGNIN_PATH ?? "local";
+  },
 
   // Branding defaults (Administration → Branding overrides them).
   get instanceName() {
