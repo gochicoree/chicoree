@@ -29,6 +29,25 @@ A self-hosted OCI container registry with a proper management plane.
 
 ## Quick start
 
+### One command on a Linux server
+
+```sh
+curl -fsSL https://oci.example.com/install.sh | sudo sh
+```
+
+Every running instance serves its own installer at `/install.sh` (the same
+file lives at `web/public/install.sh` in this repository). It asks a few
+questions — public HTTPS with Let's Encrypt or plain HTTP on a LAN, the domain,
+the vulnerability scanner (Trivy, Clair or none), where image layers go, SMTP,
+the administrator account and who may sign up afterwards — installs git and
+Docker when they are missing, clones this repository, writes `.env` with fresh
+secrets, builds and starts the stack and creates the first administrator.
+Re-running it updates an existing installation and keeps `.env` and the data.
+For unattended installs export the answers as `CHICOREE_*` variables (listed
+at the top of the script) and run it with `CHICOREE_YES=1`.
+
+### By hand
+
 Requirements: Docker with compose.
 
 ```sh
