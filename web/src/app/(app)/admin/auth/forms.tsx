@@ -95,7 +95,18 @@ export function Check({ name, label, defaultChecked, hint }: { name: string; lab
 
 // --- SMTP ------------------------------------------------------------------
 
-export function SmtpForm({ smtp, hasPassword, source }: { smtp: SmtpSettings; hasPassword: boolean; source: SettingsSource }) {
+export function SmtpForm({
+  smtp,
+  hasPassword,
+  source,
+  adminEmail = "",
+}: {
+  smtp: SmtpSettings;
+  hasPassword: boolean;
+  source: SettingsSource;
+  /** The signed-in administrator; test emails always go there as well. */
+  adminEmail?: string;
+}) {
   const [state, save, saving] = useActionState<SettingsResult | null, FormData>(saveSmtpSettings, null);
   const [test, sendTest, testing] = useActionState<SettingsResult | null, FormData>(sendTestEmail, null);
   useResultToast(state);
@@ -149,8 +160,12 @@ export function SmtpForm({ smtp, hasPassword, source }: { smtp: SmtpSettings; ha
           </div>
           <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4 sm:col-span-2">
             <div className="min-w-56 flex-1">
-              <Field label="Send a test email to" htmlFor="smtp-test-to">
-                <Input id="smtp-test-to" name="testTo" type="email" placeholder="you@example.com" />
+              <Field
+                label="Send a test email to"
+                htmlFor="smtp-test-to"
+                hint={adminEmail ? `A copy always goes to you (${adminEmail}).` : undefined}
+              >
+                <Input id="smtp-test-to" name="testTo" type="email" defaultValue={adminEmail} placeholder="you@example.com" />
               </Field>
             </div>
             <FieldAction>

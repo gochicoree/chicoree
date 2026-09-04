@@ -61,10 +61,12 @@ export async function sendTestEmail(_prev: SettingsResult | null, fd: FormData):
   // A blank password means "the stored one"; fall back to the effective settings for it.
   const current = (await getInstanceSettings()).smtp;
   const smtp: SmtpSettings = { ...form, pass: form.pass && form.pass !== "-" ? form.pass : form.pass === "-" ? "" : current.pass };
-  const to = str(fd, "testTo") || session.user.email;
+  // The typed address plus the administrator's own, so the sender always sees the result.
+  const typed = str(fd, "testTo").toLowerCase();
+  const recipients = [...new Set([typed, session.user.email.toLowerCase()].filter(Boolean))];
   try {
-    await sendTestMail(smtp, to);
-    return { message: `Test email sent to ${to}` };
+    await sendTestMail(smtp, recipients.join(", "));
+    return { message: `Test email sent to ${recipients.join(" and ")}` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Sending failed." };
   }

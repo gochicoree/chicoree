@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getInstanceSettings } from "@/lib/instance-settings";
+import { requireAdmin } from "@/lib/session";
 import { SmtpForm } from "../auth/forms";
 import { PageHeader } from "@/components/page-header";
 import { AdminNav } from "../admin-nav";
@@ -7,6 +8,7 @@ import { AdminNav } from "../admin-nav";
 export const metadata: Metadata = { title: "Email settings" };
 
 export default async function AdminEmailSettings() {
+  const session = await requireAdmin();
   const s = await getInstanceSettings();
   return (
     <>
@@ -16,7 +18,7 @@ export default async function AdminEmailSettings() {
         description="Outgoing mail for verification, password resets, magic links, one-time codes and invitations."
       />
       <AdminNav />
-      <SmtpForm smtp={{ ...s.smtp, pass: "" }} hasPassword={!!s.smtp.pass} source={s.sources.smtp} />
+      <SmtpForm smtp={{ ...s.smtp, pass: "" }} hasPassword={!!s.smtp.pass} source={s.sources.smtp} adminEmail={session.user.email} />
     </>
   );
 }
