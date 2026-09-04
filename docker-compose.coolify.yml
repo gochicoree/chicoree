@@ -63,6 +63,7 @@ services:
       # service below (delete it and leave the URL empty for standalone mode).
       - TRIVY_SERVER_URL=${TRIVY_SERVER_URL-http://trivy:4954}
       - TRIVY_CACHE_DIR=/var/lib/chicoree/trivy
+      - TRIVY_TIMEOUT_SECONDS=${TRIVY_TIMEOUT_SECONDS:-600}
       - PASSKEY_RP_ID=${SERVICE_FQDN_WEB}
       - PASSKEY_RP_NAME=${PASSKEY_RP_NAME:-Chicorée Registry}
       # Email (leave SMTP_HOST empty to log mail to the container output)
@@ -102,12 +103,18 @@ services:
       - SIGNUP_MODE=${SIGNUP_MODE:-open}
       - SIGNUP_ALLOWED_DOMAINS=${SIGNUP_ALLOWED_DOMAINS:-}
       - ORG_CREATION=${ORG_CREATION:-everyone}
+      - TOKEN_MAX_LIFETIME_DAYS=${TOKEN_MAX_LIFETIME_DAYS:-0}
+      - TOKEN_REQUIRE_EXPIRY=${TOKEN_REQUIRE_EXPIRY:-false}
       - INSTANCE_NAME=${INSTANCE_NAME:-}
       - INSTANCE_TAGLINE=${INSTANCE_TAGLINE:-}
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-365}
       - RATE_LIMIT_ANONYMOUS=${RATE_LIMIT_ANONYMOUS:-}
       - RATE_LIMIT_AUTHENTICATED=${RATE_LIMIT_AUTHENTICATED:-}
       - RATE_LIMIT_TRUSTED_PROXIES=${RATE_LIMIT_TRUSTED_PROXIES:-}
+      # Prometheus endpoint defaults (Administration → Metrics overrides them);
+      # registryd accepts the same METRICS_TOKEN on its own /metrics.
+      - METRICS_ENABLED=${METRICS_ENABLED:-false}
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
     volumes:
       - token-keys:/var/lib/chicoree/keys
       - trivy-cache:/var/lib/chicoree/trivy
@@ -150,10 +157,16 @@ services:
       - RATE_LIMIT_ANONYMOUS=${RATE_LIMIT_ANONYMOUS:-}
       - RATE_LIMIT_AUTHENTICATED=${RATE_LIMIT_AUTHENTICATED:-}
       - RATE_LIMIT_TRUSTED_PROXIES=${RATE_LIMIT_TRUSTED_PROXIES:-}
+      # Bearer token for GET /metrics when the admin panel's Metrics section is not used.
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
       # Docker clients are sent here for tokens, so it is the public web URL.
       - TOKEN_REALM=${SERVICE_URL_WEB}/api/registry/token
       - TOKEN_SERVICE=chicoree-registry
       - TOKEN_ISSUER=chicoree-web
+      # Signing keys generated under Administration → Signing keys: how often
+      # they are re-read and how long a retired key stays trusted (≥ 5m, the token lifetime).
+      - TOKEN_KEY_RELOAD_INTERVAL=${TOKEN_KEY_RELOAD_INTERVAL:-60s}
+      - TOKEN_KEY_DROP_WINDOW=${TOKEN_KEY_DROP_WINDOW:-10m}
       - JWT_PUBLIC_KEY_FILE=/var/lib/chicoree/keys/registry-token.pub
       - WEBHOOK_URL=http://web:3000/api/internal/events
       - WEBHOOK_SECRET=${SERVICE_HEX_64_WEBHOOKSECRET}

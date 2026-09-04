@@ -19,10 +19,14 @@ owns identity, authorization and everything a human looks at.
                       └──────► (shared) ◄─────────┘
                       │                           
                       └──► Clair v4 (indexer/matcher), fetches layers
-                           back through registryd with a pull token
+                           back through registryd with a pull token —
+                           or Trivy, run by the web app and pulling
+                           through registryd with the same token
 
    registryd ──► upstream registries (Docker Hub, GHCR, Quay, …) on a cache
                  miss in a proxy-cache organization; stored like a push
+   Prometheus ──► web app /api/metrics (computed from Postgres) and
+                  registryd /metrics (process counters), one bearer token
 ```
 
 ## Token auth (Docker's standard flow)
@@ -31,14 +35,18 @@ owns identity, authorization and everything a human looks at.
    `WWW-Authenticate: Bearer realm=<web>/api/registry/token, service=…, scope=…`.
 2. The client calls the realm with Basic credentials. The web app identifies
    the caller — personal access token (`chc_pat_…`), service-account secret
-   (`chc_sa_…`), or email+password (refused when the account has 2FA) — checks
-   each requested scope against org membership / SA permissions / repository
-   visibility, and returns a 5-minute ES256 JWT whose `access` claim lists
-   exactly what was granted.
-3. `registryd` verifies the signature with the public key
-   (`secrets/registry-token.pub`) and enforces `access` per route. It holds no
-   credential state of its own; revoking a PAT/SA takes effect within the
-   token TTL.
+   (`chc_sa_…`), or email+password (refused when the account has 2FA) —
+   refusing expired credentials and attaching a token's organization /
+   repository restriction (`lib/credential-auth.ts`), checks each requested
+   scope against org membership / SA permissions / repository visibility /
+   the restriction, and returns a 5-minute ES256 JWT whose `access` claim
+   lists exactly what was granted and whose header `kid` names the signing
+   key.
+3. `registryd` verifies the signature with the file public key
+   (`secrets/registry-token.pub`) or a database key from
+   `token_signing_keys` (see *Signing keys* below) and enforces `access` per
+   route. It holds no credential state of its own; revoking a PAT/SA takes
+   effect within the token TTL.
 
 Grants: org `owner`/`admin` → `pull,push,delete`; `member` → `pull,push`;
 `viewer` → `pull` (private repositories included); anonymous / non-members →
@@ -48,13 +56,21 @@ through better-auth's organization access control and shared by server,
 client and the token service. Repositories are auto-created on first push
 (private) when the pusher may write to the org namespace.
 
-Three refinements: a `*` action (`repository:<name>:*`, what `skopeo delete`
+Refinements: a `*` action (`repository:<name>:*`, what `skopeo delete`
 requests) expands to every valid action and is then filtered by what the
 caller may do; repositories in proxy-cache organizations grant `pull` only,
 and one the proxy has not created yet counts as the organization's default
 visibility for anonymous access (`lib/access.ts`); instance admins always
 receive `registry:catalog:*`, which `registryd` also uses to recognise them
-for the rate-limit exemption.
+for the rate-limit exemption — unless the token is restricted to an
+organization, which is not an instance-wide credential (`mayAccessCatalog`
+refuses it too); a caller who may push gets `push` added to a pull-only
+request (cosign reads with a pull scope before it attaches a signature, and
+`manifest_blocks.pushers_exempt` lets such tokens read an image blocked only
+by the signature policy — nothing else keys on it); a scope naming a
+repository's former name (`repository_redirects`, see *Redirects*) is
+reduced to `pull` and authorized against the target repository, so writes
+through an old name get no grant at all.
 
 ## registryd (Go, no framework)
 
@@ -67,26 +83,90 @@ for the rate-limit exemption.
   (`internal/upstream/names.go`) while the token scope keeps the name the
   client asked for. The token service and the UI apply the same rules
   (`web/src/lib/proxy-shared.ts`).
+- **Redirects** (`internal/store/redirects.go`, `internal/api/redirects.go`):
+  a renamed or transferred repository leaves a row in `repository_redirects`
+  (`organization_slug` as it was at the time, `repository_name`,
+  `repository_id`); a renamed organization one in `organization_redirects`
+  (`old_slug` → `organization_id`). Resolution of a `<org>/<name>` that does
+  not exist — identical in Go (`ResolveMoved`) and TypeScript
+  (`lib/redirects.ts`): first the organization redirect (swap in the current
+  slug; a repository that exists there wins), then repository redirects
+  under the requested slug, the organization's current slug and every former
+  slug; targets are addressed by id, so a later rename of the target is
+  followed. `redirectCache` snapshots both tables for 30 s (a failed reload
+  keeps serving the old snapshot). `lookupRepoRead` (exact name, then
+  redirect) serves manifest GET/HEAD, tags, referrers and blob GET/HEAD from
+  the target — event, pull count and traffic land there, the response keeps
+  the requested name. Writes never follow a redirect: upload commit, mount,
+  manifest PUT and both DELETEs answer `403 DENIED "repository moved to
+  <org>/<name>; push to the new name (…)"`. `EnsureRepository` deletes the
+  redirect rows for a name it creates in the same transaction (the web app's
+  create action does the same), so a name taken over stops redirecting; the
+  cache needs no invalidation because the exact name is always tried first.
 - **Routes**: the full distribution spec — blob get/head/delete, uploads
   (chunked PATCH + monolithic POST, cross-repo mount, resume, cancel),
   manifests (image + index, tag or digest refs), `tags/list`, `referrers`
-  (with `artifactType` filter), `_catalog` (admin-gated) — plus the internal
-  API, bearer = `WEBHOOK_SECRET` except for `healthz`:
+  (with `artifactType` filter; each descriptor carries the referrer's
+  `annotations`, which the spec requires and cosign v3 reads to tell
+  signatures from attestations — `store.ListReferrers` selects
+  `(payload::jsonb)->'annotations'`), `_catalog` (admin-gated) — plus
+  `GET /metrics` (= `GET /internal/v1/metrics`, see *Metrics*) and the
+  internal API, bearer = `WEBHOOK_SECRET` except for `healthz`:
   `GET /internal/v1/healthz`, `GET /internal/v1/status` (build version from
   `internal/version.Version`, set with `-ldflags -X` / the Dockerfile's
-  `ARG VERSION`; Go version, storage driver, staging dir and its free bytes,
-  blob count and physical bytes, start time and uptime, the hex SHA-256
-  fingerprint of the trusted public key's PKIX DER, `authDisabled`, and
+  `ARG VERSION`; Go version, storage driver, `staging` mode with the staging
+  dir and its free bytes in local mode or the in-flight `uploadSessions` in
+  shared mode, blob count and physical bytes, start time and uptime, the
+  file key's fingerprint as `publicKeyFingerprint` plus
+  `publicKeyFingerprints` and `trustedKeys[{kid, fingerprint, source,
+  retiredAt}]` for every key the verifier accepts, `authDisabled`, and
   `status: degraded` plus `databaseError` when the database is unreadable),
   `POST /internal/v1/gc` and `POST /internal/v1/proxies/reload`.
 - **Content addressing**: blob bytes are stored once per digest
   (`blobs/sha256/ab/<hex>`); *repository membership* lives in
   `repository_blobs`, which is also the ACL boundary — a blob is only served
   through repositories it is linked to, so dedup never leaks private content.
-- **Uploads** are staged on local disk and only handed to the storage driver
-  after the digest verifies, so partial pushes never pollute the backend.
-  (Sessions are node-local: scale-out needs sticky routing on
-  `/blobs/uploads/` or a shared staging volume.)
+- **Upload staging** (`internal/storage/staging.go`, `shared.go`,
+  `verify.go`; `internal/api/uploads.go`): `storage.Staging` is what the
+  handlers use for in-flight uploads — `Create`, `Get` (org, repo, offset),
+  `Append(id, expectedOffset, r)`, `Open`, `Remove`, `Sweep`, `Mode`.
+  `Append` returns `ErrOffsetMismatch` when the session has moved on, which
+  the handler maps to `416 RANGE_INVALID` with the current `Range` so the
+  client resumes. `LocalStaging` (`STORAGE_STAGING=local`, default) keeps
+  `<id>.data` / `<id>.json` under `STORAGE_STAGING_DIR` — node-local, so
+  scale-out needs sticky routing on `/blobs/uploads/`. `SharedStaging`
+  (`shared`) keeps session rows in `upload_sessions` (`id`, `organization`,
+  `repository`, `offset`, `chunks [{seq,size,key}]`, `node`, timestamps,
+  `expires_at` indexed; registryd is the only writer) and streams every
+  `PATCH`/`PUT` body into its own object `_uploads/<session>/<seq>-<nonce>`
+  through the driver's `ObjectStore`, then advances the row with the
+  optimistic lock `UPDATE … SET offset = offset + n … WHERE id = $1 AND
+  offset = $expected` — zero rows means another replica won: the chunk
+  object is deleted again and the real offset reported. `Open` concatenates
+  the chunk objects lazily in order; `Remove` deletes the row and then the
+  objects (failures are left to GC); `expires_at` = now + `UPLOAD_SESSION_TTL`,
+  pushed forward by every append. **Commit** is one pass in both modes: the
+  staged stream is wrapped in `storage.VerifyingReader` (hashes while
+  reading, turns the final EOF into `ErrDigestMismatch`) and handed to
+  `Driver.Put`, whose contract is now explicit — never publish the blob
+  until the reader ended cleanly and the size matched (filesystem writes a
+  temp file and renames; S3 completes the multipart upload only then, or
+  aborts; bunny's request fails on a body error and the zone verifies the
+  `Checksum` header). A mismatch answers `400 DIGEST_INVALID` naming both
+  digests and discards the session; when the driver already has the blob
+  (dedup) the content is still hashed through `StagedDigest`, so a wrong
+  digest can never link content the client did not send. Quota checks use
+  the declared digest and the staged size before the write. Session cleanup
+  after commit runs on its own 30 s context so a client that disconnected is
+  still cleaned up. `Sweep` runs hourly from `main.go` and inside
+  `POST /internal/v1/gc` (`sweptUploads`): local mode drops files older than
+  the TTL; shared mode deletes rows with `expires_at < now()` plus their
+  chunks, then lists `_uploads/` and removes objects whose session has no
+  row (objects are listed before the live ids are read, so a session opened
+  meanwhile is never mistaken for an orphan). All replicas must run the same
+  mode; the filesystem driver's `_uploads/` under `FILESYSTEM_ROOT` doubles
+  as the default local staging dir, which is harmless (`<id>.data` files vs
+  `<id>/` chunk directories) as long as no fleet mixes modes on one root.
 - **Storage plugins**: backends register themselves with
   `storage.Register` in `init()` (the `database/sql` driver pattern) and are
   selected by name; options resolve from `<NAME>_*` environment variables.
@@ -94,7 +174,18 @@ for the rate-limit exemption.
   redirects) and `bunny` (bunny.net Edge Storage; uploads carry the SHA256
   `Checksum` header so the zone verifies content; optional signed pull-zone
   redirects). `registryd plugins` documents them. Each lives in its own
-  package under `internal/storage/<name>`.
+  package under `internal/storage/<name>`. The optional `storage.ObjectStore`
+  interface (`PutObject`, `GetObject`, `DeleteObject`, `ListObjects(prefix)`;
+  keys validated by `ValidObjectKey`) is what shared staging needs — all
+  three bundled drivers implement it (bunny spools bodies of unknown size
+  through a temp file because the Edge Storage API needs `Content-Length`);
+  `OpenStaging` returns `ErrSharedStagingUnsupported` for a driver without
+  it. S3 `Put` is multipart-capable: bodies up to 8 MiB go in one
+  `PutObject`, larger ones as a multipart upload with 8 MiB parts buffered
+  in memory (`bytes.Reader` parts, so SigV4 can sign the payload over plain
+  HTTP as with MinIO in compose) and `AbortMultipartUpload` on any error,
+  short write or digest mismatch — one 8 MiB buffer per concurrent upload,
+  objects above 5 GiB work.
 - **Default visibility**: repositories auto-created by a push take the
   organization's `organization_settings.default_visibility`, else the
   pushing user's `user_settings.default_visibility`, else private — and the
@@ -109,6 +200,13 @@ for the rate-limit exemption.
   digests must verify byte-for-byte — together with parsed metadata
   (media type, config digest, subject digest for referrers) and an explicit
   reference table (`manifest_refs`) that drives GC and layer statistics.
+- **Pull-policy blocks**: `manifest_blocks` (written by the web app) is the
+  whole contract — manifest GET/HEAD answers `403 DENIED "pull blocked by
+  policy: <reason>"` (vulnerability reasons end in `policy blocks <level>`,
+  signature reasons in `(signature policy)`, both joined with `; ` when they
+  coincide). `pushers_exempt`, set only for blocks caused by the signature
+  policy alone, lets a token whose `access` grants `push` on the repository
+  through (`api.blockApplies`); a combined block is never exempt.
 - **Tag rules** (`internal/store/tagrules.go`, read from `tag_rules`):
   manifest PUT by tag runs `CheckTagImmutable` before anything is written,
   then writes the tag with `UpsertTagGuarded`, which locks the tag row
@@ -200,9 +298,11 @@ for the rate-limit exemption.
   path — auto-creation with the organization's default visibility and the
   repository quota, `UpsertManifest` + refs, `UpsertProxyTag`, a `push` event
   with actor `proxy` (`pushed_by = 'proxy'`), and the `manifest.push` webhook
-  to the web app (config caching, repository webhooks, Clair scan — with
-  Clair on, the scan pulls every layer through registryd and thereby
-  prefetches them). Storage quotas are checked before a download when the
+  to the web app (config caching, repository webhooks, signature checks,
+  the scan — the scanner pulls every layer through registryd and thereby
+  prefetches them). `downloadProxiedBlob` stages through the same
+  `storage.Staging`, so in shared mode an upstream download costs one extra
+  backend write and read. Storage quotas are checked before a download when the
   upstream sends a length, else before linking. `allowed_patterns` and
   `enabled` are checked before any upstream contact; the pull policy
   (`manifest_blocks`) applies on serve as for every image.
@@ -221,7 +321,44 @@ for the rate-limit exemption.
 - **GC** (`POST /internal/v1/gc`, bearer = webhook secret, optional
   `?grace=30m`): drop repo→blob links no manifest references, delete blob
   rows with zero links, remove their bytes from storage, sweep stale upload
-  sessions. The grace window (default 1h) protects pushes in flight.
+  sessions and orphaned staging chunks (`sweptUploads`). The grace window
+  (default 1h) protects pushes in flight.
+- **Signing keys** (`internal/auth/token.go`, `internal/store/signingkeys.go`):
+  the `Verifier` keeps the file key (`fileKid` = its fingerprint) plus a map
+  of database keys loaded through a `KeySource` over `token_signing_keys`
+  (active keys and those retired less than the drop window ago). The JWT
+  keyfunc resolves `kid`: empty or the file fingerprint → file key; else a
+  database key inside the window; else `errUnknownKid`, on which `Identify`
+  refreshes the keys once (at most every 5 s) and retries, so a key
+  generated a moment ago works immediately. `RunKeyReload` polls every
+  `TOKEN_KEY_RELOAD_INTERVAL` (default 60 s, minimum 5 s); the drop window
+  is `TOKEN_KEY_DROP_WINDOW` (default 10 m, minimum 5 m — the token
+  lifetime). A failing reload keeps the previous keys. `TrustedKeys` /
+  `PublicKeyFingerprints` feed `/internal/v1/status`.
+- **Metrics** (`internal/metrics`, `internal/api/metrics.go`): a private
+  `prometheus.Registry` with the Go and process collectors plus the
+  `chicoree_registryd_*` series; `Metrics` is nil-safe so `Server{}`
+  literals in tests need no setup. `RouteTemplate(path)` maps paths to a
+  bounded vocabulary (`manifest`, `blob`, `upload`, `tags`, `referrers`,
+  `catalog`, `base`, `internal`, `metrics`, `other`) by scanning for the
+  last marker segment, so nested proxy names and a repository literally
+  called `manifests` classify correctly. Instrumentation: `logMiddleware`
+  (request counter, latency histogram, in-flight gauge), `countTraffic`
+  (upload bytes), `handleBlobGet` (bytes served by `stream` / `redirect`
+  mode), `enforcePullLimit` (429s by subject) and the proxy (`noteUpstream`
+  per upstream call, cache hit / miss per manifest and blob — a blob linked
+  by dedup counts as a hit); series the alert rules rely on are pre-created
+  so a fresh process exposes 0. `staging_free_bytes` is a `GaugeFunc`
+  evaluated per scrape. The endpoint is gated by `metricsGate`: the
+  `instance_settings` row `metrics` (`{enabled, tokenHash}`), polled every
+  30 s by `RunMetricsReload` like the rate limits, and `METRICS_TOKEN` from
+  the environment. The row's `token` is encrypted with the web app's
+  `AUTH_SECRET`-derived key, which registryd does not have, so
+  `saveMetricsSettings` also stores `tokenHash = sha256(token)` in the clear
+  and registryd compares `sha256(bearer)` against it in constant time.
+  Either credential is accepted while configured; 404 when neither is, 401
+  otherwise. A row saved before `tokenHash` existed counts as disabled until
+  the section is saved again.
 
 ## Web app (Next.js App Router)
 
@@ -260,22 +397,217 @@ for the rate-limit exemption.
   `proxy_checked_at` and `last_pulled_at`), `events`, `manifest_blocks`,
   `organization_settings`, `user_settings`, `organization_limits`,
   `user_limits`, `tag_rules`, `organization_proxies` (only `last_error` /
-  `last_checked_at`), `repository_traffic` (sole writer) and
-  `instance_settings` (the `ratelimit` row). Web-only additions of this
-  generation: `audit_log` (`db/audit-schema.ts`), `job_schedules`,
-  `notification_preferences`, `notification_state`, `retention_policies`,
-  and `repository_webhooks.organization_id` (with `repository_id` now
-  nullable) for organization hooks.
+  `last_checked_at`), `repository_traffic` (sole writer), `manifest_blocks`
+  (with `pushers_exempt`), `repository_redirects` and
+  `organization_redirects` (read), `token_signing_keys` (read),
+  `upload_sessions` (sole writer) and `instance_settings` (the `ratelimit`
+  and `metrics` rows). Web-only tables: `audit_log` (`db/audit-schema.ts`),
+  `job_schedules`, `notification_preferences`, `notification_state`,
+  `retention_policies`, `repository_webhooks` (with `organization_id` for
+  organization hooks), `repository_stars`, `repository_visits`,
+  `vulnerability_scans` (+ `findings`, `scanner`, `scanner_version`),
+  `scan_findings` and `vulnerability_exceptions` (`db/scanning-schema.ts`),
+  `signing_keys_trusted`, `manifest_signatures` and `manifest_artifacts`
+  (`db/supply-chain-schema.ts`), `access_tokens` (+ `last_used_ip`,
+  `description`, `organization_id`, `repository_ids`), `service_accounts`
+  (+ `last_used_ip`); columns `repositories.readme` / `require_signature`,
+  `organization_settings.require_signature`,
+  `user_settings.onboarding_dismissed_at` / `admin_checklist_dismissed_at`.
+  registryd's `INSERT INTO repositories` names its columns, so nullable
+  additions there need no Go change.
 - **Data flow**: server components query Postgres directly (`src/lib/data.ts`);
   mutations are server actions with per-org role checks; better-auth handles
   org/member/invitation/2FA/passkey flows through its own client API.
-- **Scanning** (`src/lib/scan.ts`): on push (webhook) or on demand (Re-scan),
-  the app submits the manifest's layers to Clair's indexer — Clair fetches
-  the layers straight from registryd using a system pull token — polls
-  indexing, then stores the matcher's report plus a per-severity summary in
-  `vulnerability_scans` (keyed by digest: scans are content-addressed and
-  shared across repos). Index (multi-arch) manifests aggregate their
-  children's scans in the UI.
+- **Scanning** (`src/lib/scanners/`, `src/lib/scan.ts`,
+  `scanner-shared.ts`): `Scanner { name, label, version(), scan(input),
+  health() }` is the backend contract; `ScanInput` carries the repository
+  path, digest, parsed manifest, layer descriptors, `REGISTRY_INTERNAL_URL`
+  and a two-hour system pull token for that repository, `scan` returns
+  normalised `findings`, the backend's `raw` report, the severity `summary`
+  and the scanner version. `clair.ts` submits the layers to Clair's indexer
+  (Clair fetches them from registryd with the token), polls `index_report`
+  (5-minute deadline), fetches the `vulnerability_report` and normalises it
+  (id = advisory name, severity from `normalized_severity`, `fixedIn`,
+  introducing layer, `os` for apk/dpkg/rpm databases else `library`).
+  `trivy.ts` runs `trivy image --format json --quiet --scanners vuln
+  --image-src remote --timeout <n>s --cache-dir <dir> [--insecure]
+  [--server <url>] <registry-host>/<org>/<repo>@<digest>` with `execFile`
+  (hard kill at timeout + 30 s); the same JWT is handed over as a
+  `registrytoken` in a temporary `DOCKER_CONFIG` scoped to the registry host
+  only (a global `--registry-token` would be sent to the registries Trivy
+  downloads its database from, and nothing secret goes on the command
+  line); `--insecure` when the internal URL is `http://`. Indexes are never
+  handed to a scanner: each platform child is scanned on its own push
+  event. `index.ts` (`scannerFromSettings`, `getScanner`,
+  `scanningEnabled`, `scannerLabel`) is the single answer to "is scanning
+  on?" for the tag-list column, the tab, the jobs list, the health card, the
+  metrics gauge and `runScan`; the settings section `scanner`
+  (`{ backend, clairUrl, trivyServerUrl, trivyTimeoutSeconds }`, env defaults
+  `SCANNER` / `CLAIR_URL` / `TRIVY_SERVER_URL` / `TRIVY_TIMEOUT_SECONDS`;
+  `TRIVY_BIN` and `TRIVY_CACHE_DIR` env-only) is saved from `/admin/scanning`,
+  whose *Test* builds a scanner from the unsaved form and calls `health()`.
+  `runScan` → status `indexing` → `scanner.scan` → `storeScanResult`
+  (`vulnerability_scans` keyed by digest — content-addressed and shared
+  across repositories — gets `findings` jsonb, `summary` computed from them,
+  `report` raw, `scanner`, `scanner_version`; `replaceScanFindings` rewrites
+  the `scan_findings` side rows — one per (digest, id, package, version),
+  indexed on digest, id and package — in a transaction) →
+  `refreshRepositoryBlocks` → `scan.completed`. `ensureFindings(row)`
+  returns stored findings or normalises a legacy Clair row on first view
+  (`normalize.ts` `reportKind` / `findingsOf`) and writes them back;
+  `normalizeLegacyScans` backs the `scan-normalize` job. Exceptions
+  (`vulnerability_exceptions`: organization, optional repository, id,
+  optional package, justification, `expires_at`) are applied in
+  `lib/pull-policy.ts`: `effectiveScanSummary` = counts after removing
+  accepted findings, and `violation()` is judged on that, so blocks change
+  on create / revoke (both recompute) and on expiry whenever blocks are
+  recomputed (`exceptions-expire` job, which also prunes rows expired > 30
+  days). Repository-scoped rules win over organization-wide ones; ids compare
+  case-insensitively; a package-limited rule needs an exact package match.
+  `lib/security.ts` starts every dashboard from the CTE `tagged` (each
+  tag's manifest plus, via `manifest_refs`, the platform children of index
+  tags, deduplicated by digest) with a reusable `EXCEPTED` `EXISTS`:
+  `securityTotals`, `worstRepositories`, `blockedImages`, `listExceptions`,
+  `searchFindings` (`vulnerability_id ILIKE %q% OR package ILIKE %q%`, 200
+  rows) behind `/<org>/security` and `/admin/security`. Index (multi-arch)
+  manifests aggregate their children's scans in the UI.
+- **Signatures** (`src/lib/signatures.ts`, `signatures-shared.ts`,
+  `app/api/artifacts/[repo]/[digest]/route.ts`): `discoverArtifacts` finds
+  manifests whose `subject_digest` is one of the subjects ∪ manifests under
+  `sha256-<hex>.sig|att|sbom` tags; `classifyArtifact` maps a descriptor to
+  kind (`signature` | `attestation` | `sbom` | `other`), subkind
+  (`provenance`, `spdx`, `cyclonedx`, `vuln`, `cosign-sign`, `custom`) and
+  format (`cosign-legacy`, `sigstore-bundle`, `dsse`, `raw`); the parsed
+  summary (SBOM package count and preview, SLSA v1 / v0.2 fields) is cached
+  content-addressed in `manifest_artifacts` (the first layer blob is loaded
+  through registryd with a system pull token, ≤ 16 MiB; a summary computed
+  while the blob was unreachable is not cached). Trusted keys
+  (`signing_keys_trusted`: organization, optional repository, normalised
+  SPKI PEM, fingerprint = sha256 of the DER SPKI — the value Sigstore
+  bundles carry as the key hint, type; ≤ 50 per scope) are parsed with
+  Node's `createPublicKey` (ECDSA, Ed25519, RSA ≥ 2048).
+  `checkArtifactSignatures` verifies cosign legacy layers (simple-signing
+  payload must name this digest and repository; annotation signature over
+  the raw payload), Sigstore bundles (`dsseEnvelope` — statement subject
+  must cover the digest, PAE verified — or `messageSignature` over the
+  subject manifest bytes; a key hint matching a trusted key that fails →
+  *invalid*) and DSSE envelopes; Fulcio certificates yield status `keyless`
+  with identity + issuer and are **not** chain-verified. Results are
+  upserted into `manifest_signatures` (repository, image digest, artifact
+  digest, kind `signature` | `attestation`, status `verified` | `untrusted`
+  | `invalid` | `keyless`, key id, identity, per-signature details) by
+  `verifyManifestSignatures`; `reverifyRepository` / `reverifyOrganization`
+  run after every key or policy change; `onManifestPushed` (from the
+  `manifest.push` event) re-verifies an artifact's subject or checks a new
+  image for existing artifacts, and refreshes blocks quietly when the
+  signature policy is on. Policy: `organization_settings.require_signature`
+  with `repositories.require_signature` (NULL = inherit) →
+  `effectiveSignaturePolicy`; `refreshRepositoryBlocks` then blocks every
+  manifest that is not itself an artifact (`looksLikeArtifact`: subject,
+  cosign tag, artifact-only layers or the empty config), has no
+  `manifest_signatures` row with `kind = signature, status = verified` and is
+  not a child of a verified index — reason `SIGNATURE_BLOCK_REASON`, merged
+  with the vulnerability reason, `pushers_exempt` when it stands alone.
+  Newly blocked digests notify `scan.blocked` or `signature.blocked` (the
+  latter skipped when quiet, i.e. between an image push and its signature).
+  The artifacts route serves the predicate JSON out of a DSSE envelope /
+  bundle, or with `raw=1` (and for plain `.sbom` artifacts) the first layer
+  blob, after a repository read check.
+- **Discovery** (`src/lib/viewer.ts`, `search.ts`, `search-shared.ts`,
+  `readme.ts`, `stars.ts`, `onboarding.ts`, `admin-checklist.ts`):
+  `viewerFromSession` → anonymous | user (with `isAdmin`), and
+  `visibleRepositoriesFilter(viewer)` is one SQL condition over a
+  `repositories r` alias — `visibility = 'public'` for anonymous, `TRUE`
+  for admins, `public OR organization_id IN (member's orgs)` otherwise —
+  that every discovery query composes (search, Explore, starred, recently
+  viewed, organization search); it mirrors `lib/access.ts`. Search is
+  `ILIKE` on name, description and `org/name` (pattern escaped), prefix
+  matches first; `searchTags` (`repo:tag` narrows), `searchDigests` (exact
+  `sha256:` or `LIKE 'sha256:<12+ hex>%'`), `searchOrganizations`;
+  `quickSearch` trims to 8 for the typeahead (`GET /api/search`, from 2
+  characters, `Cache-Control: private, no-store`), `searchAll` feeds
+  `/search`. Large instances can add `pg_trgm` GIN indexes on
+  `repositories.name` / `description` and `tags.name` — deliberately not in
+  the drizzle schema so `drizzle-kit push` needs no extension. READMEs:
+  `renderReadme` = `marked` (GFM) → `sanitize-html` with an explicit
+  allowlist, `allowedSchemesByTag.img = ["https"]`, `rel="nofollow
+  noopener"` on links, task-list inputs forced to disabled checkboxes, then
+  `dangerouslySetInnerHTML`; `imageAbout` reads the `latest`/newest tag's
+  `config.Labels`, then manifest annotations, then the first child of an
+  index. `repository_stars` (PK user + repo) and `repository_visits`
+  (upserted from the repository page inside `after()`, the `ON CONFLICT …
+  WHERE last_visited_at < now() - interval '1 minute'` clause throttles
+  writes) back the Star button and the dashboard lists; `userOnboarding`
+  derives the three steps from membership, `access_tokens` and a push event;
+  `adminSetupChecklist` reads settings, schedules, `scanningEnabled()` and
+  `quickHealth()`; dismissals are timestamps on `user_settings`.
+- **Repository tools** (`src/lib/redirects.ts`, `compare-shared.ts`,
+  `compare.ts`, `shared-layers.ts`, `app/actions/repo-tools.ts`):
+  `renameRepository` (managers; not in proxy organizations; reserved names
+  now include `audit` and `compare`; transaction: rename, clear redirects
+  for the new name, add the old one), `transferRepository` (managers of both
+  organizations; target not a proxy; `checkRepoQuota` and
+  `checkStorageQuota` with only the bytes the target does not hold yet;
+  moves `repositories.organization_id`, re-homes repository-scoped
+  `tag_rules` / `retention_policies`, writes the redirect, then
+  `refreshRepositoryBlocks`, quota warnings and the
+  `repository.transferred` webhook) and `renameOrganization` (owners;
+  `library` excluded; `organization_redirects`). Layouts cannot see the
+  request URL, so `src/proxy.ts` (Next proxy, page routes only) sets an
+  `x-pathname` header for the organization layout; pages call
+  `redirectMovedRepository` / `redirectMovedOrganization`
+  (`permanentRedirect`, HTTP 308). Creating a repository or organization
+  clears the redirect for that name. Comparison is pure
+  (`diffLayers` by digest with a reorder-safe two-pointer walk that keeps
+  the target order, `diffConfig`, `diffAnnotations`, `diffFindings` keyed
+  by id + package, `commonPlatforms`); `loadCompareSide` resolves a tag or
+  digest, picks the platform child of an index (attestations skipped), loads
+  the cached config (or fetches it through the registry) and the scan row;
+  `web/scripts/check-compare.ts` exercises it on fixtures.
+  `sharedLayerRefs` is one query per manifest joining its refs with every
+  other `manifest_refs` row for the same digests, visibility computed in
+  SQL, aggregated to total / hidden / up to 25 visible labels per layer;
+  `repositoryStorage` gives logical bytes (union of each tag's blobs, index
+  children included), physical bytes (distinct linked blobs) and bytes
+  shared with other repositories.
+- **Credentials** (`src/lib/token-policy-shared.ts`, `credential-auth.ts`,
+  `signing-keys.ts`, `registry-jwt.ts`, `token-expiry.ts`,
+  `app/actions/credentials.ts`, `signing-keys.ts`): the pure rules —
+  `expiryOptions` / `resolveExpiry` (presets 7 / 30 / 90 / 365 days, custom
+  date, never, the lifetime cap with a one-minute tolerance),
+  `expiryState`, `normalizeRestriction` / `restrictionAllows` — are shared
+  by forms and server; the policy (`maxTokenLifetimeDays`,
+  `requireTokenExpiry`) lives in the `access` settings section with
+  `TOKEN_MAX_LIFETIME_DAYS` / `TOKEN_REQUIRE_EXPIRY` as env defaults.
+  `identifyAccessToken` / `identifyServiceAccount` look the credential up by
+  hash, refuse expired ones and banned accounts, attach the PAT's
+  restriction to the `Caller`, and record `last_used_at` / `last_used_ip`
+  with one throttled UPDATE (`WHERE last_used_at IS NULL OR last_used_at <
+  now() - interval '5 minutes'`, fire-and-forget); `allowedRepositoryActions`
+  empties the grant when `restrictionAllows` fails (a repository-limited
+  token never gets a not-yet-existing repository, so no auto-create), and
+  `authenticateJobsRequest` refuses restricted tokens. `rotateAccessToken`
+  inserts the replacement with the same settings and the original lifetime
+  counted from now (capped by the current policy) and deletes the old row in
+  one transaction; `rotateServiceAccount` swaps the hash in place. The
+  `token-expiry` job claims `notification_state` key
+  `token.expiring:<pat|sa>:<id>` with `INSERT … ON CONFLICT DO NOTHING
+  RETURNING`, so each credential is warned once (a rotated PAT is a new row;
+  state rows whose expiry left the window are deleted at the end of a run).
+  Signing keys: `generateSigningKey` makes a P-256 pair, kid = fingerprint
+  (hex SHA-256 of the PKIX DER, the convention `/internal/v1/status` already
+  used), private PEM encrypted with `lib/crypto.ts` under `AUTH_SECRET`,
+  `activated_at = now`; `retireSigningKey` is refused for the newest active
+  key; `activeSigner()` — the newest active database key (decrypted once
+  per kid), else the file key — is looked up on every token request (one
+  indexed row), so all replicas switch on the next request, and
+  `signRegistryToken` puts the kid in the protected header.
+  `checkTokenKeys` on the health page is green when the active signer's kid
+  is among the registry's `trustedKeys`, distinguishing "not picked up yet"
+  from a mismatch. Sessions: `settings/security` shows `auth.api.listSessions`
+  with last activity and expiry; *Sign out everywhere else* calls
+  `revokeOtherSessions`, the admin page `admin.revokeUserSessions`; both
+  were already audited by `lib/auth-audit.ts`.
 - **Webhooks** (`src/lib/webhooks.ts`, `webhooks-shared.ts`): hooks live in
   `repository_webhooks` with either `repository_id` or `organization_id`
   set (5 per repository, 10 per organization; `webhook_deliveries` is
@@ -289,23 +621,26 @@ for the rate-limit exemption.
   signature, retries, and a bounded delivery log. Events: `push` (payload
   unchanged from earlier versions), `delete` (from registryd's
   `manifest.delete`, tag or digest), `scan.completed`, `scan.blocked`,
-  `mirror.completed`, `mirror.failed`, `retention.completed` and
-  `quota.warning` (organization hooks only). *Send test* on an organization
-  hook uses the most recently pushed tag of any repository in the
-  organization.
+  `signature.blocked`, `mirror.completed`, `mirror.failed`,
+  `retention.completed`, `repository.renamed`, `repository.transferred`
+  (both with `previous { organization, name, path }`) and `quota.warning`
+  (organization hooks only). *Send test* on an organization hook uses the
+  most recently pushed tag of any repository in the organization.
 - **Notifications** (`src/lib/notify.ts`, `notify-shared.ts`):
   `notify(input)` resolves recipients (owners/admins of the organization, or
   instance admins for `job.failed`), drops those who switched the event off
   in `notification_preferences` (defaults from the catalogue; only
   `scan.completed` is off), sends one mail per recipient through `sendMail`
   (logged when SMTP is not configured) and forwards organization-scoped
-  events to webhooks; `webhook.failed` and `job.failed` never fan out to
-  webhooks. Hooked from `runJob` and the scheduler's stuck-run sweep
-  (`job.failed`), `scan.ts` after a stored scan (`scan.completed`),
-  `pull-policy.ts#refreshRepositoryBlocks` for digests that were not blocked
-  before (`scan.blocked`), `mirror.ts` (`mirror.failed` / the
-  `mirror.completed` webhook) and `webhooks.ts#deliverWebhook` after the
-  last attempt (`webhook.failed`). `checkQuotaWarnings(orgId)` — after every
+  events to webhooks; `webhook.failed`, `job.failed` and the account-scoped
+  `token.expiring` (PAT → its owner, service account → the organization's
+  managers) never fan out to webhooks. Hooked from `runJob` and the
+  scheduler's stuck-run sweep (`job.failed`), `scan.ts` after a stored scan
+  (`scan.completed`), `pull-policy.ts#refreshRepositoryBlocks` for digests
+  that were not blocked before (`scan.blocked`, or `signature.blocked` when
+  only the signature policy applies), `mirror.ts` (`mirror.failed` / the
+  `mirror.completed` webhook), `webhooks.ts#deliverWebhook` after the last
+  attempt (`webhook.failed`) and `token-expiry.ts`. `checkQuotaWarnings(orgId)` — after every
   `manifest.push`, after repository creation / visibility changes and after
   an admin saves organization limits — sends the highest crossed threshold
   (95 before 80) once per `quota.warning:<org>:<kind>:<threshold>` per 24 h;
@@ -349,13 +684,16 @@ for the rate-limit exemption.
   *Run now* on the settings pages go through `runJob`. `deleteTag` refuses
   protected tags before calling the registry, surfaces the registry's 403
   message, and leaves an immutable or protected `latest` alone.
-- **Jobs** (`src/lib/jobs.ts`): `gc`, `scan-stale`, `prune-untagged`,
+- **Jobs** (`src/lib/jobs.ts`): `gc`, `scan-stale` (throws when scanning
+  is off and is hidden from `listJobs()`, now async for that reason),
+  `scan-normalize`, `exceptions-expire`, `token-expiry`, `prune-untagged`,
   `mirror-sync`, `proxy-evict`, `retention` — each run recorded in
   `job_runs` with its trigger (`user:<id>`, `api-token`, `schedule`); a
   failed run raises `job.failed`. Exposed on `/admin/jobs` and as
   `POST /api/jobs/<name>` for automation (bearer `JOBS_API_TOKEN` or an admin
-  PAT with write scope). Jobs are read from the `JOBS` registry, so a new
-  job gets its API route and schedule block without further code.
+  PAT with write scope and no organization restriction). Jobs are read from
+  the `JOBS` registry, so a new job gets its API route and schedule block
+  without further code.
 - **Scheduler** (`src/lib/scheduler.ts`, started from
   `src/instrumentation.ts` on the Node runtime only, skipped during the
   production build): one row per job in `job_schedules` (`cron`, `params`,
@@ -387,9 +725,13 @@ for the rate-limit exemption.
   `hooks.before/after` (failed sign-ins, admin routes, password and passkey
   changes, session revocation, account link/unlink), `databaseHooks`
   (`auth.sign_up`, `auth.sign_in` with the method, 2FA toggles) and
-  `organizationHooks`. CSV exports are logged as `audit.export`. Once an hour
-  after an insert, rows older than `AUDIT_RETENTION_DAYS` are deleted.
-  registryd never writes it.
+  `organizationHooks`. CSV exports are logged as `audit.export`. Actions
+  added by this generation: `repo.readme`, `repo.rename`, `repo.transfer`
+  (recorded in both organizations), `org.rename`, `security.exception.create`
+  / `.revoke`, `scan.rescan_all`, `signing_key.add` / `.remove`,
+  `signature.reverify`, `token.rotate`, `admin.token.revoke`, `sa.rotate`,
+  `keys.generate`, `keys.retire`. Once an hour after an insert, rows older
+  than `AUDIT_RETENTION_DAYS` are deleted. registryd never writes it.
 - **Branding** (`src/lib/branding.ts`, `branding-shared.ts`; settings section
   `branding`, env defaults `INSTANCE_NAME`, `INSTANCE_TAGLINE`): the logo is
   validated (PNG magic bytes, or SVG without `<script>`, event handlers,
@@ -404,13 +746,17 @@ for the rate-limit exemption.
   and `quickHealth()` for `GET /api/health` (database + registry ping, `ok`
   / `degraded`, no internals). Every check is wrapped in a 3-second timeout
   and a catch-all that turns exceptions into a red card. The registry check
-  reads `/internal/v1/status` and compares its public-key fingerprint with
-  the one derived from `JWT_PRIVATE_KEY_FILE` with node's `crypto`. Clair's
-  `/healthz` lives on its introspection port, so the probe falls back to
-  `GET /indexer/api/v1/index_state`; updater freshness comes from
+  reads `/internal/v1/status` (staging mode and in-flight sessions included;
+  the staging-disk check is not applicable in shared mode) and the keys
+  check compares the active signer with the registry's `trustedKeys`. The
+  scanner card comes from `scanner.health()`: Clair's `/healthz` lives on
+  its introspection port, so the probe falls back to
+  `GET /indexer/api/v1/index_state`, with updater freshness from
   `GET /matcher/api/v1/internal/update_operation` (newest `date` across
-  updaters, warn after 48 h or when no updater has run). Postgres:
-  `pg_database_size`, `pg_stat_activity` vs `max_connections`, and the
+  updaters, warn after 48 h or when no updater has run); Trivy runs
+  `trivy version --format json` (binary + local database age) and, in
+  client mode, `GET <server>/healthz`. Postgres: `pg_database_size`,
+  `pg_stat_activity` vs `max_connections`, and the
   `drizzle.__drizzle_migrations` row count.
 - **Administration**: `/admin/users/[id]` and `/admin/organizations/[id]`
   manage roles, bans, limits (`user_limits`, `organization_limits`),
@@ -420,8 +766,9 @@ for the rate-limit exemption.
   carries `impersonatedBy`, which the app layout turns into a persistent
   banner. Instance settings (`lib/instance-settings.ts`) are sections of
   `instance_settings` — `smtp`, `github`, `google`, `oidc`, `ldap`,
-  `bindings`, `metrics`, `access`, `branding`, `ratelimit` — merged over the
-  environment; only `ratelimit` is read by registryd.
+  `bindings`, `metrics`, `access` (sign-up controls and token policy),
+  `branding`, `ratelimit`, `scanner` — merged over the environment; only
+  `ratelimit` and `metrics` (`enabled` + `tokenHash`) are read by registryd.
 - **Statistics**: pulls/day (zero-filled series from `events`); egress /
   ingress / redirected bytes per day, per repository and per organization
   summed from `repository_traffic` at read time (`lib/admin-stats.ts`,
@@ -430,37 +777,78 @@ for the rate-limit exemption.
   and `chicoree_traffic_bytes_total{direction}`); storage per-repo/org
   (linked-blob sums), instance-wide physical vs logical bytes (dedup
   savings), and per-image layer breakdowns (sizes + Dockerfile instructions
-  reconstructed from the cached image config history).
+  reconstructed from the cached image config history, `lib/compare-shared.ts`).
+  `addOperationalMetrics` appends, from a second `Promise.all` of aggregate
+  queries, `chicoree_job_last_run_status{job,status}` (one-hot from
+  `DISTINCT ON (job)` over `job_runs`),
+  `chicoree_job_last_success_timestamp_seconds{job}`,
+  `chicoree_vulnerability_scan_pending_oldest_seconds`,
+  `chicoree_webhooks_failing`, `chicoree_webhook_deliveries_recent{status}`
+  (last hour), `chicoree_mirror_last_status{status}`,
+  `chicoree_proxy_organizations{enabled}` / `_failing`,
+  `chicoree_organization_storage_{bytes,limit_bytes,ratio}{organization}`
+  (organizations with a limit; `bytes` is the same distinct-blob sum as
+  registryd's quota check), `chicoree_events_today{type}`,
+  `chicoree_traffic_today_bytes{direction}`, `chicoree_audit_events_total`,
+  `chicoree_rate_limit_config_info{anonymous,authenticated,source}` and
+  `chicoree_scanner_up{backend}` — all computed at scrape time.
+  `deploy/prometheus/` (example config + 18 alert rules, checked with
+  `promtool`), `deploy/grafana/chicoree.json` (uid `chicoree-registry`,
+  `DS_PROMETHEUS` input plus `web_job` / `registryd_job` variables so it
+  imports through the UI and provisions from file) and
+  `docker-compose.observability.yml` (profile `observability`, Prometheus
+  and Grafana on loopback) are the ready-made consumers.
 
 ## Credentials at a glance
 
-| Credential | Prefix | Scope | Created in |
-| --- | --- | --- | --- |
-| Personal access token | `chc_pat_` | acts as the user; `read` or `write`; admins' write tokens also unlock the jobs API | Settings → Access tokens |
-| Service account | `chc_sa_` | one org; `pull` / `push` / `admin` (+delete), optional repo allowlist & expiry | Org → Service accounts |
+| Credential | Prefix | Scope | Expiry & restrictions | Created in |
+| --- | --- | --- | --- | --- |
+| Personal access token | `chc_pat_` | acts as the user; `read` or `write`; admins' unrestricted write tokens also unlock the jobs API | 7 / 30 / 90 / 365 days, custom date or never (within the instance policy); optionally limited to one organization and, within it, a repository list — restricted tokens get no catalog grant and cannot auto-create repositories; *Rotate* = new token, old one revoked | Settings → Access tokens |
+| Service account | `chc_sa_` | one org; `pull` / `push` / `admin` (+delete), optional repo allowlist | same expiry rules; *Rotate* swaps the secret in place (same id) | Org → Service accounts |
 
-Only sha256 hashes are stored; secrets are displayed once at creation.
+Only sha256 hashes are stored; secrets are displayed once at creation; the
+last use (time and client IP) is recorded at most every five minutes, and
+expired credentials are refused at the token endpoint and the jobs API.
 Tokens minted for instance administrators always carry `registry:catalog:*`;
-`repository:<name>:*` expands to every action the caller may perform; in
-proxy-cache organizations every credential gets `pull` only. Internal
-callers use fixed subjects — `user:system` (the app's own reads, retention)
-and `mirror:<id>` — which registryd exempts from pull rate limits, as it does
-the reserved `proxy:` prefix; proxy fetches themselves run inside registryd
-and carry no token.
+`repository:<name>:*` expands to every action the caller may perform;
+callers who may push get `push` on pull-only requests; in proxy-cache
+organizations every credential gets `pull` only, and so does every request
+for a repository's former name. Internal callers use fixed subjects —
+`user:system` (the app's own reads, retention, the scanners' two-hour pull
+token, artifact blob loads) and `mirror:<id>` — which registryd exempts from
+pull rate limits, as it does the reserved `proxy:` prefix; proxy fetches
+themselves run inside registryd and carry no token. Registry JWTs are signed
+by the newest active key in `token_signing_keys`, else the file key; the
+`kid` header tells registryd which one.
 
 ## Notes & known trade-offs
 
 - Clair is pinned to 4.8.0 — 4.9.0's OSV updater panics on current upstream
   data. Fresh installs report few/no findings until Clair finishes syncing
-  its vulnerability databases (minutes to an hour).
+  its vulnerability databases (minutes to an hour). Trivy (0.74.0, a static
+  binary copied into the web image) needs its database download on the
+  first scan; standalone mode keeps one database per web replica unless a
+  Trivy server is configured.
+- Scan rows written before the normalised `findings` column exist are
+  converted lazily on first view or by the `scan-normalize` job; the
+  normaliser is TypeScript, so there is no SQL backfill.
+- Keyless (Fulcio) signatures are displayed with their identity but never
+  chain-verified; only key-based signatures count for the signature policy.
 - Manifest DELETE removes the manifest row; blob bytes are reclaimed by the
   next GC pass, never inline.
 - The registry enforces exactly two-level names (`<org>/<repo>`), except in
   proxy-cache organizations, where the upstream path may be deeper.
-- Pull rate-limit counters and the traffic counter are process-local: with
-  several registryd replicas each has its own budget, and a crash loses at
-  most 10 s of traffic statistics.
+- Pull rate-limit counters, the traffic counter and the `/metrics` counters
+  are process-local: with several registryd replicas each has its own
+  budget, a crash loses at most 10 s of traffic statistics, and Prometheus
+  must scrape every replica. The proxy cache's per-digest singleflight is
+  also per replica.
+- Shared upload staging costs one extra backend write and read per uploaded
+  (or proxied) blob and, on S3, a `DeleteObject` per chunk after commit; a
+  mixed local/shared fleet behaves like local.
 - Only one web replica runs job schedules at a time (advisory lock); the
   others stand by and take over when its connection drops.
+- Search is `ILIKE`-based and works on a plain database; large instances
+  should add the `pg_trgm` indexes by hand.
 - `AUTH_DISABLED=true` on registryd turns every request into an admin — a
   dev-only escape hatch, loudly logged at startup.

@@ -39,6 +39,7 @@ services:
       # TRIVY_SERVER_URL points at the optional trivy service (profile "trivy").
       TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
+      TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -84,6 +85,10 @@ services:
       RATE_LIMIT_ANONYMOUS: ${RATE_LIMIT_ANONYMOUS:-}
       RATE_LIMIT_AUTHENTICATED: ${RATE_LIMIT_AUTHENTICATED:-}
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
+      # Prometheus endpoint defaults (Administration → Metrics overrides them);
+      # registryd accepts the same METRICS_TOKEN on its own /metrics.
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     volumes:
       - ./secrets/registry-token.key:/run/secrets/registry-token.key:ro
       - trivy-cache:/var/lib/chicoree/trivy
@@ -121,11 +126,17 @@ services:
       RATE_LIMIT_ANONYMOUS: ${RATE_LIMIT_ANONYMOUS:-}
       RATE_LIMIT_AUTHENTICATED: ${RATE_LIMIT_AUTHENTICATED:-}
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
+      # Bearer token for GET /metrics when the admin panel's Metrics section is not used.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       # The realm must be reachable by docker CLIENTS, not just containers.
       TOKEN_REALM: ${APP_URL:-http://localhost:3000}/api/registry/token
       TOKEN_SERVICE: chicoree-registry
       TOKEN_ISSUER: chicoree-web
       JWT_PUBLIC_KEY_FILE: /run/secrets/registry-token.pub
+      # Signing keys generated under Administration → Signing keys: how often
+      # they are re-read and how long a retired key stays trusted (≥ 5m, the token lifetime).
+      TOKEN_KEY_RELOAD_INTERVAL: ${TOKEN_KEY_RELOAD_INTERVAL:-60s}
+      TOKEN_KEY_DROP_WINDOW: ${TOKEN_KEY_DROP_WINDOW:-10m}
       WEBHOOK_URL: http://web:3000/api/internal/events
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
     volumes:

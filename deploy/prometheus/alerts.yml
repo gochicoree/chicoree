@@ -27,14 +27,14 @@ groups:
           summary: "registryd is down"
           description: "The registry has not answered its health check (or its /metrics scrape) for 3 minutes. Pushes and pulls are failing."
 
-      - alert: ChicoreeClairDown
-        expr: chicoree_clair_up == 0 and chicoree_vulnerability_scans_total{status="pending"} > 0
+      - alert: ChicoreeScannerDown
+        expr: chicoree_scanner_up == 0 and chicoree_vulnerability_scans_total{status="pending"} > 0
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: "Clair is unreachable while scans are waiting"
-          description: "{{ $value }} scans are pending but the Clair indexer has not answered for 15 minutes."
+          summary: "The vulnerability scanner is unreachable while scans are waiting"
+          description: "{{ $value }} scans are pending but the scanner (Clair or Trivy) has not answered for 15 minutes."
 
   - name: chicoree-scanning
     rules:
