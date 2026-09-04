@@ -396,7 +396,7 @@ export async function notify(input: NotifyInput): Promise<void> {
     }
 
     case "job.failed": {
-      const url = `${env.appUrl}/admin/jobs`;
+      const url = `${env.appUrl}/admin/jobs/${encodeURIComponent(input.job)}`;
       const trigger =
         input.triggeredBy === "schedule" ? "on schedule" : input.triggeredBy === "api-token" ? "from the jobs API" : "manually";
       const message = compose(

@@ -4,7 +4,6 @@ import { useActionState, useMemo, useState } from "react";
 import { CalendarClock, Play } from "lucide-react";
 import { runJobAction, type JobActionResult } from "@/app/actions/jobs";
 import { saveScheduleAction, type ScheduleActionResult } from "@/app/actions/schedules";
-import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/field";
@@ -23,14 +22,14 @@ import {
   validateTimezone,
 } from "@/lib/schedule-shared";
 
-interface JobInfo {
+export interface JobInfo {
   name: string;
   title: string;
   description: string;
   params: { name: string; description: string; default: string }[];
 }
 
-interface LastScheduled {
+export interface LastScheduled {
   id: string;
   status: string;
   error: string | null;
@@ -42,7 +41,7 @@ const PRESET_OPTIONS = [
   { value: CUSTOM_PRESET, label: "Custom", description: "Any 5-field cron expression" },
 ];
 
-function ScheduleForm({
+export function ScheduleForm({
   job,
   schedule,
   lastScheduled,
@@ -84,8 +83,8 @@ function ScheduleForm({
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="job" value={job.name} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <CalendarClock className="size-4 text-ink-3" /> Schedule
+        <div className="flex items-center gap-2 text-sm text-ink-2">
+          <CalendarClock className="size-4 text-ink-3" /> {schedule ? "Saved schedule" : "No schedule yet"}
         </div>
         <label className="flex items-center gap-2 text-sm text-ink-2">
           <input
@@ -189,48 +188,27 @@ function ScheduleForm({
   );
 }
 
-export function JobCard({
-  job,
-  schedule,
-  lastScheduled,
-  schedulerEnabled,
-}: {
-  job: JobInfo;
-  schedule: ScheduleView | null;
-  lastScheduled: LastScheduled | null;
-  schedulerEnabled: boolean;
-}) {
+/** Manual "Run now" form for one job: parameter inputs, the run button and the outcome. */
+export function RunJobForm({ job }: { job: JobInfo }) {
   const [state, action, pending] = useActionState<JobActionResult | null, FormData>(runJobAction, null);
   return (
-    <Card className="flex h-full flex-col">
-      <CardHeader
-        eyebrow={job.name}
-        title={job.title}
-        description={job.description}
-        action={schedule?.enabled ? <Badge tone="accent">scheduled</Badge> : undefined}
-      />
-      <CardBody className="flex flex-1 flex-col">
-        <form action={action} className="flex flex-col gap-3">
-          <input type="hidden" name="job" value={job.name} />
-          {job.params.map((p) => (
-            <Field key={p.name} label={p.name} htmlFor={`${job.name}-${p.name}`} hint={p.description}>
-              <Input id={`${job.name}-${p.name}`} name={p.name} placeholder={p.default} className="font-mono" />
-            </Field>
-          ))}
-          <div className="space-y-3 pt-1">
-            <Button type="submit" variant="secondary" disabled={pending}>
-              <Play className="size-4" /> {pending ? "Running…" : "Run now"}
-            </Button>
-            {state?.status === "succeeded" && (
-              <p className="rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
-            )}
-            {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
-          </div>
-        </form>
-        <div className="mt-4 border-t border-line pt-4">
-          <ScheduleForm job={job} schedule={schedule} lastScheduled={lastScheduled} schedulerEnabled={schedulerEnabled} />
-        </div>
-      </CardBody>
-    </Card>
+    <form action={action} className="flex flex-col gap-3">
+      <input type="hidden" name="job" value={job.name} />
+      {job.params.length === 0 && <p className="text-sm text-ink-2">This job takes no parameters.</p>}
+      {job.params.map((p) => (
+        <Field key={p.name} label={p.name} htmlFor={`${job.name}-${p.name}`} hint={p.description}>
+          <Input id={`${job.name}-${p.name}`} name={p.name} placeholder={p.default} className="font-mono" />
+        </Field>
+      ))}
+      <div className="space-y-3 pt-1">
+        <Button type="submit" variant="secondary" disabled={pending}>
+          <Play className="size-4" /> {pending ? "Running…" : "Run now"}
+        </Button>
+        {state?.status === "succeeded" && (
+          <p className="overflow-x-auto rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
+        )}
+        {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
+      </div>
+    </form>
   );
 }

@@ -30,6 +30,6 @@ export async function saveScheduleAction(
 
   const error = await saveSchedule({ job: name, cron, params, enabled, timezone, updatedBy: session.user.id });
   if (error) return { error };
-  revalidatePath("/admin/jobs");
+  revalidatePath("/admin/jobs", "layout");
   return { saved: true };
 }

@@ -99,7 +99,7 @@ export async function adminSetupChecklist(userId: string): Promise<AdminChecklis
       title: "Garbage collection schedule",
       status: gc?.enabled ? "ok" : "warn",
       summary: gc?.enabled ? `Runs on “${gc.cron}” (${gc.timezone}).` : "Not scheduled: unreferenced layers are never reclaimed on their own.",
-      href: "/admin/jobs",
+      href: "/admin/jobs/gc",
       linkLabel: "Jobs",
     },
     {
@@ -107,7 +107,7 @@ export async function adminSetupChecklist(userId: string): Promise<AdminChecklis
       title: "Retention schedule",
       status: retention?.enabled ? "ok" : "warn",
       summary: retention?.enabled ? `Runs on “${retention.cron}” (${retention.timezone}).` : "Not scheduled: retention policies are only applied when the job runs.",
-      href: "/admin/jobs",
+      href: "/admin/jobs/retention",
       linkLabel: "Jobs",
     },
     {
