@@ -19,7 +19,8 @@ func (s *Server) handleBlobGet(w http.ResponseWriter, r *http.Request, rc *reqCt
 		writeError(w, http.StatusBadRequest, CodeDigestInvalid, "invalid digest")
 		return
 	}
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	// Former names (renamed / transferred repositories) resolve to the target.
+	repo, err := s.lookupRepoRead(r.Context(), rc)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return
@@ -85,8 +86,12 @@ func (s *Server) handleBlobDelete(w http.ResponseWriter, r *http.Request, rc *re
 		writeError(w, http.StatusBadRequest, CodeDigestInvalid, "invalid digest")
 		return
 	}
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	repo, err := s.repoLookup.GetRepository(r.Context(), rc.org, rc.repo)
 	if errors.Is(err, store.ErrNotFound) {
+		// Deletes never follow a redirect: the old name is read-only.
+		if s.writeMovedIfRedirected(w, r, rc) {
+			return
+		}
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return
 	} else if err != nil {

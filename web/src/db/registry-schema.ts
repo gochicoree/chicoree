@@ -718,3 +718,43 @@ export const uploadSessions = pgTable(
   },
   (t) => [index("upload_sessions_expires_idx").on(t.expiresAt)],
 );
+// --- Rename / transfer redirects (read by registryd, written by the web app) ---
+
+/**
+ * One row per former `<org>/<name>` of a repository: created when a
+ * repository is renamed or transferred to another organization. registryd
+ * serves pulls, tag lists, referrers and blob reads of the old name from the
+ * target and refuses pushes with 403 (lib/redirects.ts, internal/api/redirects.go).
+ * The row disappears when a new repository takes the old name.
+ */
+export const repositoryRedirects = pgTable(
+  "repository_redirects",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    /** Organization slug the repository used to live under (at the time of the move). */
+    organizationSlug: text("organization_slug").notNull(),
+    /** Former repository name. */
+    repositoryName: text("repository_name").notNull(),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: text("created_by"),
+  },
+  (t) => [
+    unique("repository_redirects_name_uq").on(t.organizationSlug, t.repositoryName),
+    index("repository_redirects_repo_idx").on(t.repositoryId),
+  ],
+);
+
+/** Former organization slugs, so `<old-slug>/<repo>` keeps resolving after a rename. */
+export const organizationRedirects = pgTable("organization_redirects", {
+  oldSlug: text("old_slug").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: text("created_by"),
+});

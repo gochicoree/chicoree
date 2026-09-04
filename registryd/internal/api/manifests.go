@@ -44,7 +44,8 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 	if px != nil && !s.ensureProxiedManifest(w, r, rc, px, ref) {
 		return
 	}
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	// Former names (renamed / transferred repositories) resolve to the target.
+	repo, err := s.lookupRepoRead(r.Context(), rc)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return
@@ -251,8 +252,12 @@ func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *r
 // handleManifestDelete removes a tag (when ref is a tag) or the manifest
 // itself (when ref is a digest).
 func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc *reqCtx, ref string) {
-	repo, err := s.store.GetRepository(r.Context(), rc.org, rc.repo)
+	repo, err := s.repoLookup.GetRepository(r.Context(), rc.org, rc.repo)
 	if errors.Is(err, store.ErrNotFound) {
+		// Deletes never follow a redirect: the old name is read-only.
+		if s.writeMovedIfRedirected(w, r, rc) {
+			return
+		}
 		writeError(w, http.StatusNotFound, CodeNameUnknown, "repository not found")
 		return
 	} else if err != nil {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
-import { ArrowLeft, RotateCw } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, RotateCw } from "lucide-react";
 import { db } from "@/db";
 import { serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
@@ -15,7 +15,7 @@ import { CommandLine, Digest } from "@/components/ui/copy";
 import { Tabs } from "@/components/ui/tabs";
 import { StrataBar } from "@/components/strata-bar";
 import { SeverityChips, totalFindings, type SeveritySummary } from "@/components/severity";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClasses } from "@/components/ui/button";
 import { VulnerabilityPanel } from "./vulnerability-panel";
 import { imageReference } from "@/lib/library";
 import { decodeRepoParam, repoHref } from "@/lib/proxy-shared";
@@ -28,6 +28,10 @@ import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { RuleBadges } from "@/components/tag-rules-manager";
 import { DeleteManifestButton } from "../../tag-actions";
 import { ShieldBan } from "lucide-react";
+import { redirectMovedRepository } from "@/lib/redirects";
+import { layersWithInstructions } from "@/lib/compare-shared";
+import { memberOrgIds, sharedLayerRefs, type SharedLayerInfo } from "@/lib/shared-layers";
+import { SharedLayerBadge } from "@/components/shared-layers";
 
 interface Descriptor {
   mediaType?: string;
@@ -71,7 +75,8 @@ export default async function TagDetailPage({
   const reference = decodeURIComponent(rawTag);
 
   const found = await getRepoByPath(orgSlug, repoName);
-  if (!found) notFound();
+  // Renamed / transferred repositories: 308 to the new address.
+  if (!found) return redirectMovedRepository(orgSlug, repoName, `/tags/${rawTag}`);
   const ctx = await getOrgContext(orgSlug);
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
@@ -118,9 +123,9 @@ export default async function TagDetailPage({
     size: l.size ?? 0,
     mediaType: l.mediaType,
   }));
-  // History entries without empty_layer align 1:1 with layers, in order.
-  const commands = (config?.history ?? []).filter((h) => !h.empty_layer).map((h) => h.created_by ?? "");
-  const layersWithCommands = layers.map((l, i) => ({ ...l, command: cleanCommand(commands[i]) }));
+  // History entries without empty_layer align 1:1 with layers, in order
+  // (lib/compare-shared.ts, shared with the compare page).
+  const layersWithCommands = layersWithInstructions(layers, config);
   const totalSize = layers.reduce((sum, l) => sum + l.size, 0) + (payload.config?.size ?? 0);
 
   // Index children with their scan states.
@@ -144,6 +149,15 @@ export default async function TagDetailPage({
   const scanning = !!scanner;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
+  // Which other images share each layer (one query), filtered to what the viewer may see.
+  const shared: Record<string, SharedLayerInfo> = {};
+  if (!isIndex && layers.length > 0) {
+    const refs = await sharedLayerRefs(found.repo.id, digest, {
+      isAdmin: session?.user.role === "admin",
+      memberOrgIds: session ? await memberOrgIds(session.user.id) : [],
+    });
+    for (const [d, info] of refs) shared[d] = info;
+  }
   // Tag rules: lock badges for a tag reference, and whether the image may be deleted by digest.
   const canManage = role === "owner" || role === "admin";
   const rules = await effectiveTagRules(found.repo.organizationId, found.repo.id);
@@ -203,6 +217,13 @@ export default async function TagDetailPage({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`${base}/compare?from=${encodeURIComponent(isDigestRef ? digest : reference)}`}
+              className={buttonClasses("secondary", "sm")}
+              title="Compare this image with another tag"
+            >
+              <GitCompareArrows className="size-3.5" /> Compare
+            </Link>
             {canRescan && (
               <form action={requestRescan}>
                 <input type="hidden" name="repositoryId" value={found.repo.id} />
@@ -306,7 +327,7 @@ export default async function TagDetailPage({
             {
               label: "Layers",
               badge: layersWithCommands.length,
-              content: <LayerTable layers={layersWithCommands} />,
+              content: <LayerTable layers={layersWithCommands} shared={shared} />,
             },
             ...(scanning
               ? [
@@ -354,18 +375,13 @@ export default async function TagDetailPage({
   );
 }
 
-function cleanCommand(cmd: string | undefined): string | null {
-  if (!cmd) return null;
-  return cmd
-    .replace(/^\/bin\/sh -c #\(nop\)\s*/, "")
-    .replace(/^\/bin\/sh -c\s*/, "RUN ")
-    .trim();
-}
-
 function LayerTable({
   layers,
+  shared,
 }: {
   layers: { digest: string; size: number; mediaType?: string; command: string | null }[];
+  /** Other images referencing each layer, by digest. */
+  shared: Record<string, SharedLayerInfo>;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-card">
@@ -375,6 +391,7 @@ function LayerTable({
             <th className="w-10 px-4 py-2.5 text-right text-xs font-medium text-ink-2">#</th>
             <th className="w-full px-3 py-2.5 text-xs font-medium text-ink-2">Instruction</th>
             <th className="hidden px-3 py-2.5 text-xs font-medium text-ink-2 sm:table-cell">Digest</th>
+            <th className="px-3 py-2.5 text-right text-xs font-medium text-ink-2" title="Other images that use this layer">Shared</th>
             <th className="px-4 py-2.5 text-right text-xs font-medium text-ink-2">Size</th>
           </tr>
         </thead>
@@ -392,6 +409,9 @@ function LayerTable({
               </td>
               <td className="hidden px-3 py-2.5 sm:table-cell">
                 <Digest digest={layer.digest} />
+              </td>
+              <td className="px-3 py-2.5 text-right">
+                <SharedLayerBadge info={shared[layer.digest]} />
               </td>
               <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums">
                 {formatBytes(layer.size)}

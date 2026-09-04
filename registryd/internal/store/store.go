@@ -142,13 +142,32 @@ func (s *Store) EnsureRepository(ctx context.Context, orgSlug, name, visibility 
 		visibility = "private"
 	}
 	r := &Repository{OrgID: orgID}
-	err = s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	err = tx.QueryRow(ctx, `
 		INSERT INTO repositories (organization_id, name, visibility)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (organization_id, name) DO UPDATE SET updated_at = now()
 		RETURNING id, visibility`, orgID, name, visibility).
 		Scan(&r.ID, &r.Visibility)
 	if err != nil {
+		return nil, err
+	}
+	// A new repository takes over its name: any redirect that still pointed
+	// the name (under this slug or a former slug of the organization) at a
+	// renamed or transferred repository is dropped (see redirects.go).
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM repository_redirects rr
+		WHERE rr.repository_name = $2
+		  AND (rr.organization_slug = $1
+		       OR rr.organization_slug IN (SELECT old_slug FROM organization_redirects WHERE organization_id = $3))`,
+		orgSlug, name, orgID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return r, nil

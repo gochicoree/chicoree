@@ -27,6 +27,7 @@ import {
 import { hashSecret, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
 import { signRegistryToken, type AccessGrant } from "@/lib/registry-jwt";
 import { splitImagePath } from "@/lib/library";
+import { resolveRepositoryRedirect } from "@/lib/redirects";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { authenticateLdap, LdapError } from "@/lib/ldap";
 import { isBanned, provisionLdapUser, type UserStore } from "@/lib/auth-ldap";
@@ -167,7 +168,12 @@ export async function GET(req: NextRequest) {
       .split(",")
       .flatMap((a) => (a === "*" ? VALID_ACTIONS : [a]))
       .filter((a): a is RegistryAction => (VALID_ACTIONS as string[]).includes(a));
-    const granted = await allowedRepositoryActions(caller, target.orgSlug, target.repoName, requested);
+    // A renamed or transferred repository keeps answering pulls under its
+    // former name: authorize those against the target, never for writes.
+    const moved = await resolveRepositoryRedirect(target.orgSlug, target.repoName);
+    const granted = moved
+      ? await allowedRepositoryActions(caller, moved.orgSlug, moved.repoName, requested.filter((a) => a === "pull"))
+      : await allowedRepositoryActions(caller, target.orgSlug, target.repoName, requested);
     if (granted.length > 0) {
       access.push({ type: "repository", name, actions: granted });
     }
