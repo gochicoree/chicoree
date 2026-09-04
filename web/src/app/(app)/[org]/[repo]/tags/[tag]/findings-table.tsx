@@ -11,10 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
+import { Pagination } from "@/components/ui/pagination";
 import { useToast } from "@/components/ui/toast";
+import { FINDINGS_PAGE_SIZES, PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { EMPTY_FILTER, filterFindings, type ExceptionRule, type Finding, type FindingFilter, type Severity } from "@/lib/scanner-shared";
-
-const MAX_ROWS = 500;
 
 export interface FindingRow {
   finding: Finding;
@@ -45,8 +45,16 @@ export function FindingsTable({
 }) {
   const [filter, setFilter] = useState<FindingFilter>(EMPTY_FILTER);
   const [accepting, setAccepting] = useState<Finding | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES.findings);
   const visible = useMemo(() => filterFindings(rows, filter), [rows, filter]);
   const present = SEVERITIES.filter((s) => rows.some((r) => r.finding.severity === s.key));
+  // Filtering happens in the browser, so the pager lives here: any change to
+  // the severity chips, the checkboxes or the search box starts over at page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [filter, rows]);
+  const { rows: pageRows, state } = pageSlice(visible, page, pageSize);
 
   function toggleSeverity(key: Severity) {
     setFilter((f) => ({
@@ -121,7 +129,7 @@ export function FindingsTable({
                 </td>
               </tr>
             )}
-            {visible.slice(0, MAX_ROWS).map(({ finding: f, exception }) => {
+            {pageRows.map(({ finding: f, exception }) => {
               const link = f.links[0] ?? null;
               const accepted = !!exception;
               return (
@@ -183,11 +191,20 @@ export function FindingsTable({
           </tbody>
         </table>
       </div>
-      {visible.length > MAX_ROWS && (
-        <p className="border-t border-line px-4 py-2.5 text-xs text-ink-3">
-          Showing the {MAX_ROWS} most severe of {visible.length} findings; narrow the filter to see the rest.
-        </p>
-      )}
+      <div className="border-t border-line px-3 py-2.5 sm:px-4">
+        <Pagination
+          state={state}
+          noun="findings"
+          onPage={setPage}
+          pageSizeOptions={FINDINGS_PAGE_SIZES}
+          onPageSize={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          label="Finding pages"
+          always
+        />
+      </div>
 
       {canManage && (
         <AcceptRiskModal finding={accepting} onClose={() => setAccepting(null)} organizationId={organizationId} repositoryId={repositoryId} />

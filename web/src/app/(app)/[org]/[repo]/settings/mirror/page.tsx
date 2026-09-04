@@ -1,18 +1,42 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { mirrorRuns, mirrors } from "@/db/schema";
+import { PAGE_SIZES, pageParam, paginatedQuery } from "@/lib/paginate-shared";
 import { MirrorManager, type MirrorView } from "../mirror-manager";
 import { repoSettingsContext } from "../context";
 
-export default async function RepoMirrorPage({ params }: { params: Promise<{ org: string; repo: string }> }) {
-  const { repo } = await repoSettingsContext(params);
+export default async function RepoMirrorPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ org: string; repo: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { repo, base } = await repoSettingsContext(params);
+  const query = await searchParams;
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repo.id) });
   let view: MirrorView | null = null;
   if (mirror) {
-    const runs = await db.query.mirrorRuns.findMany({
-      where: eq(mirrorRuns.mirrorId, mirror.id),
-      orderBy: [desc(mirrorRuns.startedAt)],
-      limit: 3,
+    let running = false;
+    const { rows: runs, state } = await paginatedQuery<typeof mirrorRuns.$inferSelect>({
+      page: pageParam(query, "runs"),
+      pageSize: PAGE_SIZES.mirrorRuns,
+      // One count query, which also reports whether a run is in flight (the
+      // manager polls while one is) regardless of the page being shown.
+      count: async () => {
+        const { rows } = await db.execute(sql`
+          SELECT count(*)::int AS n, count(*) FILTER (WHERE status = 'running')::int AS running
+          FROM mirror_runs WHERE mirror_id = ${mirror.id}`);
+        running = Number(rows[0]?.running ?? 0) > 0;
+        return Number(rows[0]?.n ?? 0);
+      },
+      rows: (limit, offset) =>
+        db.query.mirrorRuns.findMany({
+          where: eq(mirrorRuns.mirrorId, mirror.id),
+          orderBy: [desc(mirrorRuns.startedAt)],
+          limit,
+          offset,
+        }),
     });
     view = {
       id: mirror.id,
@@ -25,6 +49,8 @@ export default async function RepoMirrorPage({ params }: { params: Promise<{ org
       lastRunAt: mirror.lastRunAt?.toISOString() ?? null,
       lastStatus: mirror.lastStatus,
       lastError: mirror.lastError,
+      running,
+      runsState: state,
       runs: runs.map((r) => ({
         id: r.id,
         status: r.status,
@@ -39,5 +65,5 @@ export default async function RepoMirrorPage({ params }: { params: Promise<{ org
       })),
     };
   }
-  return <MirrorManager repositoryId={repo.id} mirror={view} />;
+  return <MirrorManager repositoryId={repo.id} mirror={view} basePath={`${base}/mirror`} params={query} />;
 }

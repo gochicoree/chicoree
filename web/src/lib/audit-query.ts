@@ -3,6 +3,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { AUDIT_EXPORT_MAX, AUDIT_PAGE_SIZE, type AuditFilter, type AuditRow } from "./audit-shared";
+import { paginatedQuery, type PageState } from "./paginate-shared";
 
 interface QueryOptions {
   filter: AuditFilter;
@@ -58,15 +59,24 @@ const SELECT = sql`
   LEFT JOIN organization o ON o.id = a.organization_id`;
 
 /** One page of entries plus the total for the filter. */
-export async function queryAudit(opts: QueryOptions): Promise<{ rows: AuditRow[]; total: number }> {
+export async function queryAudit(opts: QueryOptions): Promise<{ rows: AuditRow[]; total: number; state: PageState }> {
   const where = whereClause(opts);
-  const limit = opts.limit ?? AUDIT_PAGE_SIZE;
-  const offset = opts.offset ?? (opts.filter.page - 1) * limit;
-  const [list, count] = await Promise.all([
-    db.execute(sql`${SELECT} WHERE ${where} ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit} OFFSET ${offset}`),
-    db.execute(sql`SELECT count(*)::int AS n FROM audit_log a WHERE ${where}`),
-  ]);
-  return { rows: list.rows.map((r) => toRow(r as Record<string, unknown>)), total: Number(count.rows[0]?.n ?? 0) };
+  const pageSize = opts.limit ?? AUDIT_PAGE_SIZE;
+  const { rows, state } = await paginatedQuery({
+    page: opts.offset === undefined ? opts.filter.page : Math.floor(opts.offset / pageSize) + 1,
+    pageSize,
+    count: async () => {
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM audit_log a WHERE ${where}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(
+        sql`${SELECT} WHERE ${where} ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit} OFFSET ${offset}`,
+      );
+      return rows.map((r) => toRow(r as Record<string, unknown>));
+    },
+  });
+  return { rows, total: state.total, state };
 }
 
 /** Everything matching the filter, newest first, capped for the CSV export. */

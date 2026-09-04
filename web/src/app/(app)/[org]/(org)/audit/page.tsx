@@ -22,13 +22,13 @@ export default async function OrgAuditPage({
   if (ctx.role !== "owner" && ctx.role !== "admin") redirect(`/${slug}`);
 
   const filter = { ...auditFilterFromParams(await searchParams), organizationId: ctx.org.id };
-  const { rows, total } = await queryAudit({ filter, organizationId: ctx.org.id });
+  const { rows, total, state } = await queryAudit({ filter, organizationId: ctx.org.id });
   const basePath = `/${slug}/audit`;
 
   return (
     <>
       <AuditFilters filter={filter} basePath={basePath} exportHref={`/api/admin/audit.csv${auditFilterQuery(filter)}`} />
-      <AuditTable rows={rows} total={total} filter={filter} basePath={basePath} showOrganization={false} title={`${ctx.org.name} activity`} />
+      <AuditTable rows={rows} total={total} state={state} filter={filter} basePath={basePath} showOrganization={false} title={`${ctx.org.name} activity`} />
     </>
   );
 }

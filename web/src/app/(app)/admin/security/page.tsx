@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/session";
 import { blockedImages, listExceptions, searchFindings, securityTotals, worstRepositories } from "@/lib/security";
 import { scannerLabel } from "@/lib/scanners";
+import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { SecurityOverview } from "@/components/security/security-overview";
@@ -12,7 +13,7 @@ import { AdminNav } from "../admin-nav";
 export const metadata: Metadata = { title: "Security" };
 export const dynamic = "force-dynamic";
 
-const SEARCH_LIMIT = 200;
+const BASE = "/admin/security";
 
 export default async function AdminSecurityPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAdmin();
@@ -21,9 +22,9 @@ export default async function AdminSecurityPage({ searchParams }: { searchParams
   const [totals, worst, blocked, exceptions, hits, scanner] = await Promise.all([
     securityTotals(null),
     worstRepositories(null, 10),
-    blockedImages(null, 50),
-    listExceptions(null),
-    query ? searchFindings(query, null, SEARCH_LIMIT) : Promise.resolve([]),
+    blockedImages(null, pageParam(params, "blocked"), PAGE_SIZES.blockedImages),
+    listExceptions(null, { page: pageParam(params, "exc"), pageSize: PAGE_SIZES.exceptions }),
+    searchFindings(query, null, pageParam(params, "page"), PAGE_SIZES.cveSearch),
     scannerLabel(),
   ]);
 
@@ -37,10 +38,21 @@ export default async function AdminSecurityPage({ searchParams }: { searchParams
       />
       <AdminNav />
       <div className="space-y-6">
-        <CveSearch query={query} hits={hits} basePath="/admin/security" limit={SEARCH_LIMIT} />
-        <SecurityOverview totals={totals} worst={worst} blocked={blocked} showOrganization />
+        <CveSearch query={query} hits={hits.rows} state={hits.state} basePath={BASE} params={params} />
+        <SecurityOverview
+          totals={totals}
+          worst={worst}
+          blocked={blocked.rows}
+          blockedState={blocked.state}
+          basePath={BASE}
+          params={params}
+          showOrganization
+        />
         <ExceptionsTable
-          rows={exceptions.map((e) => ({ ...e, expiresAt: e.expiresAt?.toISOString() ?? null, createdAt: e.createdAt.toISOString() }))}
+          rows={exceptions.rows.map((e) => ({ ...e, expiresAt: e.expiresAt?.toISOString() ?? null, createdAt: e.createdAt.toISOString() }))}
+          state={exceptions.state}
+          basePath={BASE}
+          params={params}
           canManage
           showOrganization
         />

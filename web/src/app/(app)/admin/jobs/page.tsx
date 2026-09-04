@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { latestRunsByJob, listJobs, recentJobRuns } from "@/lib/jobs";
+import { jobRunsPage, latestRunsByJob, listJobs } from "@/lib/jobs";
 import { listSchedules } from "@/lib/schedules";
 import { schedulerStatus } from "@/lib/scheduler";
 import { describeCron, formatRunTime } from "@/lib/schedule-shared";
@@ -10,12 +10,24 @@ import { relativeTime } from "@/lib/format";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
+import { PaginationFooter } from "@/components/ui/pagination";
+import { pageParam } from "@/lib/paginate-shared";
 import { RunsTable, statusTone } from "./runs-table";
 
 export const metadata: Metadata = { title: "Jobs" };
 
-export default async function JobsOverviewPage() {
-  const [jobs, runs, schedules, latest] = await Promise.all([listJobs(), recentJobRuns(25), listSchedules(), latestRunsByJob()]);
+export default async function JobsOverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const [jobs, runs, schedules, latest] = await Promise.all([
+    listJobs(),
+    jobRunsPage({ page: pageParam(params) }),
+    listSchedules(),
+    latestRunsByJob(),
+  ]);
   const scheduler = schedulerStatus();
 
   return (
@@ -100,8 +112,13 @@ export default async function JobsOverviewPage() {
       </Card>
 
       <Card className="mt-6">
-        <CardHeader eyebrow="History" title={`Recent runs (${runs.length})`} description="The latest runs across every job; each job's tab has its full history." />
-        <RunsTable runs={runs} showJob />
+        <CardHeader
+          eyebrow="History"
+          title={`Runs (${runs.state.total.toLocaleString("en-US")})`}
+          description="Every run across every job, newest first; each job's tab has its own history."
+        />
+        <RunsTable runs={runs.rows} showJob />
+        <PaginationFooter state={runs.state} noun="runs" basePath="/admin/jobs" params={params} label="Run history pages" />
       </Card>
 
       <Card className="mt-6">

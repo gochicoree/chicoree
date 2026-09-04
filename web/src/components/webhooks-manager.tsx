@@ -9,6 +9,8 @@ import { Field, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { Pagination } from "@/components/ui/pagination";
+import { PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 import { eventsForScope, WEBHOOK_EVENTS, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
@@ -139,6 +141,38 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
   );
 }
 
+/**
+ * The delivery log of one hook. The log is capped at WEBHOOK_LOG_MAX rows per
+ * hook in the database, arrives with the hook and is paged here — the log is
+ * opened and closed in the browser, so its page belongs to the component.
+ */
+function DeliveryLog({ hook }: { hook: WebhookRow }) {
+  const [page, setPage] = useState(1);
+  const { rows, state } = pageSlice(hook.deliveries, page, PAGE_SIZES.webhookDeliveries);
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-card-2" data-webhook-log={hook.id}>
+      {rows.length === 0 ? (
+        <p className="px-3 py-2 text-xs text-ink-3">No deliveries yet.</p>
+      ) : (
+        rows.map((d) => (
+          <div key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line px-3 py-1.5 font-mono text-xs last:border-0">
+            <span className={d.ok ? "text-ok" : "text-danger"}>{d.statusCode ?? "—"}</span>
+            <span>{d.event}</span>
+            <span className="text-ink-3">{d.attempts} attempt{d.attempts === 1 ? "" : "s"} · {d.durationMs ?? "?"} ms</span>
+            {d.error && <span className="min-w-0 basis-full truncate text-danger sm:basis-auto sm:flex-1">{d.error}</span>}
+            <span className="ml-auto text-ink-3">{relativeTime(d.createdAt)}</span>
+          </div>
+        ))
+      )}
+      {state.total > 0 && (
+        <div className="border-t border-line px-3 py-2">
+          <Pagination state={state} noun="deliveries" onPage={setPage} label={`Delivery log pages for ${hook.name}`} always />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TestButton({ scope, hookId }: { scope: WebhookScope; hookId: string }) {
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(testWebhook, null);
   return (
@@ -242,23 +276,7 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
                   </Badge>
                 ))}
               </div>
-              {expanded === h.id && (
-                <div className="mt-3 rounded-lg border border-line bg-card-2">
-                  {h.deliveries.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-ink-3">No deliveries yet.</p>
-                  ) : (
-                    h.deliveries.map((d) => (
-                      <div key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line px-3 py-1.5 font-mono text-xs last:border-0">
-                        <span className={d.ok ? "text-ok" : "text-danger"}>{d.statusCode ?? "—"}</span>
-                        <span>{d.event}</span>
-                        <span className="text-ink-3">{d.attempts} attempt{d.attempts === 1 ? "" : "s"} · {d.durationMs ?? "?"} ms</span>
-                        {d.error && <span className="min-w-0 basis-full truncate text-danger sm:basis-auto sm:flex-1">{d.error}</span>}
-                        <span className="ml-auto text-ink-3">{relativeTime(d.createdAt)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+              {expanded === h.id && <DeliveryLog hook={h} />}
             </div>
           ))}
         </div>

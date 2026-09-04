@@ -144,7 +144,11 @@ export default async function AdminMetricsPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader eyebrow="Repositories" title="Most egress" description="Bytes served per repository in the last 30 days; redirected bytes left the storage backend directly." />
+            <CardHeader
+              eyebrow="Repositories"
+              title={`Top ${topEgress.length || 8} by egress`}
+              description="The repositories that served the most bytes in the last 30 days — a shortlist, not every repository; redirected bytes left the storage backend directly."
+            />
             {topEgress.length === 0 ? (
               <p className="px-5 py-4 text-sm text-ink-3">No traffic recorded yet.</p>
             ) : (
@@ -220,7 +224,11 @@ export default async function AdminMetricsPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardHeader eyebrow="Repositories" title="Most pulled" description="Pulls in the last 30 days, with the all-time count." />
+            <CardHeader
+              eyebrow="Repositories"
+              title={`Top ${top.byPulls.length || 8} by pulls`}
+              description="The most pulled repositories of the last 30 days, with the all-time count — a shortlist, not every repository."
+            />
             {top.byPulls.length === 0 ? (
               <p className="px-5 py-4 text-sm text-ink-3">No repositories yet.</p>
             ) : (
@@ -249,7 +257,11 @@ export default async function AdminMetricsPage() {
             )}
           </Card>
           <Card>
-            <CardHeader eyebrow="Repositories" title="Largest" description="Logical size: every blob the repository references, counted once per repository." />
+            <CardHeader
+              eyebrow="Repositories"
+              title={`Top ${top.bySize.length || 8} by size`}
+              description="The largest repositories by logical size (every blob a repository references, counted once) — a shortlist, not every repository."
+            />
             {top.bySize.length === 0 ? (
               <p className="px-5 py-4 text-sm text-ink-3">No repositories yet.</p>
             ) : (

@@ -15,7 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function AdminMoveRepositoriesPage() {
   await requireAdmin();
   const [orgs, repos, proxyRows] = await Promise.all([
-    listAdminOrganizations(),
+    // The target picker needs every organization, not one page of them.
+    listAdminOrganizations({ pageSize: 1000 }).then((r) => r.rows),
     listAllRepositories(),
     db.query.organizationProxies.findMany({ columns: { organizationId: true } }),
   ]);

@@ -3,9 +3,11 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/session";
 import { listAdminOrganizations } from "@/lib/admin-data";
 import { formatBytes, relativeTime } from "@/lib/format";
+import { pageParam } from "@/lib/paginate-shared";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
+import { PaginationFooter } from "@/components/ui/pagination";
 import { AdminNav } from "../admin-nav";
 
 export const metadata: Metadata = { title: "Organizations" };
@@ -14,9 +16,14 @@ function limitText(used: number, limit: number | null) {
   return limit === null ? String(used) : `${used} / ${limit}`;
 }
 
-export default async function AdminOrganizationsPage() {
+export default async function AdminOrganizationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAdmin();
-  const orgs = await listAdminOrganizations();
+  const params = await searchParams;
+  const orgs = await listAdminOrganizations({ page: pageParam(params) });
 
   return (
     <>
@@ -25,7 +32,7 @@ export default async function AdminOrganizationsPage() {
       <Card>
         <CardHeader
           eyebrow="Namespaces"
-          title={`Organizations (${orgs.length})`}
+          title={`Organizations (${orgs.state.total.toLocaleString("en-US")})`}
           description="Usage against limits. Open an organization to manage members, repositories and limits."
           action={
             <Link href="/admin/organizations/move" className={buttonClasses("secondary", "sm")}>
@@ -46,7 +53,7 @@ export default async function AdminOrganizationsPage() {
               </tr>
             </thead>
             <tbody>
-              {orgs.map((o) => {
+              {orgs.rows.map((o) => {
                 const overStorage = o.maxStorageBytes !== null && o.storageBytes >= o.maxStorageBytes;
                 return (
                   <tr key={o.id} className="border-b border-line last:border-0 hover:bg-card-2">
@@ -74,6 +81,13 @@ export default async function AdminOrganizationsPage() {
             </tbody>
           </table>
         </div>
+        <PaginationFooter
+          state={orgs.state}
+          noun="organizations"
+          basePath="/admin/organizations"
+          params={params}
+          label="Organization pages"
+        />
       </Card>
     </>
   );

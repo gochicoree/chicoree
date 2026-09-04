@@ -9,17 +9,28 @@ import { formatCount, relativeTime, shortDigest } from "@/lib/format";
 import { repoHref } from "@/lib/proxy-shared";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { PaginationFooter } from "@/components/ui/pagination";
+import { pageParam } from "@/lib/paginate-shared";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { SearchBox } from "@/components/shell/search-box";
 import { StarCount } from "@/components/star-button";
 
 export const metadata: Metadata = { title: "Search" };
 
-export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string | string[] }> }) {
+export default async function SearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const params = await searchParams;
   const q = normalizeQuery(Array.isArray(params.q) ? params.q[0] : params.q);
   const session = await getSession();
-  const results = await searchAll(viewerFromSession(session), q);
+  const results = await searchAll(viewerFromSession(session), q, {
+    repositories: pageParam(params, "repos"),
+    tags: pageParam(params, "tags"),
+    digests: pageParam(params, "digests"),
+    organizations: pageParam(params, "orgs"),
+  });
 
   return (
     <>
@@ -41,11 +52,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       )}
 
       <div className="space-y-6">
-        {results.digests.length > 0 && (
+        {results.digests.state.total > 0 && (
           <Card>
-            <CardHeader eyebrow="Content" title={`Digests (${results.digests.length})`} description="Manifests whose digest starts with what you typed." />
+            <CardHeader
+              eyebrow="Content"
+              title={`Digests (${results.digests.state.total.toLocaleString("en-US")})`}
+              description="Manifests whose digest starts with what you typed."
+            />
             <ul data-search-group="digests">
-              {results.digests.map((d) => (
+              {results.digests.rows.map((d) => (
                 <li key={`${d.orgSlug}/${d.repoName}@${d.digest}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
                   <Fingerprint className="size-4 shrink-0 text-ink-3" aria-hidden />
                   <Link href={digestHref(d)} className="min-w-0 break-all font-mono text-[13px] font-medium text-ink hover:underline">
@@ -61,14 +76,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 </li>
               ))}
             </ul>
+            <PaginationFooter state={results.digests.state} noun="digests" basePath="/search" params={params} paramKey="digests" label="Digest result pages" />
           </Card>
         )}
 
-        {results.repositories.length > 0 && (
+        {results.repositories.state.total > 0 && (
           <Card>
-            <CardHeader eyebrow="Images" title={`Repositories (${results.repositories.length})`} />
+            <CardHeader eyebrow="Images" title={`Repositories (${results.repositories.state.total.toLocaleString("en-US")})`} />
             <ul data-search-group="repositories">
-              {results.repositories.map((r) => (
+              {results.repositories.rows.map((r) => (
                 <li key={r.id} className="border-b border-line px-4 py-3 last:border-0 hover:bg-card-2 sm:px-5">
                   <div className="flex flex-wrap items-center gap-2">
                     <Container className="size-4 shrink-0 text-ink-3" aria-hidden />
@@ -86,14 +102,19 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 </li>
               ))}
             </ul>
+            <PaginationFooter state={results.repositories.state} noun="repositories" basePath="/search" params={params} paramKey="repos" label="Repository result pages" />
           </Card>
         )}
 
-        {results.tags.length > 0 && (
+        {results.tags.state.total > 0 && (
           <Card>
-            <CardHeader eyebrow="References" title={`Tags (${results.tags.length})`} description="Narrow the repository with org/repo:tag." />
+            <CardHeader
+              eyebrow="References"
+              title={`Tags (${results.tags.state.total.toLocaleString("en-US")})`}
+              description="Narrow the repository with org/repo:tag."
+            />
             <ul data-search-group="tags">
-              {results.tags.map((t) => (
+              {results.tags.rows.map((t) => (
                 <li key={`${t.orgSlug}/${t.repoName}:${t.tag}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
                   <TagIcon className="size-4 shrink-0 text-ink-3" aria-hidden />
                   <Link href={tagHref(t)} className="min-w-0 break-all font-mono text-[13px] font-medium text-ink hover:underline">
@@ -105,14 +126,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 </li>
               ))}
             </ul>
+            <PaginationFooter state={results.tags.state} noun="tags" basePath="/search" params={params} paramKey="tags" label="Tag result pages" />
           </Card>
         )}
 
-        {results.organizations.length > 0 && (
+        {results.organizations.state.total > 0 && (
           <Card>
-            <CardHeader eyebrow="Namespaces" title={`Organizations (${results.organizations.length})`} />
+            <CardHeader eyebrow="Namespaces" title={`Organizations (${results.organizations.state.total.toLocaleString("en-US")})`} />
             <ul data-search-group="organizations">
-              {results.organizations.map((o) => (
+              {results.organizations.rows.map((o) => (
                 <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
                   <Building2 className="size-4 shrink-0 text-ink-3" aria-hidden />
                   <Link href={`/${o.slug}`} className="font-medium text-ink hover:underline">
@@ -126,6 +148,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 </li>
               ))}
             </ul>
+            <PaginationFooter state={results.organizations.state} noun="organizations" basePath="/search" params={params} paramKey="orgs" label="Organization result pages" />
           </Card>
         )}
       </div>

@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Plus } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { egressSeries, listOrgRepos, pullSeries, trafficSummary } from "@/lib/data";
+import { egressSeries, orgReposPage, pullSeries, trafficSummary } from "@/lib/data";
+import { pageParam } from "@/lib/paginate-shared";
 import { formatBytes } from "@/lib/format";
 import { RepoTable } from "@/components/repo-table";
 import { StatTile } from "@/components/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Pagination } from "@/components/ui/pagination";
 import { PullsChart } from "@/components/pulls-chart";
 import { buttonClasses } from "@/components/ui/button";
 import { WRITER_ROLES } from "@/lib/org-roles";
@@ -16,14 +18,21 @@ import { getOrgProxy } from "@/lib/proxy";
 import { displayHost, isDockerHubUrl } from "@/lib/proxy-shared";
 import { env } from "@/lib/env";
 
-export default async function OrgPage({ params }: { params: Promise<{ org: string }> }) {
+export default async function OrgPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ org: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { org: slug } = await params;
   const ctx = await getOrgContext(slug);
   if (!ctx) notFound();
   const { org, role } = ctx;
+  const query = await searchParams;
 
   const [repos, series, proxy, egress, traffic] = await Promise.all([
-    listOrgRepos(org.id, !!role),
+    orgReposPage(org.id, !!role, { page: pageParam(query) }),
     role ? pullSeries({ orgId: org.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(org.id),
     role ? egressSeries({ orgId: org.id, days: 30 }) : Promise.resolve(null),
@@ -31,14 +40,14 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
   ]);
   // Proxy caches are filled by pulls, never by pushes or the UI.
   const canWrite = !!role && WRITER_ROLES.includes(role) && !proxy;
-  const totalSize = repos.reduce((sum, r) => sum + r.sizeBytes, 0);
-  const totalPulls = repos.reduce((sum, r) => sum + r.pullCount, 0);
+  const totalSize = repos.totals.sizeBytes;
+  const totalPulls = repos.totals.pullCount;
 
   return (
     <div className="space-y-6">
       {role && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Repositories" value={repos.length} />
+          <StatTile label="Repositories" value={repos.totals.count} />
           <StatTile label="Logical size" value={formatBytes(totalSize)} />
           <StatTile label="Total pulls" value={totalPulls} />
           <StatTile
@@ -65,7 +74,7 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
             </div>
           )}
         </div>
-        {repos.length === 0 ? (
+        {repos.totals.count === 0 ? (
           <div className="rounded-xl border border-dashed border-line px-4 py-10 text-center">
             <p className="text-sm text-ink-2">
               {proxy
@@ -84,7 +93,17 @@ export default async function OrgPage({ params }: { params: Promise<{ org: strin
             )}
           </div>
         ) : (
-          <RepoTable repos={repos} />
+          <>
+            <RepoTable repos={repos.rows} />
+            <Pagination
+              state={repos.state}
+              noun="repositories"
+              basePath={`/${slug}`}
+              params={query}
+              label="Repository pages"
+              className="mt-3"
+            />
+          </>
         )}
       </div>
 

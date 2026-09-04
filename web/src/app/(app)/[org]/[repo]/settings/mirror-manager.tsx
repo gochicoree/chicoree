@@ -9,6 +9,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MirrorFormFields } from "@/components/mirror-form-fields";
+import { Pagination } from "@/components/ui/pagination";
+import { PAGE_SIZES, pageSlice, type PageState, type QueryLike } from "@/lib/paginate-shared";
 import { useActionToast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
 
@@ -23,6 +25,10 @@ export interface MirrorView {
   lastRunAt: string | null;
   lastStatus: string | null;
   lastError: string | null;
+  /** A run is in flight (from the count query, not just this page). */
+  running: boolean;
+  /** Page of the run history the server rendered. */
+  runsState: PageState;
   runs: {
     id: string;
     status: string;
@@ -37,7 +43,39 @@ export interface MirrorView {
   }[];
 }
 
-export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; mirror: MirrorView | null }) {
+/** The per-tag lines of one run; long imports page inside the run. */
+function RunLog({ log }: { log: MirrorLogEntry[] }) {
+  const [page, setPage] = useState(1);
+  const { rows, state } = pageSlice(log, page, PAGE_SIZES.mirrorLog);
+  return (
+    <div className="mt-2 space-y-0.5 font-mono text-xs" data-mirror-run-log>
+      {rows.map((e, i) => (
+        <div key={`${state.offset + i}`} className="flex flex-wrap gap-x-2">
+          <span className={e.status === "imported" ? "text-ok" : e.status === "failed" ? "text-danger" : "text-ink-3"}>{e.status}</span>
+          <span>
+            {e.sourceTag} → {e.targetTag}
+          </span>
+          {e.detail && <span className="text-ink-3">{e.detail}</span>}
+        </div>
+      ))}
+      {state.total > 0 && <Pagination state={state} noun="tags" onPage={setPage} label="Mirror log pages" className="pt-1.5" always />}
+    </div>
+  );
+}
+
+export function MirrorManager({
+  repositoryId,
+  mirror,
+  basePath,
+  params,
+}: {
+  repositoryId: string;
+  mirror: MirrorView | null;
+  /** Path the run history pages link to. */
+  basePath: string;
+  /** The page's other search parameters, kept across page changes. */
+  params?: QueryLike;
+}) {
   const [state, action, pending] = useActionState<MirrorResult | null, FormData>(saveMirror, null);
   const [preview, previewAction, previewing] = useActionState<MirrorResult | null, FormData>(previewMirror, null);
   const router = useRouter();
@@ -52,7 +90,7 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
     const data = new FormData(formRef.current);
     startTransition(() => act(data));
   }
-  const running = mirror?.runs.some((r) => r.status === "running") ?? false;
+  const running = mirror?.running ?? false;
   // "Sync now" starts the run after the response; keep the busy state (and
   // polling) until the run row shows up, or give up after a while.
   const [syncing, startSync] = useTransition();
@@ -183,21 +221,18 @@ export function MirrorManager({ repositoryId, mirror }: { repositoryId: string; 
                       {run.error && <span className="text-xs text-danger">{run.error}</span>}
                       <span className="ml-auto text-xs text-ink-3">{relativeTime(run.startedAt)}</span>
                     </summary>
-                    <div className="mt-2 space-y-0.5 font-mono text-xs">
-                      {run.log.map((e, i) => (
-                        <div key={i} className="flex flex-wrap gap-x-2">
-                          <span className={e.status === "imported" ? "text-ok" : e.status === "failed" ? "text-danger" : "text-ink-3"}>
-                            {e.status}
-                          </span>
-                          <span>
-                            {e.sourceTag} → {e.targetTag}
-                          </span>
-                          {e.detail && <span className="text-ink-3">{e.detail}</span>}
-                        </div>
-                      ))}
-                    </div>
+                    <RunLog log={run.log} />
                   </details>
                 ))}
+                <Pagination
+                  state={mirror.runsState}
+                  noun="runs"
+                  basePath={basePath}
+                  params={params}
+                  paramKey="runs"
+                  label="Mirror run pages"
+                  className="pt-1"
+                />
               </div>
             )}
           </div>

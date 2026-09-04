@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, UserCog } from "lucide-react";
+import { UserCog } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
-import { buttonClasses } from "@/components/ui/button";
-import { AUDIT_PAGE_SIZE, auditActionTone, auditFilterQuery, type AuditFilter, type AuditRow } from "@/lib/audit-shared";
+import { PaginationFooter } from "@/components/ui/pagination";
+import { AUDIT_PAGE_SIZE, auditActionTone, auditFilterParams, type AuditFilter, type AuditRow } from "@/lib/audit-shared";
+import { paginate, type PageState } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
 
 function when(d: Date): string {
@@ -19,6 +20,7 @@ export function AuditTable({
   total,
   filter,
   basePath,
+  state,
   showOrganization = true,
   title = "Entries",
 }: {
@@ -26,42 +28,22 @@ export function AuditTable({
   total: number;
   filter: AuditFilter;
   basePath: string;
+  /** Page state from queryAudit; derived from the total when not given. */
+  state?: PageState;
   showOrganization?: boolean;
   title?: string;
 }) {
-  const pages = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
-  const page = Math.min(filter.page, pages);
-  const first = total === 0 ? 0 : (page - 1) * AUDIT_PAGE_SIZE + 1;
-  const last = Math.min(total, page * AUDIT_PAGE_SIZE);
+  const pageState = state ?? paginate(total, filter.page, AUDIT_PAGE_SIZE);
 
   return (
     <Card>
       <CardHeader
         eyebrow="Audit log"
         title={`${title} (${total.toLocaleString("en-US")})`}
-        description={total === 0 ? "Nothing matches this filter yet." : `Showing ${first}–${last}. Click a row for details.`}
-        action={
-          pages > 1 ? (
-            <div className="flex items-center gap-1 text-xs text-ink-2">
-              <Link
-                href={`${basePath}${auditFilterQuery(filter, page - 1)}`}
-                aria-disabled={page <= 1}
-                className={buttonClasses("ghost", "sm", page <= 1 ? "pointer-events-none opacity-40" : "")}
-              >
-                <ChevronLeft className="size-4" /> Newer
-              </Link>
-              <span className="font-mono tabular-nums">
-                {page}/{pages}
-              </span>
-              <Link
-                href={`${basePath}${auditFilterQuery(filter, page + 1)}`}
-                aria-disabled={page >= pages}
-                className={buttonClasses("ghost", "sm", page >= pages ? "pointer-events-none opacity-40" : "")}
-              >
-                Older <ChevronRight className="size-4" />
-              </Link>
-            </div>
-          ) : undefined
+        description={
+          total === 0
+            ? "Nothing matches this filter yet."
+            : `Showing ${pageState.first}–${pageState.last}. Click a row for details.`
         }
       />
       {rows.length === 0 ? (
@@ -156,6 +138,13 @@ export function AuditTable({
           ))}
         </div>
       )}
+      <PaginationFooter
+        state={pageState}
+        noun="entries"
+        basePath={basePath}
+        params={auditFilterParams(filter)}
+        label="Audit log pages"
+      />
     </Card>
   );
 }
