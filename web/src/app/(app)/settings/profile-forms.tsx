@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MonitorSmartphone, X } from "lucide-react";
+import { MailCheck, MonitorSmartphone, X } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
+import { resendVerificationEmail } from "@/app/actions/verification";
 
 export interface SessionRow {
   token: string;
@@ -25,16 +26,33 @@ export function ProfileDetailsForm({
   name: initialName,
   email,
   emailVerified,
+  emailConfigured = true,
 }: {
   name: string;
   email: string;
   emailVerified: boolean;
+  /** Outgoing mail is set up; without it there is nothing to resend. */
+  emailConfigured?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyNote, setVerifyNote] = useState<string | null>(null);
+
+  async function resend() {
+    setVerifying(true);
+    setVerifyNote(null);
+    const res = await resendVerificationEmail();
+    setVerifying(false);
+    if (res.error) setVerifyNote(res.error);
+    else {
+      setVerifyNote(null);
+      toast({ title: res.message ?? "Verification email sent" });
+    }
+  }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -55,12 +73,26 @@ export function ProfileDetailsForm({
           <Field label="Name" htmlFor="name">
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Email" htmlFor="email">
-            <div className="flex items-center gap-2">
-              <Input id="email" value={email} disabled />
+          <Field
+            label="Email"
+            htmlFor="email"
+            hint={
+              !emailVerified && !emailConfigured
+                ? "This address is unverified and the registry has no mail server; an administrator can verify it for you."
+                : undefined
+            }
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Input id="email" value={email} disabled className="min-w-0 flex-1" />
               <Badge tone={emailVerified ? "ok" : "neutral"}>{emailVerified ? "verified" : "unverified"}</Badge>
+              {!emailVerified && emailConfigured && (
+                <Button type="button" variant="ghost" size="sm" disabled={verifying} onClick={resend}>
+                  <MailCheck className="size-3.5" /> {verifying ? "Sending…" : "Resend verification"}
+                </Button>
+              )}
             </div>
           </Field>
+          {verifyNote && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">{verifyNote}</p>}
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">{error}</p>}
           <div className="sm:col-span-2">
             <Button type="submit" disabled={busy}>
