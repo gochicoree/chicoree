@@ -8,6 +8,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  MoreHorizontal,
   Plus,
   Settings,
   ShieldCheck,
@@ -52,12 +53,15 @@ function NavLink({
 
 export function Sidebar({
   orgs,
+  orgCount,
   user,
   isAdmin,
   branding,
   canCreateOrgs = true,
 }: {
   orgs: NavOrg[];
+  /** How many organizations the user is in; more than `orgs` means the list is capped. */
+  orgCount?: number;
   user: { name: string; email: string };
   isAdmin: boolean;
   branding?: NavBranding;
@@ -116,6 +120,16 @@ export function Sidebar({
                 <span className="truncate">{org.name}</span>
               </NavLink>
             ))}
+            {(orgCount ?? orgs.length) > orgs.length && (
+              <Link
+                href="/orgs"
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-ink-2 transition-colors hover:bg-card-2 hover:text-ink lg:py-1.5"
+              >
+                <MoreHorizontal className="size-4" />
+                All organizations
+                <span className="ml-auto font-mono text-xs text-ink-3">{orgCount}</span>
+              </Link>
+            )}
             {orgs.length === 0 && canCreateOrgs && (
               <Link
                 href="/orgs/new"

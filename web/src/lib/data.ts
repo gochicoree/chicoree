@@ -22,6 +22,38 @@ export interface OrgWithMeta {
   storageBytes: number;
 }
 
+/** The few organizations the navigation shows, and how many there are in total. */
+export interface NavOrgs {
+  orgs: { id: string; name: string; slug: string }[];
+  total: number;
+}
+
+/**
+ * Organizations for the sidebar: the ones this user opened most recently
+ * first (falling back to when they joined, then the name), capped at
+ * `limit`. Deliberately light — the layout runs it on every page, unlike
+ * listUserOrgs, which also sums storage.
+ */
+export async function listNavOrgs(userId: string, limit = 8): Promise<NavOrgs> {
+  const { rows } = await db.execute(sql`
+    SELECT o.id, o.name, o.slug,
+      (SELECT max(v.last_visited_at)
+         FROM repository_visits v
+         JOIN repositories r ON r.id = v.repository_id
+        WHERE v.user_id = ${userId} AND r.organization_id = o.id) AS last_seen,
+      m.created_at AS joined_at,
+      count(*) OVER () AS total
+    FROM organization o
+    JOIN member m ON m.organization_id = o.id
+    WHERE m.user_id = ${userId}
+    ORDER BY last_seen DESC NULLS LAST, joined_at DESC, o.name
+    LIMIT ${limit}`);
+  return {
+    orgs: rows.map((r) => ({ id: r.id as string, name: r.name as string, slug: r.slug as string })),
+    total: rows.length > 0 ? Number(rows[0].total) : 0,
+  };
+}
+
 export async function listUserOrgs(userId: string): Promise<OrgWithMeta[]> {
   const { rows } = await db.execute(sql`
     SELECT o.id, o.name, o.slug, m.role,
