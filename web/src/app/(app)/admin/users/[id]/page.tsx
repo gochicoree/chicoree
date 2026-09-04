@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { UsageMeter } from "@/components/admin/usage-meter";
 import { ExpiryBadge } from "@/app/(app)/settings/tokens/token-manager";
 import { UserControls } from "./user-controls";
+import { AccountControls } from "./account-controls";
 
 export default async function AdminUserOverview({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireAdmin();
@@ -41,6 +42,19 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
           </dl>
         </CardBody>
       </Card>
+
+      <AccountControls
+        user={{
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          emailVerified: !!user.emailVerified,
+          twoFactorEnabled: !!user.twoFactorEnabled,
+          passkeys: counts.passkeys,
+          createdAt: user.createdAt.toISOString(),
+          isSelf: user.id === session.user.id,
+        }}
+      />
 
       <div>
         <div className="eyebrow mb-2">Usage across owned organizations</div>

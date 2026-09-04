@@ -53,7 +53,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
   return (
-    <form action={action} className="grid gap-4 sm:grid-cols-2">
+    <form action={action} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <ScopeInputs scope={scope} />
       {hook && <input type="hidden" name="id" value={hook.id} />}
       <Field label="Name" htmlFor="wh-name">
@@ -67,9 +67,9 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
           <Input id="wh-url" name="url" type="url" required defaultValue={hook?.url} className="font-mono" placeholder="https://ci.example.com/hooks/registry" />
         </Field>
       </div>
-      <fieldset className="sm:col-span-2">
+      <fieldset className="sm:col-span-2 lg:col-span-4">
         <legend className="mb-1.5 block text-[13px] font-medium text-ink">Events</legend>
-        <div className="grid gap-1.5 sm:grid-cols-2">
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
           {events.map((e) => (
             <label key={e.value} className="flex items-start gap-2 rounded-lg border border-line px-2.5 py-2 text-sm">
               <input
@@ -96,7 +96,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
         </Field>
       )}
       {authType !== "none" && (
-        <div className={authType === "header" ? "sm:col-span-2" : ""}>
+        <div className={authType === "header" ? "sm:col-span-2" : "sm:col-span-2 lg:col-span-3"}>
           <Field
             label={authType === "basic" ? "user:password" : authType === "bearer" ? "Token" : "Header value"}
             htmlFor="wh-secret"
@@ -111,7 +111,8 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
           <Textarea
             id="wh-headers"
             name="headers"
-            className="font-mono text-xs"
+            rows={3}
+            className="min-h-0 font-mono text-xs"
             defaultValue={hook ? Object.entries(hook.headers).map(([k, v]) => `${k}: ${v}`).join("\n") : ""}
           />
         </Field>
@@ -125,8 +126,8 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
           <Input id="wh-signing" name="signingSecret" type="password" autoComplete="new-password" className="font-mono" />
         </Field>
       </div>
-      {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">{state.error}</p>}
-      <div className="flex gap-2 sm:col-span-2">
+      {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2 lg:col-span-4">{state.error}</p>}
+      <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
         <Button type="submit" disabled={pending}>
           {hook ? "Save webhook" : "Add webhook"}
         </Button>
@@ -267,6 +268,7 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
         onClose={() => setEditing(null)}
         title={editing === "new" ? "Add webhook" : "Edit webhook"}
         description="Secrets are encrypted at rest and never shown again."
+        size="xl"
       >
         {editing !== null && <WebhookForm scope={scope} hook={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />}
       </Modal>
