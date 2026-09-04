@@ -31,7 +31,6 @@ RUN addgroup -S app && adduser -S app -G app \
 COPY --from=aquasec/trivy:0.74.0 /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
 COPY --from=migrate-deps /migrate/node_modules /migrate/node_modules
 COPY --from=build /app/scripts/migrate.mjs /app/scripts/bootstrap.mjs /migrate/scripts/
 COPY --from=build /app/drizzle /migrate/drizzle

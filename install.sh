@@ -1,8 +1,7 @@
 #!/bin/sh
 # Chicorée installer — one command from a fresh Linux host to a running registry.
 #
-#   curl -fsSL https://oci.example.com/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/web/public/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/install.sh | sudo sh
 #
 # Asks a few questions (or reads them from CHICOREE_* variables — see below),
 # installs git and Docker when missing, clones the repository, writes .env
@@ -70,7 +69,7 @@ bold "Chicorée — self-hosted OCI registry"
 echo
 [ -n "${CHICOREE_DRY_RUN:-}" ] || [ "$(uname -s)" = Linux ] || die "this installer targets Linux hosts (from a workstation use scripts/deploy.sh)"
 if [ -z "${CHICOREE_DRY_RUN:-}" ] && [ "$(id -u)" -ne 0 ]; then
-  die "run it as root:   curl -fsSL <url>/install.sh | sudo sh"
+  die "run it as root:   curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/install.sh | sudo sh"
 fi
 
 CH_MODE=${CHICOREE_MODE:-}
