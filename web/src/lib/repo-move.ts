@@ -15,6 +15,7 @@
 // target organization's policy applies now), audits in both organizations
 // and emits a `repository.transferred` webhook.
 import { after } from "next/server";
+import { repositoryBytesNewToOrg as bytesNewToOrg } from "@/lib/storage-accounting";
 import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
@@ -119,31 +120,6 @@ async function manages(organizationId: string, actor: MoveActor): Promise<boolea
   if (actor.isAdmin) return true;
   const role = await getOrgRole(organizationId);
   return !!role && MANAGER_ROLES.includes(role);
-}
-
-/**
- * Bytes of the repository's blobs the target organization does not hold yet
- * (what the move adds to its storage). `exclude` names repositories that will
- * be in the target by the time this one lands, so a preview of a batch counts
- * a layer shared between two moved repositories once.
- */
-export async function bytesNewToOrg(repositoryId: string, organizationId: string, exclude: string[] = []): Promise<number> {
-  const { rows } = await db.execute(sql`
-    SELECT COALESCE(sum(b.size), 0)::bigint AS bytes
-    FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
-    WHERE rb.repository_id = ${repositoryId}
-      AND NOT EXISTS (
-        SELECT 1 FROM repository_blobs o JOIN repositories r ON r.id = o.repository_id
-        WHERE o.blob_digest = rb.blob_digest AND r.organization_id = ${organizationId})
-      ${
-        exclude.length > 0
-          ? sql`AND NOT EXISTS (
-        SELECT 1 FROM repository_blobs p
-        WHERE p.blob_digest = rb.blob_digest
-          AND p.repository_id = ANY(string_to_array(${exclude.join(",")}, ',')))`
-          : sql``
-      }`);
-  return Number(rows[0]?.bytes ?? 0);
 }
 
 /**

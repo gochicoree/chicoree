@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, GitCompareArrows, RotateCw } from "lucide-react";
 import { db } from "@/db";
-import { serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
+import { organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
-import { getManifestWithScan, getRepoByPath } from "@/lib/data";
+import { getManifestWithScan, getRepoByPath, listUserOrgs } from "@/lib/data";
 import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
 import { formatBytes, formatDate, relativeTime } from "@/lib/format";
@@ -27,6 +27,7 @@ import { manifestDeleteBlocker } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { RuleBadges } from "@/components/tag-rules-manager";
 import { DeleteManifestButton } from "../../tag-actions";
+import { MoveImageButton, type MoveDestinationOrg } from "./move-image";
 import { redirectMovedRepository } from "@/lib/redirects";
 import { layersWithInstructions } from "@/lib/compare-shared";
 import { memberOrgIds, sharedLayerRefs, type SharedLayerInfo } from "@/lib/shared-layers";
@@ -69,6 +70,27 @@ async function resolveActor(pushedBy: string | null): Promise<string | null> {
   if (kind === "proxy") return "the proxy cache";
   if (kind === "mirror") return "a mirror";
   return null;
+}
+
+/**
+ * Organizations the caller may push an image into: the ones they can write
+ * to (every organization for instance admins), never a proxy cache.
+ */
+async function moveDestinations(userId: string, isAdmin: boolean): Promise<MoveDestinationOrg[]> {
+  const proxies = new Set(
+    (await db.query.organizationProxies.findMany({ columns: { organizationId: true } })).map((p) => p.organizationId),
+  );
+  if (isAdmin) {
+    const all = await db.query.organization.findMany({
+      columns: { id: true, name: true, slug: true },
+      orderBy: (o, { asc }) => [asc(o.name)],
+    });
+    return all.filter((o) => !proxies.has(o.id));
+  }
+  const mine = await listUserOrgs(userId);
+  return mine
+    .filter((o) => !proxies.has(o.id) && (WRITER_ROLES as string[]).includes(o.role))
+    .map((o) => ({ id: o.id, name: o.name, slug: o.slug }));
 }
 
 export default async function TagDetailPage({
@@ -185,6 +207,13 @@ export default async function TagDetailPage({
   const signaturesRequired = effectiveSignaturePolicy(orgSettingsRow, found.repo);
   const signedByTrustedKey = attestations.signatures.some((s) => s.sig?.status === "verified");
   const canReverify = !!role && WRITER_ROLES.includes(role);
+  // "Move or copy": writers only, and never out of a proxy cache (its images belong to the upstream).
+  const sourceIsProxy = !!(await db.query.organizationProxies.findFirst({
+    where: eq(organizationProxies.organizationId, found.repo.organizationId),
+    columns: { organizationId: true },
+  }));
+  const moveTargets =
+    canReverify && !sourceIsProxy && session ? await moveDestinations(session.user.id, session.user.role === "admin") : [];
   const digestReference = imageReference(env.registryHost, orgSlug, repoName, digest);
   const attestationsPanel = (
     <AttestationsPanel
@@ -265,6 +294,19 @@ export default async function TagDetailPage({
                   <RotateCw className="size-3.5" /> Re-scan
                 </Button>
               </form>
+            )}
+            {moveTargets.length > 0 && (
+              <MoveImageButton
+                sourceRepositoryId={found.repo.id}
+                sourceOrgId={found.repo.organizationId}
+                sourceOrgSlug={orgSlug}
+                sourceRepoName={repoName}
+                reference={isDigestRef ? digest : reference}
+                isDigestRef={isDigestRef}
+                registryHost={env.registryHost}
+                organizations={moveTargets}
+                artifactCount={attestations.total}
+              />
             )}
             {deletion && (
               <DeleteManifestButton
