@@ -9,7 +9,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"registryd/internal/storage"
 )
@@ -129,3 +131,126 @@ type rangeFile struct {
 }
 
 func (r *rangeFile) Close() error { return r.file.Close() }
+
+// --- storage.ObjectStore: arbitrary keys under the root (shared staging) ---
+
+func (d *Driver) objectPath(key string) (string, error) {
+	if !storage.ValidObjectKey(key) {
+		return "", fmt.Errorf("invalid object key %q", key)
+	}
+	return filepath.Join(d.root, filepath.FromSlash(key)), nil
+}
+
+// PutObject writes through a temporary file and renames it into place, so a
+// reader that fails part-way leaves no object behind.
+func (d *Driver) PutObject(_ context.Context, key string, r io.Reader, size int64) (int64, error) {
+	dst, err := d.objectPath(key)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return 0, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".obj-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(tmp.Name())
+	n, err := io.Copy(tmp, r)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return 0, err
+	}
+	if size >= 0 && n != size {
+		return 0, fmt.Errorf("short write: got %d bytes, want %d", n, size)
+	}
+	return n, os.Rename(tmp.Name(), dst)
+}
+
+func (d *Driver) GetObject(_ context.Context, key string) (io.ReadCloser, int64, error) {
+	p, err := d.objectPath(key)
+	if err != nil {
+		return nil, 0, err
+	}
+	file, err := os.Open(p)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, 0, storage.ErrNotFound
+		}
+		return nil, 0, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, 0, err
+	}
+	return file, info.Size(), nil
+}
+
+// DeleteObject removes the object and, when that leaves its directory
+// empty, the directory too (session directories vanish with their last chunk).
+func (d *Driver) DeleteObject(_ context.Context, key string) error {
+	p, err := d.objectPath(key)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if dir := filepath.Dir(p); dir != d.root {
+		_ = os.Remove(dir) // fails harmlessly while other objects remain
+	}
+	return nil
+}
+
+// ListObjects walks the directory the prefix points into and returns the
+// files whose key starts with the prefix.
+func (d *Driver) ListObjects(_ context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	dir := prefix
+	if !strings.HasSuffix(dir, "/") {
+		dir = path.Dir(dir)
+	}
+	dir = strings.Trim(dir, "/")
+	if dir == "." {
+		dir = ""
+	}
+	if dir != "" && !storage.ValidObjectKey(dir) {
+		return nil, fmt.Errorf("invalid object prefix %q", prefix)
+	}
+	root := filepath.Join(d.root, filepath.FromSlash(dir))
+	var out []storage.ObjectInfo
+	err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if e.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(d.root, p)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(rel)
+		if !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return nil // vanished meanwhile
+		}
+		out = append(out, storage.ObjectInfo{Key: key, Size: info.Size(), ModTime: info.ModTime()})
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Root returns the directory the driver stores under.
+func (d *Driver) Root() string { return d.root }

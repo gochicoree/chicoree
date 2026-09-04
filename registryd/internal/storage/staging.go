@@ -1,8 +1,7 @@
 package storage
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,35 +16,88 @@ import (
 // ErrUploadNotFound is returned for unknown or expired upload sessions.
 var ErrUploadNotFound = errors.New("upload session not found")
 
-// Staging manages in-progress blob uploads on local disk. Chunks are appended
-// to a session file; on commit the file's digest is verified and the content
-// is handed to the storage driver in one streaming write. This keeps partial
-// or abandoned uploads out of the backend entirely.
-//
-// Note: sessions are node-local, so a multi-replica deployment needs sticky
-// routing on /blobs/uploads/ paths (or a shared staging volume).
-type Staging struct {
+// ErrOffsetMismatch is returned by Append when the caller's idea of the
+// staged size is stale: another request appended first, or the client sent
+// a Content-Range that does not continue where the session stands.
+var ErrOffsetMismatch = errors.New("upload offset mismatch")
+
+// UploadSession is what the API needs to know about an in-flight upload.
+type UploadSession struct {
+	ID string
+	// Org and Repo are the resolved organization slug and repository name the
+	// session was opened for; every request on the session must match them.
+	Org  string
+	Repo string
+	// Offset is the number of bytes staged so far.
+	Offset int64
+}
+
+// Staging holds blob uploads between the first byte and the commit, keeping
+// partial or abandoned content out of the blob tree. Two implementations:
+// LocalStaging (node-local files) and SharedStaging (sessions in Postgres,
+// chunks in the storage backend, so any replica can serve any request).
+type Staging interface {
+	// Mode names the implementation for logs and the status endpoint.
+	Mode() string
+	// Create opens a session for the repository.
+	Create(ctx context.Context, id, org, repo string) error
+	// Get returns the session, or ErrUploadNotFound.
+	Get(ctx context.Context, id string) (*UploadSession, error)
+	// Append stages the next chunk. expected is the offset the caller has
+	// verified the client is continuing from; when the session has moved on
+	// (a concurrent append) Append writes nothing and returns
+	// ErrOffsetMismatch. It returns the new offset.
+	Append(ctx context.Context, id string, expected int64, r io.Reader) (int64, error)
+	// Open streams the staged content, in order, and reports its size.
+	Open(ctx context.Context, id string) (io.ReadCloser, int64, error)
+	// Remove discards the session and its content. Removing an unknown
+	// session is not an error.
+	Remove(ctx context.Context, id string) error
+	// Sweep discards sessions idle for longer than the configured TTL and
+	// any content no session claims; it returns how many it removed.
+	Sweep(ctx context.Context) (int, error)
+}
+
+// StagedDigest hashes a session's content and reports digest and size.
+func StagedDigest(ctx context.Context, s Staging, id string) (string, int64, error) {
+	rc, _, err := s.Open(ctx, id)
+	if err != nil {
+		return "", 0, err
+	}
+	defer rc.Close()
+	return DigestOf(rc)
+}
+
+// LocalStaging keeps sessions on local disk: chunks are appended to a data
+// file, metadata lives in a JSON file next to it. Sessions are node-local,
+// so a multi-replica deployment needs sticky routing on /blobs/uploads/
+// paths — or STORAGE_STAGING=shared.
+type LocalStaging struct {
 	dir string
+	ttl time.Duration
 }
 
 type sessionMeta struct {
-	Repository string    `json:"repository"`
-	StartedAt  time.Time `json:"startedAt"`
+	Org       string    `json:"org"`
+	Repo      string    `json:"repo"`
+	StartedAt time.Time `json:"startedAt"`
 }
 
-func NewStaging(dir string) (*Staging, error) {
+// NewLocalStaging creates the staging directory if needed.
+func NewLocalStaging(dir string, ttl time.Duration) (*LocalStaging, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create staging dir: %w", err)
 	}
-	return &Staging{dir: dir}, nil
+	return &LocalStaging{dir: dir, ttl: ttl}, nil
 }
 
-func (s *Staging) dataPath(id string) string { return filepath.Join(s.dir, id+".data") }
-func (s *Staging) metaPath(id string) string { return filepath.Join(s.dir, id+".json") }
+func (s *LocalStaging) Mode() string { return "local" }
 
-// Create opens a new upload session for the given repository.
-func (s *Staging) Create(id, repository string) error {
-	meta, err := json.Marshal(sessionMeta{Repository: repository, StartedAt: time.Now().UTC()})
+func (s *LocalStaging) dataPath(id string) string { return filepath.Join(s.dir, id+".data") }
+func (s *LocalStaging) metaPath(id string) string { return filepath.Join(s.dir, id+".json") }
+
+func (s *LocalStaging) Create(_ context.Context, id, org, repo string) error {
+	meta, err := json.Marshal(sessionMeta{Org: org, Repo: repo, StartedAt: time.Now().UTC()})
 	if err != nil {
 		return err
 	}
@@ -59,24 +111,26 @@ func (s *Staging) Create(id, repository string) error {
 	return f.Close()
 }
 
-// Repository returns the repository an upload session belongs to.
-func (s *Staging) Repository(id string) (string, error) {
+func (s *LocalStaging) Get(_ context.Context, id string) (*UploadSession, error) {
 	raw, err := os.ReadFile(s.metaPath(id))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", ErrUploadNotFound
+			return nil, ErrUploadNotFound
 		}
-		return "", err
+		return nil, err
 	}
 	var m sessionMeta
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return "", err
+		return nil, err
 	}
-	return m.Repository, nil
+	size, err := s.size(id)
+	if err != nil {
+		return nil, err
+	}
+	return &UploadSession{ID: id, Org: m.Org, Repo: m.Repo, Offset: size}, nil
 }
 
-// Size returns the number of bytes staged so far.
-func (s *Staging) Size(id string) (int64, error) {
+func (s *LocalStaging) size(id string) (int64, error) {
 	info, err := os.Stat(s.dataPath(id))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -87,9 +141,14 @@ func (s *Staging) Size(id string) (int64, error) {
 	return info.Size(), nil
 }
 
-// Append writes a chunk at the end of the session file and returns the new
-// total size.
-func (s *Staging) Append(id string, r io.Reader) (int64, error) {
+func (s *LocalStaging) Append(_ context.Context, id string, expected int64, r io.Reader) (int64, error) {
+	current, err := s.size(id)
+	if err != nil {
+		return 0, err
+	}
+	if current != expected {
+		return current, ErrOffsetMismatch
+	}
 	f, err := os.OpenFile(s.dataPath(id), os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -104,50 +163,38 @@ func (s *Staging) Append(id string, r io.Reader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return s.Size(id)
+	return s.size(id)
 }
 
-// Digest computes the sha256 digest and size of the staged content.
-func (s *Staging) Digest(id string) (string, int64, error) {
+func (s *LocalStaging) Open(_ context.Context, id string) (io.ReadCloser, int64, error) {
 	f, err := os.Open(s.dataPath(id))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return "", 0, ErrUploadNotFound
+			return nil, 0, ErrUploadNotFound
 		}
-		return "", 0, err
+		return nil, 0, err
 	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
+	info, err := f.Stat()
 	if err != nil {
-		return "", 0, err
+		f.Close()
+		return nil, 0, err
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), n, nil
+	return f, info.Size(), nil
 }
 
-// Open returns a reader over the staged content for committing to the driver.
-func (s *Staging) Open(id string) (io.ReadCloser, error) {
-	f, err := os.Open(s.dataPath(id))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, ErrUploadNotFound
-	}
-	return f, err
-}
-
-// Remove deletes the session files.
-func (s *Staging) Remove(id string) {
+func (s *LocalStaging) Remove(_ context.Context, id string) error {
 	_ = os.Remove(s.dataPath(id))
 	_ = os.Remove(s.metaPath(id))
+	return nil
 }
 
-// Sweep removes sessions older than ttl and returns how many were removed.
-func (s *Staging) Sweep(ttl time.Duration) int {
+func (s *LocalStaging) Sweep(ctx context.Context) (int, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	removed := 0
-	cutoff := time.Now().Add(-ttl)
+	cutoff := time.Now().Add(-s.ttl)
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".json") {
@@ -163,8 +210,8 @@ func (s *Staging) Sweep(ttl time.Duration) int {
 		if dinfo, err := os.Stat(s.dataPath(id)); err == nil && dinfo.ModTime().After(cutoff) {
 			continue
 		}
-		s.Remove(id)
+		_ = s.Remove(ctx, id)
 		removed++
 	}
-	return removed
+	return removed, nil
 }

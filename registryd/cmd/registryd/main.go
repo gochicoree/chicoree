@@ -66,9 +66,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	staging, err := storage.NewStaging(cfg.StagingDir)
+	// Upload staging: node-local files (default) or, for several replicas
+	// behind one load balancer, sessions in Postgres with chunks in the
+	// storage backend.
+	hostname, _ := os.Hostname()
+	staging, err := storage.OpenStaging(cfg.StorageStaging, cfg.StagingDir, driver, st, hostname, cfg.UploadSessionTTL)
 	if err != nil {
-		slog.Error("staging init failed", "err", err)
+		slog.Error("staging init failed", "mode", cfg.StorageStaging, "err", err)
 		os.Exit(1)
 	}
 
@@ -125,14 +129,18 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if n := staging.Sweep(cfg.UploadSessionTTL); n > 0 {
+				n, err := staging.Sweep(ctx)
+				if err != nil {
+					slog.Warn("upload session sweep failed", "err", err)
+				}
+				if n > 0 {
 					slog.Info("swept stale upload sessions", "count", n)
 				}
 			}
 		}
 	}()
 
-	slog.Info("registryd listening", "addr", cfg.ListenAddr, "storage", driver.Name(), "authDisabled", cfg.AuthDisabled)
+	slog.Info("registryd listening", "addr", cfg.ListenAddr, "storage", driver.Name(), "staging", staging.Mode(), "authDisabled", cfg.AuthDisabled)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("http server failed", "err", err)
 		os.Exit(1)

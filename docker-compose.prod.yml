@@ -154,6 +154,8 @@ services:
     environment:
       DATABASE_URL: postgres://chicoree:${POSTGRES_PASSWORD}@postgres:5432/chicoree
       STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      # local (default) or shared — shared is what several replicas need.
+      STORAGE_STAGING: ${STORAGE_STAGING:-local}
       FILESYSTEM_ROOT: /var/lib/registry
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-us-east-1}

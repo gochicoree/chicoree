@@ -60,9 +60,12 @@ type Options struct {
 	PresignExpiry  time.Duration
 }
 
-// Driver stores blobs as objects in a bucket. Uploads are staged locally and
-// committed with a single streaming PutObject, so no multipart bookkeeping is
-// required and partial uploads never pollute the bucket.
+// Driver stores blobs as objects in a bucket. Bodies up to partSize go in
+// one PutObject; larger ones are sent as a multipart upload with parts
+// buffered in memory, which keeps every request body seekable (SigV4 signs
+// the payload over plain HTTP) and lets an object of any size be abandoned
+// before it becomes visible — a reader that fails at the end (digest
+// mismatch) aborts the multipart upload and leaves nothing behind.
 type Driver struct {
 	client  *awss3.Client
 	presign *awss3.PresignClient
@@ -160,14 +163,97 @@ func (d *Driver) Stat(ctx context.Context, digest string) (int64, error) {
 }
 
 func (d *Driver) Put(ctx context.Context, digest string, r io.Reader, size int64) error {
-	_, err := d.client.PutObject(ctx, &awss3.PutObjectInput{
-		Bucket:        aws.String(d.opts.Bucket),
-		Key:           aws.String(d.key(digest)),
-		Body:          r,
-		ContentLength: aws.Int64(size),
-		ContentType:   aws.String("application/octet-stream"),
-	})
+	_, err := d.upload(ctx, d.key(digest), r, size)
 	return err
+}
+
+// partSize is the multipart part size (and the largest body sent with a
+// single PutObject).
+const partSize = 8 << 20
+
+// upload streams r into key and returns the byte count. When size >= 0 the
+// count must match, otherwise nothing is published.
+func (d *Driver) upload(ctx context.Context, key string, r io.Reader, size int64) (int64, error) {
+	buf := make([]byte, partSize)
+	n, err := io.ReadFull(r, buf)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		// The whole body fits in one part.
+		if size >= 0 && int64(n) != size {
+			return 0, fmt.Errorf("short write: got %d bytes, want %d", n, size)
+		}
+		_, err := d.client.PutObject(ctx, &awss3.PutObjectInput{
+			Bucket:        aws.String(d.opts.Bucket),
+			Key:           aws.String(key),
+			Body:          bytes.NewReader(buf[:n]),
+			ContentLength: aws.Int64(int64(n)),
+			ContentType:   aws.String("application/octet-stream"),
+		})
+		return int64(n), err
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	created, err := d.client.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
+		Bucket:      aws.String(d.opts.Bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String("application/octet-stream"),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("create multipart upload: %w", err)
+	}
+	abort := func() {
+		actx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = d.client.AbortMultipartUpload(actx, &awss3.AbortMultipartUploadInput{
+			Bucket: aws.String(d.opts.Bucket), Key: aws.String(key), UploadId: created.UploadId,
+		})
+	}
+	var parts []types.CompletedPart
+	var total int64
+	for {
+		// buf[:n] is the next part; err tells whether the body ended with it.
+		num := int32(len(parts) + 1)
+		out, uerr := d.client.UploadPart(ctx, &awss3.UploadPartInput{
+			Bucket:        aws.String(d.opts.Bucket),
+			Key:           aws.String(key),
+			UploadId:      created.UploadId,
+			PartNumber:    aws.Int32(num),
+			Body:          bytes.NewReader(buf[:n]),
+			ContentLength: aws.Int64(int64(n)),
+		})
+		if uerr != nil {
+			abort()
+			return 0, fmt.Errorf("upload part %d: %w", num, uerr)
+		}
+		parts = append(parts, types.CompletedPart{ETag: out.ETag, PartNumber: aws.Int32(num)})
+		total += int64(n)
+		if err != nil {
+			break // io.EOF / io.ErrUnexpectedEOF: that was the last part
+		}
+		n, err = io.ReadFull(r, buf)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+			abort()
+			return 0, err
+		}
+		if n == 0 {
+			break // the body ended exactly on a part boundary
+		}
+	}
+	if size >= 0 && total != size {
+		abort()
+		return 0, fmt.Errorf("short write: got %d bytes, want %d", total, size)
+	}
+	if _, err := d.client.CompleteMultipartUpload(ctx, &awss3.CompleteMultipartUploadInput{
+		Bucket:          aws.String(d.opts.Bucket),
+		Key:             aws.String(key),
+		UploadId:        created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
+	}); err != nil {
+		abort()
+		return 0, fmt.Errorf("complete multipart upload: %w", err)
+	}
+	return total, nil
 }
 
 func (d *Driver) Delete(ctx context.Context, digest string) error {
@@ -191,4 +277,61 @@ func (d *Driver) RedirectURL(ctx context.Context, digest string) (string, error)
 		return "", err
 	}
 	return req.URL, nil
+}
+
+// --- storage.ObjectStore: arbitrary keys in the bucket (shared staging) ---
+
+func (d *Driver) PutObject(ctx context.Context, key string, r io.Reader, size int64) (int64, error) {
+	if !storage.ValidObjectKey(key) {
+		return 0, fmt.Errorf("invalid object key %q", key)
+	}
+	return d.upload(ctx, key, r, size)
+}
+
+func (d *Driver) GetObject(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	out, err := d.client.GetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(d.opts.Bucket), Key: aws.String(key),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, 0, storage.ErrNotFound
+		}
+		return nil, 0, err
+	}
+	size := int64(-1)
+	if out.ContentLength != nil {
+		size = *out.ContentLength
+	}
+	return out.Body, size, nil
+}
+
+func (d *Driver) DeleteObject(ctx context.Context, key string) error {
+	_, err := d.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
+		Bucket: aws.String(d.opts.Bucket), Key: aws.String(key),
+	})
+	if err != nil && !isNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+func (d *Driver) ListObjects(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	var out []storage.ObjectInfo
+	pages := awss3.NewListObjectsV2Paginator(d.client, &awss3.ListObjectsV2Input{
+		Bucket: aws.String(d.opts.Bucket), Prefix: aws.String(prefix),
+	})
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range page.Contents {
+			info := storage.ObjectInfo{Key: aws.ToString(o.Key), Size: aws.ToInt64(o.Size)}
+			if o.LastModified != nil {
+				info.ModTime = *o.LastModified
+			}
+			out = append(out, info)
+		}
+	}
+	return out, nil
 }

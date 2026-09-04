@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -274,6 +275,131 @@ func (d *Driver) RedirectURL(_ context.Context, digest string) (string, error) {
 	}
 	expires := time.Now().Add(d.opts.PresignExpiry).Unix()
 	return SignCDNURL(d.opts.CDNURL, d.opts.CDNTokenKey, "/"+storage.BlobPath(digest), expires), nil
+}
+
+// --- storage.ObjectStore: arbitrary paths in the zone (shared staging) ---
+
+// PutObject uploads to an arbitrary path. The storage API needs a
+// Content-Length, so a body of unknown size is spooled through a temporary
+// file first.
+func (d *Driver) PutObject(ctx context.Context, key string, r io.Reader, size int64) (int64, error) {
+	if !storage.ValidObjectKey(key) {
+		return 0, fmt.Errorf("invalid object key %q", key)
+	}
+	if size < 0 {
+		tmp, err := os.CreateTemp("", "bunny-obj-*")
+		if err != nil {
+			return 0, err
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+		n, err := io.Copy(tmp, r)
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			return 0, err
+		}
+		r, size = tmp, n
+	}
+	req, err := d.newRequest(ctx, http.MethodPut, d.base+"/"+key, r)
+	if err != nil {
+		return 0, err
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return 0, fmt.Errorf("bunny put %s: HTTP %d: %s", key, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return size, nil
+}
+
+func (d *Driver) GetObject(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	if !storage.ValidObjectKey(key) {
+		return nil, 0, fmt.Errorf("invalid object key %q", key)
+	}
+	req, err := d.newRequest(ctx, http.MethodGet, d.base+"/"+key, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return resp.Body, resp.ContentLength, nil
+	case http.StatusNotFound:
+		resp.Body.Close()
+		return nil, 0, storage.ErrNotFound
+	default:
+		resp.Body.Close()
+		return nil, 0, fmt.Errorf("bunny get %s: HTTP %d", key, resp.StatusCode)
+	}
+}
+
+func (d *Driver) DeleteObject(ctx context.Context, key string) error {
+	if !storage.ValidObjectKey(key) {
+		return fmt.Errorf("invalid object key %q", key)
+	}
+	req, err := d.newRequest(ctx, http.MethodDelete, d.base+"/"+key, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("bunny delete %s: HTTP %d", key, resp.StatusCode)
+	}
+	return nil
+}
+
+// ListObjects walks the directory tree the prefix points into (the storage
+// API lists one directory at a time).
+func (d *Driver) ListObjects(ctx context.Context, prefix string) ([]storage.ObjectInfo, error) {
+	dir := prefix
+	if !strings.HasSuffix(dir, "/") {
+		dir = path.Dir(dir)
+		if dir == "." {
+			dir = ""
+		} else {
+			dir += "/"
+		}
+	}
+	var out []storage.ObjectInfo
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		entries, err := d.list(ctx, dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			key := dir + e.ObjectName
+			if e.IsDirectory {
+				if err := walk(key + "/"); err != nil {
+					return err
+				}
+				continue
+			}
+			if strings.HasPrefix(key, prefix) {
+				out = append(out, storage.ObjectInfo{Key: key, Size: e.Length})
+			}
+		}
+		return nil
+	}
+	if err := walk(dir); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SignCDNURL builds a Bunny CDN token-authentication URL for the given path.

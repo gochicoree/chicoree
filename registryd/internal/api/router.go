@@ -25,7 +25,7 @@ type Server struct {
 	cfg      *config.Config
 	store    *store.Store
 	driver   storage.Driver
-	staging  *storage.Staging
+	staging  storage.Staging
 	verifier *auth.Verifier
 	notifier *hooks.Notifier
 	// proxies holds the pull-through proxy configuration (see proxy.go).
@@ -37,7 +37,7 @@ type Server struct {
 	traffic *traffic.Counter
 }
 
-func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging *storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
+func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
 	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
 		proxies: newProxyRegistry(cfg), started: time.Now()}
 }

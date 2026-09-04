@@ -80,9 +80,13 @@ export interface RegistryStatus {
   version: string;
   goVersion: string;
   storage: string;
+  /** "local" (files under stagingDir) or "shared" (sessions in Postgres, chunks in the backend). */
+  staging?: string;
   stagingDir: string;
-  /** -1 when unknown. */
+  /** -1 when unknown (always in shared mode, where no staging disk exists). */
   stagingFreeBytes: number;
+  /** In-flight shared upload sessions; -1 in local mode. */
+  uploadSessions?: number;
   blobCount: number;
   blobBytes: number;
   startedAt: string;

@@ -110,7 +110,13 @@ async function checkRegistry(probe: RegistryProbe, status: RegistryStatus | null
     { label: "Storage driver", value: status.storage },
     { label: "Uptime", value: `${duration(status.uptimeSeconds)} (since ${status.startedAt})` },
     { label: "Blobs", value: status.blobCount < 0 ? "unknown" : `${status.blobCount.toLocaleString("en-US")} · ${formatBytes(status.blobBytes)} physical` },
-    { label: "Staging dir", value: status.stagingDir },
+    {
+      label: "Upload staging",
+      value:
+        status.staging === "shared"
+          ? `shared (sessions in Postgres, chunks in ${status.storage} storage)${status.uploadSessions != null && status.uploadSessions >= 0 ? ` · ${status.uploadSessions} in flight` : ""}`
+          : `local (${status.stagingDir})`,
+    },
   );
   let state: HealthStatus = "ok";
   let summary = `Up, ${status.storage} storage, version ${status.version}`;
@@ -345,6 +351,15 @@ async function checkMirrors(): Promise<HealthCheck> {
 function checkDisk(status: RegistryStatus | null): HealthCheck {
   const key = "disk";
   const title = "Upload staging disk";
+  if (status?.staging === "shared") {
+    return {
+      key,
+      title,
+      status: "none",
+      summary: "Not used: uploads are staged in the storage backend (STORAGE_STAGING=shared)",
+      details: [],
+    };
+  }
   if (!status || status.stagingFreeBytes < 0) {
     return { key, title, status: "none", summary: "Unknown (registry status unavailable)", details: [] };
   }

@@ -135,6 +135,7 @@ services:
       - DATABASE_URL=postgres://chicoree:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/chicoree
       # Storage: filesystem on the registry-data volume, or S3 (STORAGE_DRIVER=s3).
       - STORAGE_DRIVER=${STORAGE_DRIVER:-filesystem}
+      - STORAGE_STAGING=${STORAGE_STAGING:-local}
       - FILESYSTEM_ROOT=/var/lib/registry
       - S3_ENDPOINT=${S3_ENDPOINT:-}
       - S3_REGION=${S3_REGION:-us-east-1}

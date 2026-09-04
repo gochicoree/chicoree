@@ -14,21 +14,24 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 )
 
 // ErrNotFound is returned when a blob does not exist in the backend.
 var ErrNotFound = errors.New("blob not found in storage")
 
 // Driver stores and retrieves immutable, digest-addressed blobs. In-progress
-// uploads never touch the driver; they are staged locally (see Staging) and
-// committed with Put once the digest is verified.
+// uploads never touch the blob tree; they are staged (see Staging) and
+// committed with Put, whose reader verifies the digest as it streams.
 type Driver interface {
 	// Get opens the blob for reading and reports its size.
 	Get(ctx context.Context, digest string) (io.ReadCloser, int64, error)
 	// Stat reports the blob size, or ErrNotFound.
 	Stat(ctx context.Context, digest string) (int64, error)
-	// Put writes the blob. The reader delivers exactly size bytes whose
-	// digest has already been verified by the caller.
+	// Put writes the blob. The reader delivers exactly size bytes; it may
+	// fail at the very end (see VerifyingReader), in which case the blob
+	// must not become visible — write to a temporary location and only
+	// publish once the reader has returned io.EOF and the size matches.
 	Put(ctx context.Context, digest string, r io.Reader, size int64) error
 	// Delete removes the blob. Deleting a missing blob is not an error.
 	Delete(ctx context.Context, digest string) error
@@ -58,4 +61,46 @@ func BlobPath(digest string) string {
 func DigestHex(digest string) string {
 	_, hex, _ := strings.Cut(digest, ":")
 	return hex
+}
+
+// ObjectStore is an optional driver interface for backends that can hold
+// arbitrary keyed objects next to the blob tree. Shared upload staging
+// (STORAGE_STAGING=shared) keeps in-flight chunks under the reserved
+// "_uploads/" prefix through it, so every registryd replica sees the same
+// session data. Keys are slash-separated paths relative to the storage root.
+type ObjectStore interface {
+	// PutObject writes an object. size is the byte count when the caller
+	// knows it, else -1; the number of bytes actually written is returned.
+	PutObject(ctx context.Context, key string, r io.Reader, size int64) (int64, error)
+	// GetObject opens an object and reports its size, or ErrNotFound.
+	GetObject(ctx context.Context, key string) (io.ReadCloser, int64, error)
+	// DeleteObject removes an object. Deleting a missing key is not an error.
+	DeleteObject(ctx context.Context, key string) error
+	// ListObjects returns every object whose key starts with prefix.
+	ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error)
+}
+
+// ObjectInfo describes one stored object.
+type ObjectInfo struct {
+	Key     string
+	Size    int64
+	ModTime time.Time
+}
+
+// UploadsPrefix is the key prefix reserved for shared staging chunks; GC
+// treats anything beneath it that belongs to no session as garbage.
+const UploadsPrefix = "_uploads/"
+
+// ValidObjectKey reports whether a key is a clean relative path (no empty,
+// "." or ".." segments), so drivers can map it onto a filesystem safely.
+func ValidObjectKey(key string) bool {
+	if key == "" || strings.HasPrefix(key, "/") || strings.HasSuffix(key, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(key, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
 }
