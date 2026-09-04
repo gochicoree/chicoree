@@ -19,11 +19,11 @@ A self-hosted OCI container registry with a proper management plane.
   risks), cosign signature verification with SBOM and provenance views and a
   signature pull policy, repository and organization webhooks, email
   notifications, mirrors, retention policies, scheduled maintenance jobs,
-  repository rename and transfer, an audit log, sign-up controls,
-  signing-key rotation, branding and a health page. Sign-in supports
-  email+password, magic links, email one-time codes, passkeys,
-  GitHub/Google/any-OIDC OAuth, LDAP/Active Directory with group-based roles,
-  and TOTP or email-based two-factor auth.
+  repository rename, transfer and bulk moves, moving a single image to
+  another repository, an audit log, sign-up controls, signing-key rotation,
+  branding and a health page. Sign-in supports email+password, magic links,
+  email one-time codes, passkeys, GitHub/Google/any-OIDC OAuth, LDAP/Active
+  Directory with group-based roles, and TOTP or email-based two-factor auth.
 - **Clair v4** (combo mode) or **Trivy** — both optional — scan every pushed
   image; reports live next to the tag.
 
@@ -581,6 +581,14 @@ URL, which both services honour.
 
 ## Search and READMEs
 
+**Navigation.** The sidebar lists eight of the organizations you belong to:
+the ones whose repositories you opened most recently first, then the ones you
+joined most recently, then by name. When you are in more than eight, an
+**All organizations** entry carrying the total follows them and opens
+`/orgs`, which lists every organization you are a member of with your role,
+its repository count and its storage, and gains a filter box once there are
+more than eight. The navigation drawer on phones shows the same list.
+
 **Finding images.** Every page has a search box (top of the sidebar; on
 phones in the navigation drawer, plus a magnifier in the header). Press `/`
 anywhere to focus it and `Esc` to close the suggestions or leave the box.
@@ -637,6 +645,48 @@ methods, vulnerability scanning, Prometheus metrics, garbage-collection and
 retention schedules, branding, pull rate limits, a backup reminder and the
 live health probe — each with its current state and a link to the page that
 configures it; it can be dismissed per administrator.
+
+## Paging through long lists
+
+Long lists are paged, never silently cut off. A server-rendered list carries
+its page in the URL, so a page is a link you can share and it survives a
+reload; every other parameter (filters, search terms, the page of a second
+list on the same screen) is kept when you turn the page, and changing a filter
+starts over at page 1. Each control shows the slice and the total,
+`151–200 of 334 entries`, with previous / next and, on wider screens, page
+numbers. A page past the end, from a stale link or a filter that shrank the
+list, lands on the last page instead of an empty table.
+
+| Where | Rows per page | URL parameter |
+| --- | --- | --- |
+| Audit entries (`/admin/audit`, `/<org>/audit`) | 50 | `page` |
+| CVE / package search (`/admin/security`) | 50 | `page` |
+| Blocked images and accepted risks (Security pages) | 25 | `blocked`, `exc` |
+| Job runs (`/admin/jobs`, `/admin/jobs/<job>`) | 25 | `page` |
+| Users and organizations (`/admin/users`, `/admin/organizations`) | 50 | `page` |
+| Repositories of an organization (`/<org>`) | 25 | `page` |
+| Tags and untagged manifests (`/<org>/<repo>`) | 50 | `tags`, `untagged` |
+| Mirror runs (*Repository → Settings → Mirror*) | 5 | `runs` |
+| Recent activity (`/dashboard`) | 12 | `activity` |
+| Explore (`/explore`) | 30 | `page` |
+| Search results, per group (`/search`) | 20 | `repos`, `tags`, `digests`, `orgs` |
+
+Screens holding more than one list give each list its own parameter, so paging
+the tags of a repository leaves its untagged manifests where they were:
+`/acme/alpine?tags=3&untagged=2`.
+
+Three lists filter in the browser and therefore page in place, with no URL
+parameter: an image's **Vulnerabilities** findings (25, 50 or 100 rows, chosen
+next to the pager, 50 by default, and back to page 1 whenever a filter or the
+search text changes), the **delivery log** of one webhook (10 per page; the
+log is pruned to the newest 50 deliveries per hook, so five pages are all of
+it) and the per-tag lines inside one **mirror run** (50).
+
+A few tables are a deliberate top-N and say so in their heading rather than
+pretending to be complete: *Top 8 by egress*, *Top 8 by pulls* and *Top 8 by
+size* on *Administration → Metrics*, *Top 10 most affected* on the Security
+pages, and the dashboard's *Starred* and *Recently viewed* cards with their
+*Show all* toggle.
 
 ## Webhooks
 
@@ -979,6 +1029,67 @@ denied: repository moved to acme/alpine2; push to the new name (create a reposit
 Repositories in proxy-cache organizations cannot be renamed or moved (their
 names are the upstream paths).
 
+**Moving many repositories at once.** *Administration → Organizations → Move
+repositories…* (`/admin/organizations/move`) moves a whole batch into one
+organization. Instance administrators only, and membership of neither side is
+needed. Pick the target, then select from every repository on the instance:
+filter by organization, by name or both, *Select all shown* ticks what the
+filter leaves visible, and repositories already in the target are greyed out.
+**Preview** writes nothing. Per repository it says *will move*, or why it will
+be skipped (*name taken*, *proxy source*, *proxy target*, *repository quota*,
+*storage quota*, *invalid name*, *already there*), and it shows the bytes that
+are new to the target, layers it already stores costing nothing, together with
+the resulting storage and repository counts against its limits. The preview
+folds each accepted repository into the next check, so it also catches a name
+collision between two selected repositories and counts a layer shared by two
+of them once. The confirmation spells out the same consequences as a single
+transfer; the run then moves the repositories one at a time, continues past
+failures and lists what moved and what did not, with a link to each new
+location. One run moves at most 50 repositories, which keeps the target's
+quotas measured against what has actually landed. Every repository is audited
+as `repo.transfer` in both organizations exactly as a single transfer is, and
+the run adds one `repo.bulk_transfer` summary entry on the target.
+
+**Moving one image.** A tag page has a **Move or copy** button that writes a
+single image into another repository, in this or any other organization you
+may push to. *Copy* leaves the source tag where it is; *Move* deletes it once
+the destination has the image. The modal also asks for the destination
+organization, the repository (an existing one, or a new name) and the
+destination tag, and shows the `docker pull` reference you end up with.
+
+Nothing is re-uploaded. Layers are content-addressed and already stored, so
+they are linked into the destination with the OCI cross-repository blob mount
+and the manifests are replayed byte for byte. The destination therefore serves
+the identical digest, and the copy costs a few HTTP round trips however large
+the image is. A multi-architecture index brings every platform variant with
+it, and so do the cosign signatures, in-toto attestations and SBOMs attached
+to the image, whether they hang off it through the referrers API or under
+cosign's `sha256-<hex>.sig` / `.att` / `.sbom` tags; the destination
+re-verifies them against its own trusted keys.
+
+What stays behind belongs to the repository rather than to the image: pull
+counts and traffic statistics, repository-scoped tag rules and retention
+policies, webhooks and mirrors. Vulnerability reports are stored per image
+digest, so the destination shows the same findings and is scanned again on
+arrival like any other push.
+
+The rules are a push's rules: write access on both sides, neither of them a
+proxy cache, and the destination organization's quotas. A destination
+repository that does not exist yet is created with the organization's default
+visibility after its repository quota is checked, and only bytes new to the
+destination organization count against its storage quota. An immutable
+destination tag pointing at a different image is refused, a protected source
+tag can be copied but not moved away, and an image opened by digest (an index
+child) can only be copied. After a move the source tag is removed through the
+normal deletion path, so `latest` follows the newest remaining image if it
+pointed at what you moved; a source manifest left without any tag stays
+untagged until retention or `prune-untagged` removes it, and its layers live
+on as long as the copy references them. The push into the destination and the
+delete in the source are ordinary registry operations, so they appear in the
+event log, fire the repository's `push` / `delete` webhooks and start a scan
+of the copy; both outcomes are audited as `image.copy` / `image.move` in both
+organizations.
+
 **Renaming an organization.** *Organization → Settings → Danger zone →
 Change the organization slug* (owners only; `library` cannot be renamed).
 The slug is the image namespace, so `<registry>/<old-slug>/<repo>` keeps
@@ -1255,7 +1366,9 @@ clients can forge.
   who you are impersonating with a one-click stop.
 - **Organizations** (`/admin/organizations`): usage vs limits, members and
   their roles, repositories, proxy-cache configuration, and deletion —
-  without having to be a member.
+  without having to be a member. *Move repositories…* moves a whole batch
+  into one organization; see
+  [Renaming and transferring](#renaming-and-transferring).
 - **Jobs** (`/admin/jobs`): run maintenance jobs, schedule them and see
   their history — see [Job schedules](#job-schedules).
 - **Scanning** (`/admin/scanning`) and **Security** (`/admin/security`):
@@ -1278,14 +1391,14 @@ clients can forge.
 Every change made through the app is recorded: sign-ins and sign-ups (and
 failed attempts), password / two-factor / passkey changes, organization,
 member and invitation changes, repository visibility, README, rename,
-transfer and deletion, organization renames, tag deletion, access tokens and
-service accounts (creation, rotation, revocation), webhooks, mirrors, pull
-and signature policies, trusted signing keys and re-verification, accepted
-risks, token signing keys, admin actions (roles, bans, limits,
-impersonation, session revocation), instance settings and job runs. Each
-entry carries who (with the impersonating admin
-when applicable), what, the target, the organization, a small redacted
-details object, the client IP and user agent.
+transfer (single and in bulk) and deletion, image copies and moves,
+organization renames, tag deletion, access tokens and service accounts
+(creation, rotation, revocation), webhooks, mirrors, pull and signature
+policies, trusted signing keys and re-verification, accepted risks, token
+signing keys, admin actions (roles, bans, limits, impersonation, session
+revocation), instance settings and job runs. Each entry carries who (with the
+impersonating admin when applicable), what, the target, the organization, a
+small redacted details object, the client IP and user agent.
 
 - **Instance-wide**: *Administration → Audit* — search over actor / target /
   action, filter by action group, organization and date range, 50 entries per

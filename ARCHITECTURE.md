@@ -82,7 +82,13 @@ through an old name get no grant at all.
   Docker Hub proxies canonicalize `library/x` → `x`
   (`internal/upstream/names.go`) while the token scope keeps the name the
   client asked for. The token service and the UI apply the same rules
-  (`web/src/lib/proxy-shared.ts`).
+  (`web/src/lib/proxy-shared.ts`). A cross-repository mount's `?from=` name
+  resolves the same way: `splitMountSource` (`internal/api/uploads.go`) maps
+  no slash to the `library` organization, one slash to `<org>/<repo>` and
+  refuses anything deeper, which only proxy caches have. It replaces an older
+  check that required exactly one slash, under which a top-level `library`
+  name could never be a mount source and a copy out of it re-uploaded every
+  layer (`uploads_test.go`).
 - **Redirects** (`internal/store/redirects.go`, `internal/api/redirects.go`):
   a renamed or transferred repository leaves a row in `repository_redirects`
   (`organization_slug` as it was at the time, `repository_name`,
@@ -423,6 +429,55 @@ through an old name get no grant at all.
 - **Data flow**: server components query Postgres directly (`src/lib/data.ts`);
   mutations are server actions with per-org role checks; better-auth handles
   org/member/invitation/2FA/passkey flows through its own client API.
+- **Pagination** (`src/lib/paginate-shared.ts`,
+  `components/ui/pagination.tsx`): a pure module (no `@/db`, no Node
+  built-ins) imported by server queries, server components and client
+  components alike. `PAGE_SIZES` holds the rows per page of every list in one
+  object; `FINDINGS_PAGE_SIZES` the 25 / 50 / 100 choices of the findings
+  table, `WEBHOOK_LOG_MAX` (50) the per-hook cap the delivery writer prunes to
+  and the reader honours. `parsePage` / `pageParam` read a page out of a
+  search parameter (positive safe integers only, the first value of an array,
+  anything else page 1); `paginate(total, page, pageSize)` clamps it into
+  `1…pages` and derives `offset`, `first`, `last`, `hasPrev`, `hasNext` as a
+  plain `PageState` a server component can hand to a client one; `pageSlice`
+  does the same for a list already in memory; `pageHref` builds a link that
+  keeps every other query parameter and drops the key entirely on page 1;
+  `pageWindow` returns the numbers to render with `0` for an ellipsis,
+  bounded by `max` (7) so the control cannot grow wide enough to overflow;
+  `rangeLabel` formats `151–200 of 334 entries`. Every paged list is one
+  `COUNT(*)` plus one `LIMIT/OFFSET` slice over the same `WHERE` clause, run
+  in parallel by `paginatedQuery`, which re-reads the last page when the
+  requested one turned out to be past the end (the only case with a second
+  slice query), so a filter can never drift between the count and the rows.
+  The queries live next to the list they serve: `queryAudit`
+  (`lib/audit-query.ts`), `blockedImages` / `listExceptions` /
+  `searchFindings` (`lib/security.ts`), `jobRunsPage` (`lib/jobs.ts`;
+  `recentJobRuns` stays for the admin overview card and `/api/jobs*`),
+  `listAdminUsers` / `orgReposPage` / `recentActivity` / `listRepoTags`
+  (`lib/data.ts`), `listAdminOrganizations` (`lib/admin-data.ts`),
+  `untaggedManifestsPage` (`lib/manifests.ts`; `listUntaggedManifests` still
+  returns everything, which the retention planner needs) and
+  `searchRepositoriesPage` / `searchTagsPage` / `searchDigestsPage` /
+  `searchOrganizationsPage` behind `searchAll` (`lib/search.ts`). Two
+  supporting queries: `repoTagOverview(repoId)` returns the tag count, the
+  newest tag names (capped at `COMPARE_TAG_LIMIT` = 500, for the compare
+  selector), the digest of `latest` and the newest proxy check in one go, so
+  the repository and compare pages no longer scan the full tag list; and
+  `listWebhookRows` reads the complete (≤ `WEBHOOK_LOG_MAX`) log of every
+  hook of a scope with one `row_number() OVER (PARTITION BY webhook_id ORDER
+  BY created_at DESC)` query instead of one query per hook, the manager
+  paging it in the browser. `Pagination` / `PaginationFooter` are the one
+  control, stateless and hook-free so the same file renders in server and
+  client components: URL mode takes `basePath` + `params` (+ `paramKey`) and
+  renders `next/link` anchors, ends as `<span aria-disabled="true">`;
+  component mode takes `onPage`, plus `pageSizeOptions` / `onPageSize` for
+  the findings table's rows-per-page select. The markup carries
+  `data-pagination`, `data-page`, `data-pages`, `data-total` and
+  `[data-pagination-range]` as stable hooks for UI checks; page numbers are
+  `hidden sm:flex` with a compact `page/pages` counter below `sm`. No
+  filter form carries a page field, so submitting one produces a URL without
+  the parameter and the list starts over at page 1; client-filtered lists
+  reset explicitly. Read-side only: no schema change.
 - **Scanning** (`src/lib/scanners/`, `src/lib/scan.ts`,
   `scanner-shared.ts`): `Scanner { name, label, version(), scan(input),
   health() }` is the backend contract; `ScanInput` carries the repository
@@ -550,13 +605,9 @@ through an old name get no grant at all.
   `compare.ts`, `shared-layers.ts`, `app/actions/repo-tools.ts`):
   `renameRepository` (managers; not in proxy organizations; reserved names
   now include `audit` and `compare`; transaction: rename, clear redirects
-  for the new name, add the old one), `transferRepository` (managers of both
-  organizations; target not a proxy; `checkRepoQuota` and
-  `checkStorageQuota` with only the bytes the target does not hold yet;
-  moves `repositories.organization_id`, re-homes repository-scoped
-  `tag_rules` / `retention_policies`, writes the redirect, then
-  `refreshRepositoryBlocks`, quota warnings and the
-  `repository.transferred` webhook) and `renameOrganization` (owners;
+  for the new name, add the old one), `transferRepository` (a thin wrapper
+  over `moveRepositoryToOrganization`, see *Moving repositories* below) and
+  `renameOrganization` (owners;
   `library` excluded; `organization_redirects`). Layouts cannot see the
   request URL, so `src/proxy.ts` (Next proxy, page routes only) sets an
   `x-pathname` header for the organization layout; pages call
@@ -575,6 +626,94 @@ through an old name get no grant at all.
   `repositoryStorage` gives logical bytes (union of each tag's blobs, index
   children included), physical bytes (distinct linked blobs) and bytes
   shared with other repositories.
+- **Moving repositories** (`src/lib/repo-move.ts`, `repo-move-shared.ts`,
+  `storage-accounting.ts`, `app/actions/bulk-move.ts`,
+  `app/(app)/admin/organizations/move/`): the transfer rules live in one
+  place, split so a caller can preview.
+  `planRepositoryMove({repositoryId, targetOrganizationId, actor, batch?})`
+  runs every check and writes nothing; `moveRepositoryToOrganization(…)`
+  re-plans and then performs, so a stale preview can never let a move
+  through. `MovePlan` carries `ok`, a machine-readable `MoveSkipCode`, the
+  human-readable `message` (the wording the danger zone has always shown),
+  both organizations and `bytesNew`; `MoveResult` adds `moved`, `href` and
+  `pullReference`; `skipLabel` turns a code into the badge text. Checks in
+  order: the repository exists, the actor manages the source (instance admins
+  manage everything), both organizations exist and differ, the actor manages
+  the target, neither side is a proxy cache, the name is valid as a
+  non-nested repository name, the name is free in the target,
+  `checkRepoQuota`, `checkStorageQuota` over `bytesNew`. The move itself is
+  one transaction (re-home `repositories`, re-home the repository-scoped
+  `tag_rules` and `retention_policies` rows whose `organization_id` must
+  follow, clear a redirect that pointed the name inside the target, insert
+  the `repository_redirects` row for the old `source-slug/name`), then two
+  `repo.transfer` audit rows and, in `after()`, `refreshRepositoryBlocks`
+  (the pull policy is the target's now), `checkQuotaWarnings` and the
+  `repository.transferred` webhook.
+  `app/actions/repo-tools.ts#transferRepository` is now a wrapper around it
+  with its form fields and UI unchanged. Runs are sequential, so repository
+  *i+1* is checked after *i* has committed and the quota queries see reality;
+  only the **preview** simulates, through `BatchContext` (`repositoryIds`,
+  claimed `names`, `pendingPublic`, `pendingPrivate`, `pendingBytes`), which
+  `planBulkMove` folds each accepted plan into with `applyToBatch`. That is
+  why the preview catches a name collision between two selected repositories,
+  counts a layer shared by two of them once, and skips at the same repository
+  the real run will. Two supporting changes:
+  `repositoryBytesNewToOrg(repositoryId, organizationId, exclude[])` moved
+  into `lib/storage-accounting.ts` (with `blobBytesNewToOrg` beside it for
+  the image copy) and gained the `exclude` argument, parameterised as
+  `ANY(string_to_array($n, ','))` like `lib/shared-layers.ts`; and
+  `checkRepoQuota` gained a fourth optional `pending = 0` added to the
+  current usage before the limit comparison. The two admin actions
+  (`previewBulkMove`, `runBulkMove`) are `requireAdmin`, take `FormData`,
+  de-duplicate ids while keeping the administrator's order, refuse more than
+  `MAX_BULK_MOVE` (50), and the run wraps each move in `try/catch` so a throw
+  becomes a `failed` row and the loop continues, finishing with one
+  `repo.bulk_transfer` audit row on the target. No schema change, and nothing
+  in `registryd/`: the Go side already serves moved repositories through
+  `repository_redirects` and already refuses pushes to a redirected name.
+- **Moving one image** (`src/lib/image-move.ts`, `image-move-shared.ts`,
+  `app/actions/images.ts`, the tag page's `move-image.tsx`): `planImageCopy`
+  reads Postgres only. It walks the source manifest depth-first over
+  `manifests`, visiting an index's children before the index itself so the
+  push order satisfies registryd's "child manifest must already exist" check,
+  and collects config and layer digests on the way (foreign /
+  non-distributable layers skipped). `discoverArtifacts`
+  (`lib/signatures.ts`) then adds everything attached to any of the image
+  digests, each artifact walked the same way and remembering the cosign tag
+  it was found under. The plan is
+  `{rootDigest, manifests[], blobs[], imageDigests[], artifactCount}`;
+  manifest bytes come from `manifests.payload`, the exact bytes as pushed, so
+  the digest is preserved and an image the pull policy blocks can still be
+  promoted. `executeImageCopy` signs one hour-long ES256 token (subject
+  `user:<id>`) carrying `pull` on the source path and `pull,push` on the
+  destination, and uses it for everything: per blob
+  `POST /v2/<dest>/blobs/uploads/?mount=<digest>&from=<sourcePath>`, where
+  `201` means the blob was linked with no upload and `202` means registryd
+  fell through to an upload session, on which the engine streams the bytes
+  through `openBlobStream` + `LocalPusher.putBlob` (`lib/mirror.ts`) so the
+  copy still completes; then each manifest in plan order as
+  `PUT /v2/<dest>/manifests/<ref>`, `<ref>` being the destination tag for the
+  image itself, the cosign tag for an artifact that had one, and the digest
+  for everything else. Because this is an ordinary authenticated push,
+  registryd applies its own manifest validation, storage and repository
+  quotas, the immutable-tag guard, the `events` rows and the webhook to the
+  web app, which caches image configs, fans out repository webhooks, verifies
+  signatures and queues the scan; the feature emits no registry events of its
+  own. `app/actions/images.ts` holds the rules (write access on both sides
+  via `getOrgRole` + `WRITER_ROLES`, no `organization_proxies` row on either
+  side, `repoNameProblem` and `tagNameProblem` on the destination, an
+  immutable destination tag pointing elsewhere, a protected source tag under
+  *move*), the quota (`blobBytesNewToOrg(plan.blobs, destOrgId)` into
+  `checkStorageQuota`, plus `checkRepoQuota` and `resolveDefaultVisibility`
+  when the destination repository has to be created, with the same
+  `repo.create` audit row and redirect clearing as `createRepository`), the
+  `deleteTag` (`lib/tag-admin.ts`) that a move ends with, and afterwards
+  `refreshRepositoryBlocks(destination)`, `checkQuotaWarnings` and the
+  `image.copy` / `image.move` audit rows in both organizations.
+  `image-move-shared.ts` is the client-safe half: `TAG_NAME_RE` (registryd's
+  `tagRe`), `tagNameProblem`, `pullPath`, `pullReference` and
+  `ImageMoveMode`. No schema change, and the only registryd change is
+  `splitMountSource` (see *Names* above).
 - **Credentials** (`src/lib/token-policy-shared.ts`, `credential-auth.ts`,
   `signing-keys.ts`, `registry-jwt.ts`, `token-expiry.ts`,
   `app/actions/credentials.ts`, `signing-keys.ts`): the pure rules —
@@ -735,7 +874,11 @@ through an old name get no grant at all.
   (recorded in both organizations), `org.rename`, `security.exception.create`
   / `.revoke`, `scan.rescan_all`, `signing_key.add` / `.remove`,
   `signature.reverify`, `token.rotate`, `admin.token.revoke`, `sa.rotate`,
-  `keys.generate`, `keys.retire`. Once an hour after an insert, rows older
+  `keys.generate`, `keys.retire`, `repo.bulk_transfer` (one summary row per
+  bulk run, under the existing `repo` group) and `image.copy` / `image.move`
+  (written in both organizations; `AUDIT_ACTION_GROUPS` has no `image` entry,
+  so those two are reachable through the free-text search rather than the
+  group filter). Once an hour after an insert, rows older
   than `AUDIT_RETENTION_DAYS` are deleted. registryd never writes it.
 - **Branding** (`src/lib/branding.ts`, `branding-shared.ts`; settings section
   `branding`, env defaults `INSTANCE_NAME`, `INSTANCE_TAGLINE`): the logo is
@@ -843,6 +986,14 @@ by the newest active key in `token_signing_keys`, else the file key; the
   next GC pass, never inline.
 - The registry enforces exactly two-level names (`<org>/<repo>`), except in
   proxy-cache organizations, where the upstream path may be deeper.
+- A single-image copy is not transactional. When a manifest push fails after
+  some blobs were mounted, the destination keeps those links; they cost no
+  storage (the content is shared) and GC reclaims whatever ends up
+  unreferenced.
+- A bulk repository move runs the moves sequentially and is capped at 50 per
+  run, so each one commits before the next is checked and the target's quotas
+  are never measured against an estimate. Only the preview simulates a batch,
+  and changing the selection discards it.
 - Pull rate-limit counters live in Postgres, so replicas share one budget at
   the cost of one row upsert per limited request. The traffic counter and the
   `/metrics` counters are still process-local: a crash loses at most 10 s of

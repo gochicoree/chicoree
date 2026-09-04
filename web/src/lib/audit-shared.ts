@@ -10,6 +10,7 @@ export const AUDIT_ACTION_GROUPS: { prefix: string; label: string }[] = [
   { prefix: "org", label: "Organizations" },
   { prefix: "repo", label: "Repositories" },
   { prefix: "tag", label: "Tags" },
+  { prefix: "image", label: "Images" },
   { prefix: "token", label: "Access tokens" },
   { prefix: "sa", label: "Service accounts" },
   { prefix: "webhook", label: "Webhooks" },
