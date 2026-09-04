@@ -1,0 +1,60 @@
+# Optional monitoring stack: Prometheus scraping both Chicorée endpoints and
+# Grafana with the bundled dashboard provisioned. Runs next to the main
+# stack on the same compose network; nothing is published beyond loopback.
+#
+#   echo '<scrape token from Administration → Metrics>' > secrets/metrics-token
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+#     --profile observability up -d
+#
+#   Prometheus: http://localhost:9090   Grafana: http://localhost:3001
+#   (admin / admin unless GRAFANA_ADMIN_PASSWORD is set in .env)
+#
+# The scrape targets in deploy/prometheus/prometheus.example.yml are the
+# compose service names (web:3000, registryd:5000); set METRICS_TOKEN_FILE
+# to use a token file stored elsewhere.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus/prometheus.example.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${METRICS_TOKEN_FILE:-./secrets/metrics-token}:/etc/prometheus/metrics-token:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/chicoree.json:/var/lib/grafana/dashboards/chicoree.json:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+volumes:
+  prometheus-data:
+  grafana-data:

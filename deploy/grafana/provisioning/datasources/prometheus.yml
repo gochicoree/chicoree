@@ -1,0 +1,15 @@
+# Grafana datasource provisioning: the Prometheus from the observability
+# overlay. The dashboard's "Prometheus" variable picks it up by type, so a
+# different name or URL is fine as long as the type stays prometheus.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 60s

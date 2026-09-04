@@ -13,6 +13,7 @@ import (
 	"registryd/internal/auth"
 	"registryd/internal/config"
 	"registryd/internal/hooks"
+	"registryd/internal/metrics"
 	"registryd/internal/ratelimit"
 	"registryd/internal/storage"
 	"registryd/internal/store"
@@ -39,12 +40,18 @@ type Server struct {
 	// lookups resolution needs (the store, or a fake in tests).
 	redirects  *redirectCache
 	repoLookup store.RepoLookup
+	// Prometheus collectors (always on; nil-safe) and the gate that decides
+	// whether GET /metrics serves them (see metrics.go).
+	metrics     *metrics.Metrics
+	metricsGate *metricsGate
 }
 
 func NewServer(cfg *config.Config, st *store.Store, driver storage.Driver, staging storage.Staging, verifier *auth.Verifier, notifier *hooks.Notifier) *Server {
-	return &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
+	s := &Server{cfg: cfg, store: st, driver: driver, staging: staging, verifier: verifier, notifier: notifier,
 		proxies: newProxyRegistry(cfg), started: time.Now(),
 		redirects: newRedirectCache(st.LoadRedirects), repoLookup: st}
+	s.metrics = s.newMetrics()
+	return s
 }
 
 var (
@@ -64,17 +71,25 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/v1/status", s.handleStatus)
 	mux.HandleFunc("POST /internal/v1/gc", s.handleGC)
 	mux.HandleFunc("POST /internal/v1/proxies/reload", s.handleProxyReload)
-	return logMiddleware(mux)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	mux.HandleFunc("GET /internal/v1/metrics", s.handleMetrics)
+	return logMiddleware(mux, s.metrics)
 }
 
-func logMiddleware(next http.Handler) http.Handler {
+// logMiddleware logs every request and feeds the request counters and
+// latency histogram (m may be nil).
+func logMiddleware(next http.Handler, m *metrics.Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		m.InFlight(1)
 		next.ServeHTTP(rec, r)
+		m.InFlight(-1)
+		elapsed := time.Since(start)
+		m.ObserveRequest(r.Method, r.URL.Path, rec.status, elapsed)
 		slog.Info("http", "method", r.Method, "path", r.URL.Path, "status", rec.status,
-			"dur", time.Since(start).Round(time.Millisecond).String())
+			"dur", elapsed.Round(time.Millisecond).String())
 	})
 }
 

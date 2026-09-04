@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import {
@@ -179,7 +179,11 @@ export async function saveMetricsSettings(_prev: SettingsResult | null, fd: Form
   // enabled endpoint without a token would refuse every scrape.
   const regenerate = fd.get("regenerate") === "1";
   const token = regenerate || (enabled && !current.token) ? randomBytes(24).toString("base64url") : "";
-  await saveSettingsSection("metrics", { enabled, token });
+  // registryd gates its own /metrics on this section but cannot decrypt the
+  // token, so the row also carries a sha256 of the effective token.
+  const effective = token || current.token;
+  const tokenHash = effective ? createHash("sha256").update(effective).digest("hex") : "";
+  await saveSettingsSection("metrics", { enabled, token, tokenHash });
   const result = await done("metrics");
   if (token) result.message = regenerate ? "New scrape token generated" : "Metrics endpoint enabled";
   return result;

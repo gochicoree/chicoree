@@ -14,11 +14,14 @@ export function MetricsForm({
   enabled,
   token,
   scrapeUrl,
+  registryTarget,
   source,
 }: {
   enabled: boolean;
   token: string;
   scrapeUrl: string;
+  /** host:port of registryd as Prometheus reaches it (its /metrics takes the same token). */
+  registryTarget: string;
   source: SettingsSource;
 }) {
   const [state, action, pending] = useActionState<SettingsResult | null, FormData>(saveMetricsSettings, null);
@@ -39,6 +42,11 @@ export function MetricsForm({
     `    static_configs: [{ targets: ["${scrapeUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}"] }]`,
     "    authorization:",
     `      credentials: ${token || "<scrape token>"}`,
+    "  - job_name: chicoree-registryd",
+    "    metrics_path: /metrics",
+    `    static_configs: [{ targets: ["${registryTarget}"] }]`,
+    "    authorization:",
+    `      credentials: ${token || "<scrape token>"}`,
   ].join("\n");
 
   return (
@@ -46,7 +54,7 @@ export function MetricsForm({
       <CardHeader
         eyebrow="Monitoring"
         title="Prometheus endpoint"
-        description="Exposes the numbers on this page, plus per-repository pulls and storage, in the Prometheus text format. Scrapes must send the bearer token."
+        description="Exposes the numbers on this page, plus per-repository pulls and storage, in the Prometheus text format; the registry itself serves request, transfer and runtime metrics at /metrics behind the same token. Scrapes must send the bearer token."
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={enabled ? "ok" : "neutral"}>{enabled ? "enabled" : "disabled"}</Badge>

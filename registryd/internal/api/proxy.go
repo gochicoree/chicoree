@@ -277,6 +277,7 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 				return false
 			}
 			if exists {
+				s.metrics.CacheHit("manifest")
 				return true
 			}
 		}
@@ -288,12 +289,14 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 			return false
 		}
 		m, err := px.client.GetManifest(ctx, upstreamPath, ref)
+		s.noteUpstream("manifest", err)
 		if err != nil {
 			s.noteProxyStatus(px, err)
 			s.writeUpstreamError(w, r, px, err, "manifest")
 			return false
 		}
 		s.noteProxyStatus(px, nil)
+		s.metrics.CacheMiss("manifest")
 		return s.storeProxiedManifestOrFail(w, r, rc, px, m, "")
 	}
 
@@ -312,6 +315,9 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 	}
 	fresh := localDigest != "" && checkedAt != nil && time.Since(*checkedAt) < px.TTL
 	if fresh || !px.Enabled {
+		if localDigest != "" {
+			s.metrics.CacheHit("manifest")
+		}
 		return true
 	}
 	if !allowed {
@@ -327,8 +333,10 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 	var m *upstream.Manifest
 	if localDigest != "" {
 		head, err := px.client.HeadManifest(ctx, upstreamPath, ref)
+		s.noteUpstream("manifest", err)
 		if err == nil && head.Digest == localDigest {
 			s.noteProxyStatus(px, nil)
+			s.metrics.CacheHit("manifest")
 			repoID := repo.ID
 			go func() {
 				ctx, cancel := contextWithTimeout()
@@ -341,15 +349,18 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 		}
 		if err == nil {
 			m, err = px.client.GetManifest(ctx, upstreamPath, ref)
+			s.noteUpstream("manifest", err)
 		}
 		if err != nil {
 			s.noteProxyStatus(px, err)
+			s.metrics.CacheHit("manifest")
 			slog.Warn("proxy: upstream check failed, serving cached tag", "org", px.Slug, "repo", rc.repo, "tag", ref, "err", err)
 			return true
 		}
 	} else {
 		var err error
 		m, err = px.client.GetManifest(ctx, upstreamPath, ref)
+		s.noteUpstream("manifest", err)
 		if err != nil {
 			s.noteProxyStatus(px, err)
 			s.writeUpstreamError(w, r, px, err, "manifest")
@@ -357,6 +368,7 @@ func (s *Server) ensureProxiedManifest(w http.ResponseWriter, r *http.Request, r
 		}
 	}
 	s.noteProxyStatus(px, nil)
+	s.metrics.CacheMiss("manifest")
 	return s.storeProxiedManifestOrFail(w, r, rc, px, m, ref)
 }
 
@@ -537,6 +549,11 @@ func (s *Server) ensureProxiedBlob(w http.ResponseWriter, r *http.Request, rc *r
 		}
 		size = res.Val.(int64)
 		s.noteProxyStatus(px, nil)
+		s.metrics.CacheMiss("blob")
+	} else {
+		// Content another repository already holds: linked without an
+		// upstream round trip.
+		s.metrics.CacheHit("blob")
 	}
 
 	// Link (dedup or freshly downloaded) — new content for this organization
@@ -574,6 +591,7 @@ func (s *Server) downloadProxiedBlob(ctx context.Context, px *proxyOrg, orgID, u
 	}
 
 	body, size, err := px.client.OpenBlob(ctx, upstreamPath, digest)
+	s.noteUpstream("blob", err)
 	if err != nil {
 		return nil, err
 	}

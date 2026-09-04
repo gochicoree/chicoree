@@ -124,6 +124,14 @@ func main() {
 	}
 	go server.RunRateLimitReload(ctx, 30*time.Second)
 
+	// Prometheus endpoint: gated by the admin panel's metrics section (or
+	// METRICS_TOKEN); the gate is re-read every 30s like the rate limits.
+	if err := server.ConfigureMetrics(ctx); err != nil {
+		slog.Error("metrics configuration invalid", "err", err)
+		os.Exit(1)
+	}
+	go server.RunMetricsReload(ctx, 30*time.Second)
+
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           server.Handler(),

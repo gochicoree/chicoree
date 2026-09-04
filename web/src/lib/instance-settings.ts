@@ -63,6 +63,11 @@ export interface MetricsSettings {
   enabled: boolean;
   /** Bearer token Prometheus presents; empty means the endpoint refuses every scrape. */
   token: string;
+  /**
+   * sha256 hex of the token, stored in the clear so registryd can gate its
+   * own /metrics on the same credential (it cannot decrypt `token`).
+   */
+  tokenHash?: string;
 }
 
 /**
