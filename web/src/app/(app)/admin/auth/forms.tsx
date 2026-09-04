@@ -104,7 +104,7 @@ export function SmtpForm({
   smtp: SmtpSettings;
   hasPassword: boolean;
   source: SettingsSource;
-  /** The signed-in administrator; test emails always go there as well. */
+  /** The signed-in administrator; test emails go there and nowhere else. */
   adminEmail?: string;
 }) {
   const [state, save, saving] = useActionState<SettingsResult | null, FormData>(saveSmtpSettings, null);
@@ -158,21 +158,11 @@ export function SmtpForm({
             </Button>
             <Feedback state={state} />
           </div>
-          <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4 sm:col-span-2">
-            <div className="min-w-56 flex-1">
-              <Field
-                label="Send a test email to"
-                htmlFor="smtp-test-to"
-                hint={adminEmail ? `A copy always goes to you (${adminEmail}).` : undefined}
-              >
-                <Input id="smtp-test-to" name="testTo" type="email" defaultValue={adminEmail} placeholder="you@example.com" />
-              </Field>
-            </div>
-            <FieldAction>
-              <Button type="button" variant="secondary" onClick={() => run(sendTest)} disabled={testing}>
-                <Mail className="size-4" /> {testing ? "Sending…" : "Send test"}
-              </Button>
-            </FieldAction>
+          <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4 sm:col-span-2">
+            <Button type="button" variant="secondary" onClick={() => run(sendTest)} disabled={testing}>
+              <Mail className="size-4" /> {testing ? "Sending…" : "Send a test email to me"}
+            </Button>
+            <span className="text-xs text-ink-3">Goes to your own address{adminEmail ? ` (${adminEmail})` : ""}, using the values in this form.</span>
             <Feedback state={test} />
           </div>
         </form>
