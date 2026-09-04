@@ -24,6 +24,8 @@ export function SignInForm({
     oidcName: string;
     ldap: boolean;
     ldapName: string;
+    /** Outgoing mail is configured; without it magic links and codes never arrive. */
+    email: boolean;
   };
   /** Sign-up controls: the "create an account" link follows the mode. */
   signUp?: { mode: "open" | "invite" | "closed"; invitationId: string };
@@ -106,7 +108,7 @@ export function SignInForm({
   const modes = [
     ...(localAllowed ? ([["password", "Password", KeyRound]] as const) : []),
     ...(providers.ldap ? ([["ldap", providers.ldapName, Building2]] as const) : []),
-    ...(localAllowed ? ([["magic-link", "Magic link", Wand2], ["email-otp", "Email code", Mail]] as const) : []),
+    ...(localAllowed && providers.email ? ([["magic-link", "Magic link", Wand2], ["email-otp", "Email code", Mail]] as const) : []),
   ] as const;
   const gridCols = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4" }[modes.length] ?? "grid-cols-4";
 
@@ -191,11 +193,13 @@ export function SignInForm({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <div className="mt-1.5 text-right">
-                <Link href="/forgot-password" className="text-xs text-ink-2 hover:text-ink">
-                  Forgot password?
-                </Link>
-              </div>
+              {providers.email && (
+                <div className="mt-1.5 text-right">
+                  <Link href="/forgot-password" className="text-xs text-ink-2 hover:text-ink">
+                    Forgot password?
+                  </Link>
+                </div>
+              )}
             </Field>
           )}
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
