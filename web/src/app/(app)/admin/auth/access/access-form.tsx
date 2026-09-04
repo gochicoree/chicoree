@@ -8,8 +8,8 @@ import { SIGN_UP_MODES } from "@/lib/access-shared";
 import type { SettingsSource } from "@/lib/instance-settings";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, Textarea } from "@/components/ui/field";
-import { Feedback, HeaderAction, useResultToast } from "../forms";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { Check, Feedback, HeaderAction, useResultToast } from "../forms";
 
 function Radio({
   name,
@@ -100,6 +100,36 @@ export function AccessForm({ access, source }: { access: AccessSettings; source:
                 description="Users see no create button and the API refuses; admins create organizations and add members."
                 defaultChecked={access.allowOrganizationCreation === "admins"}
               />
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-2 text-[13px] font-medium text-ink">Access tokens and service accounts</legend>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Longest lifetime (days)"
+                htmlFor="access-max-token-days"
+                hint="Caps the expiry presets and custom dates offered when a token or service account is created; 0 means unlimited. Existing credentials are not shortened."
+              >
+                <Input
+                  id="access-max-token-days"
+                  name="maxTokenLifetimeDays"
+                  type="number"
+                  min={0}
+                  max={3650}
+                  step={1}
+                  defaultValue={access.maxTokenLifetimeDays}
+                  className="font-mono"
+                />
+              </Field>
+              <div className="sm:pt-6">
+                <Check
+                  name="requireTokenExpiry"
+                  label="Every token must expire"
+                  defaultChecked={access.requireTokenExpiry}
+                  hint="Removes the “Never” option; a request without an expiry date is refused."
+                />
+              </div>
             </div>
           </fieldset>
 

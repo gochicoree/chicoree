@@ -10,6 +10,10 @@ export interface AccessSettings {
   /** Email domains allowed to register (lowercase, no @); empty = any. */
   allowedEmailDomains: string[];
   allowOrganizationCreation: OrgCreationPolicy;
+  /** Longest lifetime of an access token / service account credential in days; 0 = unlimited. */
+  maxTokenLifetimeDays: number;
+  /** Refuse to create tokens that never expire. */
+  requireTokenExpiry: boolean;
 }
 
 /** Header the sign-up form sends so an invitee is matched to their invitation. */
@@ -19,6 +23,8 @@ export const DEFAULT_ACCESS: AccessSettings = {
   signUpMode: "open",
   allowedEmailDomains: [],
   allowOrganizationCreation: "everyone",
+  maxTokenLifetimeDays: 0,
+  requireTokenExpiry: false,
 };
 
 export const SIGN_UP_MODES: { value: SignUpMode; label: string; description: string }[] = [

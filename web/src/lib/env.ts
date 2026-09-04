@@ -239,6 +239,15 @@ export const env = {
   get orgCreation() {
     return process.env.ORG_CREATION === "admins" ? "admins" : "everyone";
   },
+  /** Longest lifetime of a personal access token or service account in days; 0 = unlimited. */
+  get tokenMaxLifetimeDays() {
+    const n = Number(process.env.TOKEN_MAX_LIFETIME_DAYS ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  },
+  /** When true, tokens without an expiry date cannot be created. */
+  get tokenRequireExpiry() {
+    return process.env.TOKEN_REQUIRE_EXPIRY === "true" || process.env.TOKEN_REQUIRE_EXPIRY === "1";
+  },
 
   // Branding defaults (Administration → Branding overrides them).
   get instanceName() {

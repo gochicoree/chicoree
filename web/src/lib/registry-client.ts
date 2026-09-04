@@ -91,7 +91,11 @@ export interface RegistryStatus {
   blobBytes: number;
   startedAt: string;
   uptimeSeconds: number;
+  /** Fingerprint of the file key (kept for older registries); see trustedKeys for the full set. */
   publicKeyFingerprint: string;
+  /** Every key the registry verifies tokens with right now (file key + database keys). */
+  publicKeyFingerprints?: string[];
+  trustedKeys?: { kid: string; fingerprint: string; source: "file" | "database"; retiredAt: string | null }[];
   authDisabled: boolean;
   databaseError?: string;
 }

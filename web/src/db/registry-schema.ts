@@ -232,6 +232,8 @@ export const serviceAccounts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Client address seen at the last use (token endpoint); updated with last_used_at. */
+    lastUsedIp: text("last_used_ip"),
   },
   (t) => [unique("service_accounts_org_name_uq").on(t.organizationId, t.name)],
 );
@@ -252,6 +254,13 @@ export const accessTokens = pgTable("access_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  /** Client address seen at the last use; updated together with last_used_at (throttled to once per 5 minutes). */
+  lastUsedIp: text("last_used_ip"),
+  description: text("description").notNull().default(""),
+  /** Restrict the token to one organization (null = every organization the user belongs to). */
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: "cascade" }),
+  /** Within that organization, restrict to these repository ids (null = every repository). */
+  repositoryIds: jsonb("repository_ids").$type<string[] | null>(),
 });
 
 // --- Admin-enforced limits (null = unlimited) ---

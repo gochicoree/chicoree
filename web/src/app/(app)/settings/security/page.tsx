@@ -43,6 +43,8 @@ export default async function SecurityPage() {
             userAgent: s.userAgent ?? "unknown device",
             ipAddress: s.ipAddress ?? "",
             createdAt: s.createdAt.toISOString(),
+            lastActiveAt: s.updatedAt.toISOString(),
+            expiresAt: s.expiresAt.toISOString(),
           }))}
         />
       </div>

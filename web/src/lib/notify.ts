@@ -51,7 +51,18 @@ export type NotifyInput =
       attempts: number;
     }
   | { event: "quota.warning"; organizationId: string; kind: QuotaKind; used: number; limit: number; threshold: 80 | 95 }
-  | { event: "job.failed"; job: string; runId: string; error: string; triggeredBy: string };
+  | { event: "job.failed"; job: string; runId: string; error: string; triggeredBy: string }
+  | {
+      event: "token.expiring";
+      kind: "pat" | "sa";
+      id: string;
+      name: string;
+      expiresAt: Date;
+      /** Personal access tokens: the owner. */
+      userId: string | null;
+      /** Service accounts: the organization whose managers are told. */
+      organizationId: string | null;
+    };
 
 interface Message {
   subject: string;
@@ -354,6 +365,53 @@ export async function notify(input: NotifyInput): Promise<void> {
         ADMIN_FOOTER,
       );
       await send("job.failed", await instanceAdmins(), message);
+      return;
+    }
+
+    case "token.expiring": {
+      const days = Math.max(0, Math.ceil((input.expiresAt.getTime() - Date.now()) / 86_400_000));
+      const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+      const date = input.expiresAt.toISOString().slice(0, 10);
+      if (input.kind === "pat") {
+        if (!input.userId) return;
+        const u = await db.query.user.findFirst({ where: eq(userTable.id, input.userId) });
+        if (!u || u.banned || !u.email) return;
+        const url = `${env.appUrl}/settings/tokens`;
+        const message = compose(
+          "Access token expiring",
+          `Access token "${input.name}" expires ${when}`,
+          [
+            `Your personal access token "${input.name}" expires ${when} (${date}).`,
+            "docker login and CI jobs using it stop working at that moment. Rotate it under Settings → Access tokens to get a replacement with the same settings.",
+          ],
+          [
+            `Your personal access token <strong>${esc(input.name)}</strong> expires ${when} (${date}).`,
+            "<code>docker login</code> and CI jobs using it stop working at that moment. Rotate it under Settings → Access tokens to get a replacement with the same settings.",
+          ],
+          { href: url, label: "Open access tokens" },
+          "You receive this because the token belongs to your account. Change what is sent to you under Settings → Notifications.",
+        );
+        await send("token.expiring", [{ id: u.id, email: u.email, name: u.name }], message);
+        return;
+      }
+      if (!input.organizationId) return;
+      const org = await db.query.organization.findFirst({ where: eq(organization.id, input.organizationId) });
+      if (!org) return;
+      const url = `${env.appUrl}/${org.slug}/service-accounts`;
+      const message = compose(
+        "Service account expiring",
+        `Service account "${input.name}" of ${org.name} expires ${when}`,
+        [
+          `The service account "${input.name}" of ${org.name} expires ${when} (${date}).`,
+          "Pipelines using its credential stop working at that moment. Rotate it under Organization → Service accounts and update the secret in your CI.",
+        ],
+        [
+          `The service account <strong>${esc(input.name)}</strong> of <strong>${esc(org.name)}</strong> expires ${when} (${date}).`,
+          "Pipelines using its credential stop working at that moment. Rotate it under Organization → Service accounts and update the secret in your CI.",
+        ],
+        { href: url, label: "Open service accounts" },
+      );
+      await send("token.expiring", await orgManagers(org.id), message);
       return;
     }
   }

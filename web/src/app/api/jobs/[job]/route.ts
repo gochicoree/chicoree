@@ -12,7 +12,7 @@ import { recordAudit } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ job: string }> }) {
-  const auth = await authenticateJobsRequest(req.headers.get("authorization"));
+  const auth = await authenticateJobsRequest(req.headers.get("authorization"), req.headers);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   const { job } = await params;

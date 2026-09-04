@@ -17,7 +17,7 @@ export default async function NotificationsSettingsPage() {
   });
   const stored = new Map(rows.map((r) => [r.event, r.email]));
   const isAdmin = session.user.role === "admin";
-  const items = NOTIFICATION_EVENTS.filter((e) => e.scope === "organization" || isAdmin).map((e) => ({
+  const items = NOTIFICATION_EVENTS.filter((e) => e.scope !== "instance" || isAdmin).map((e) => ({
     event: e.event,
     label: e.label,
     description: e.description,

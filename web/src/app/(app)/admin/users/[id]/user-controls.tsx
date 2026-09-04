@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, ShieldCheck, UserCog } from "lucide-react";
+import { Ban, LogOut, ShieldCheck, UserCog } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -13,11 +13,14 @@ export function UserControls({
   isSelf,
   role,
   banned,
+  sessions = 0,
 }: {
   userId: string;
   isSelf: boolean;
   role: string;
   banned: boolean;
+  /** Active sessions; the revoke button is disabled at zero. */
+  sessions?: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -86,6 +89,15 @@ export function UserControls({
       </Button>
       <Button variant="secondary" size="sm" disabled={busy || banned} onClick={impersonate}>
         <UserCog className="size-3.5" /> Impersonate
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={busy || sessions === 0}
+        title="Signs the user out of every browser and device"
+        onClick={() => run(() => authClient.admin.revokeUserSessions({ userId }), "All sessions revoked")}
+      >
+        <LogOut className="size-3.5" /> Revoke all sessions
       </Button>
       {error && <span className="text-sm text-danger">{error}</span>}
     </div>

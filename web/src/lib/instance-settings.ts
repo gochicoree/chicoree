@@ -160,6 +160,8 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       signUpMode: env.signUpMode,
       allowedEmailDomains: env.signUpAllowedDomains,
       allowOrganizationCreation: env.orgCreation,
+      maxTokenLifetimeDays: env.tokenMaxLifetimeDays,
+      requireTokenExpiry: env.tokenRequireExpiry,
     },
     branding: {
       ...DEFAULT_BRANDING,
@@ -197,7 +199,13 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
     case "metrics":
       return d.metrics.enabled;
     case "access":
-      return !!process.env.SIGNUP_MODE || !!process.env.SIGNUP_ALLOWED_DOMAINS || !!process.env.ORG_CREATION;
+      return (
+        !!process.env.SIGNUP_MODE ||
+        !!process.env.SIGNUP_ALLOWED_DOMAINS ||
+        !!process.env.ORG_CREATION ||
+        !!process.env.TOKEN_MAX_LIFETIME_DAYS ||
+        !!process.env.TOKEN_REQUIRE_EXPIRY
+      );
     case "branding":
       return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE;
     case "ratelimit":

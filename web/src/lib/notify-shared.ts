@@ -7,14 +7,15 @@ export type NotificationEvent =
   | "mirror.failed"
   | "webhook.failed"
   | "quota.warning"
-  | "job.failed";
+  | "job.failed"
+  | "token.expiring";
 
 export interface NotificationEventInfo {
   event: NotificationEvent;
   label: string;
   description: string;
-  /** Who receives it: owners and admins of the organization, or instance administrators. */
-  scope: "organization" | "instance";
+  /** Who receives it: owners and admins of the organization, instance administrators, or the account itself. */
+  scope: "organization" | "instance" | "account";
   /** Email on unless the user switched it off. */
   defaultEmail: boolean;
 }
@@ -60,6 +61,14 @@ export const NOTIFICATION_EVENTS: NotificationEventInfo[] = [
     label: "Job failed",
     description: "A maintenance job failed, whether run manually, from the API or on schedule. Administrators only.",
     scope: "instance",
+    defaultEmail: true,
+  },
+  {
+    event: "token.expiring",
+    label: "Credential expiring",
+    description:
+      "One of your access tokens — or a service account of an organization you manage — expires within seven days. Sent once per credential by the token-expiry job.",
+    scope: "account",
     defaultEmail: true,
   },
 ];

@@ -1,11 +1,12 @@
-import { readFileSync } from "fs";
-import path from "path";
-import { SignJWT, importPKCS8, type KeyObject } from "jose";
+import { SignJWT } from "jose";
 import { randomUUID } from "crypto";
 import { env } from "./env";
+import { activeSigner, TOKEN_TTL_SECONDS } from "./signing-keys";
 
-// The registry trusts ES256 JWTs signed with this key; registryd holds the
-// matching public key. See scripts/gen-keys.sh.
+// The registry trusts ES256 JWTs signed with the active signing key
+// (lib/signing-keys.ts): a key generated in the admin panel, or the file
+// key from scripts/gen-keys.sh. The JWT header names the key (`kid`) so
+// registryd can verify against several keys during a rotation.
 
 export interface AccessGrant {
   type: "repository" | "registry";
@@ -13,26 +14,16 @@ export interface AccessGrant {
   actions: string[];
 }
 
-let cachedKey: CryptoKey | KeyObject | null = null;
-
-async function signingKey() {
-  if (!cachedKey) {
-    const file = path.resolve(process.cwd(), env.tokenPrivateKeyFile);
-    const pem = readFileSync(file, "utf8");
-    cachedKey = await importPKCS8(pem, "ES256");
-  }
-  return cachedKey;
-}
-
 /** Subject strings mirror what registryd parses: user:<id>, sa:<id>, anonymous. */
 export async function signRegistryToken(
   subject: string,
   access: AccessGrant[],
-  ttlSeconds = 300,
-): Promise<{ token: string; issuedAt: string; expiresIn: number }> {
+  ttlSeconds = TOKEN_TTL_SECONDS,
+): Promise<{ token: string; issuedAt: string; expiresIn: number; kid: string }> {
   const now = Math.floor(Date.now() / 1000);
+  const signer = await activeSigner();
   const token = await new SignJWT({ access })
-    .setProtectedHeader({ alg: "ES256", typ: "JWT" })
+    .setProtectedHeader({ alg: "ES256", typ: "JWT", kid: signer.kid })
     .setIssuer(env.tokenIssuer)
     .setAudience(env.tokenService)
     .setSubject(subject)
@@ -40,8 +31,8 @@ export async function signRegistryToken(
     .setNotBefore(now - 10)
     .setExpirationTime(now + ttlSeconds)
     .setJti(randomUUID())
-    .sign(await signingKey());
-  return { token, issuedAt: new Date(now * 1000).toISOString(), expiresIn: ttlSeconds };
+    .sign(signer.key);
+  return { token, issuedAt: new Date(now * 1000).toISOString(), expiresIn: ttlSeconds, kid: signer.kid };
 }
 
 /** Token the web app itself uses to read from the registry (config blobs, GC). */

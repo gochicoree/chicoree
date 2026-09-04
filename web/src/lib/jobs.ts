@@ -13,6 +13,7 @@ import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
 import { notify } from "./notify";
 import { runRetention } from "./retention";
+import { runTokenExpiryReminders } from "./token-expiry";
 
 export interface JobDefinition {
   name: string;
@@ -156,6 +157,15 @@ JOBS["exceptions-expire"] = {
     "Recomputes pull blocks for organizations whose accepted risks (Security → exceptions) have expired, so the findings count against the pull policy again, and drops exceptions expired for more than 30 days. Schedule it hourly or daily.",
   params: [],
   run: async () => expireExceptions(),
+};
+
+JOBS["token-expiry"] = {
+  name: "token-expiry",
+  title: "Credential expiry reminders",
+  description:
+    "Emails the owner of every personal access token, and the managers of every organization whose service account, expires within the window — once per credential. Schedule it daily.",
+  params: [{ name: "withinDays", description: "Warn about credentials expiring within this many days", default: "7" }],
+  run: async (params) => runTokenExpiryReminders(Math.max(1, Math.min(365, Number(params.withinDays) || 7))),
 };
 
 /** Jobs that make sense in this deployment (re-scanning needs a scanner backend). */

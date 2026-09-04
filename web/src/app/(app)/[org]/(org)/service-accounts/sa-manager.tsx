@@ -1,15 +1,18 @@
 "use client";
 
-import { useActionState } from "react";
-import { Bot, Trash2 } from "lucide-react";
-import { createServiceAccount, deleteServiceAccount, type SecretResult } from "@/app/actions/credentials";
+import { useActionState, useEffect, useState } from "react";
+import { Bot, RefreshCw, Trash2 } from "lucide-react";
+import { createServiceAccount, deleteServiceAccount, rotateServiceAccount, type SecretResult } from "@/app/actions/credentials";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
+import { ConfirmModal, Modal } from "@/components/ui/modal";
 import { relativeTime } from "@/lib/format";
+import { NEVER, describeExpiryPolicy, expiryState, lastUsedText, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
+import { ExpiryBadge, ExpiryFields, SecretPanel } from "@/app/(app)/settings/tokens/token-manager";
 
 interface SaRow {
   id: string;
@@ -20,6 +23,7 @@ interface SaRow {
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
+  lastUsedIp: string | null;
 }
 
 const PERMISSION_LABEL: Record<string, string> = {
@@ -28,19 +32,71 @@ const PERMISSION_LABEL: Record<string, string> = {
   admin: "pull + push + delete",
 };
 
+function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string }) {
+  const [confirm, setConfirm] = useState(false);
+  const [state, action, pending] = useActionState<SecretResult | null, FormData>(rotateServiceAccount, null);
+  const [shown, setShown] = useState<SecretResult | null>(null);
+  useEffect(() => {
+    if (state?.secret) {
+      setShown(state);
+      setConfirm(false);
+    }
+  }, [state]);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirm(true)}
+        aria-label={`Rotate ${sa.name}`}
+        title="Rotate: new secret, same permissions; the old secret stops working"
+        className="rounded-md p-1.5 text-ink-3 hover:bg-card-2 hover:text-ink cursor-pointer"
+      >
+        <RefreshCw className="size-4" />
+      </button>
+      <ConfirmModal
+        open={confirm}
+        onClose={() => setConfirm(false)}
+        onConfirm={() => {
+          const fd = new FormData();
+          fd.set("id", sa.id);
+          action(fd);
+        }}
+        title={`Rotate “${sa.name}”?`}
+        description="A new secret replaces the current one immediately; name, permission, repositories and lifetime stay the same. Update the secret in every pipeline that uses it."
+        confirmLabel={pending ? "Rotating…" : "Rotate secret"}
+        tone="accent"
+        busy={pending}
+      >
+        {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
+      </ConfirmModal>
+      <Modal open={!!shown} onClose={() => setShown(null)} title={`New secret for “${sa.name}”`} description="Copy it now — it will not be shown again.">
+        {shown?.secret && (
+          <SecretPanel title="Replacement credential" secret={shown.secret}>
+            <p className="text-xs text-accent-ink/80">Use it in CI:</p>
+            <CommandLine command={`echo $REGISTRY_TOKEN | docker login ${registryHost} -u ${sa.name} --password-stdin`} />
+          </SecretPanel>
+        )}
+      </Modal>
+    </>
+  );
+}
+
 export function ServiceAccountsManager({
   organizationId,
   registryHost,
   accounts,
+  policy,
 }: {
   organizationId: string;
   registryHost: string;
   accounts: SaRow[];
+  policy: TokenExpiryPolicy;
 }) {
   const [state, action, pending] = useActionState<SecretResult | null, FormData>(
     createServiceAccount,
     null,
   );
+  const policyText = describeExpiryPolicy(policy);
 
   return (
     <div className="space-y-6">
@@ -77,41 +133,30 @@ export function ServiceAccountsManager({
             <Field label="Description" htmlFor="sa-description">
               <Input id="sa-description" name="description" placeholder="Optional" />
             </Field>
-            <Field label="Expires after" htmlFor="sa-expires">
-              <Select
-                id="sa-expires"
-                name="expiresDays"
-                defaultValue=""
-                options={[
-                  { value: "", label: "Never" },
-                  { value: "30", label: "30 days" },
-                  { value: "90", label: "90 days" },
-                  { value: "365", label: "1 year" },
-                ]}
-              />
-            </Field>
+            <ExpiryFields policy={policy} idPrefix="sa" defaultChoice={policy.requireTokenExpiry ? undefined : NEVER} />
             <div className="sm:col-span-2">
               {state?.error && (
-                <p className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+                <p className="mb-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" data-form-error>
                   {state.error}
                 </p>
               )}
-              <Button type="submit" disabled={pending}>
-                Create service account
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" disabled={pending}>
+                  Create service account
+                </Button>
+                {policyText && <span className="text-xs text-ink-3">{policyText}</span>}
+              </div>
             </div>
           </form>
 
           {state?.secret && (
-            <div className="mt-4 space-y-2 rounded-lg border border-accent/40 bg-accent-soft p-4">
-              <p className="text-sm font-medium text-accent-ink">
-                Credential for “{state.name}” — copy it now, it won't be shown again.
-              </p>
-              <CommandLine command={state.secret} />
-              <p className="text-xs text-accent-ink/80">Use it in CI:</p>
-              <CommandLine
-                command={`echo $REGISTRY_TOKEN | docker login ${registryHost} -u ${state.name} --password-stdin`}
-              />
+            <div className="mt-4">
+              <SecretPanel title={`Credential for “${state.name}” — copy it now, it won't be shown again.`} secret={state.secret}>
+                <p className="text-xs text-accent-ink/80">Use it in CI:</p>
+                <CommandLine
+                  command={`echo $REGISTRY_TOKEN | docker login ${registryHost} -u ${state.name} --password-stdin`}
+                />
+              </SecretPanel>
             </div>
           )}
         </CardBody>
@@ -125,36 +170,40 @@ export function ServiceAccountsManager({
           </CardBody>
         ) : (
           <div>
-            {accounts.map((sa) => (
-              <div
-                key={sa.id}
-                className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5"
-              >
-                <Bot className="size-4 shrink-0 text-ink-3" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-medium">{sa.name}</span>
-                    <Badge>{PERMISSION_LABEL[sa.permission] ?? sa.permission}</Badge>
+            {accounts.map((sa) => {
+              const expired = expiryState(sa.expiresAt).state === "expired";
+              return (
+                <div
+                  key={sa.id}
+                  data-sa-row={sa.name}
+                  className={`flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5 ${expired ? "opacity-60" : ""}`}
+                >
+                  <Bot className="size-4 shrink-0 text-ink-3" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-medium">{sa.name}</span>
+                      <Badge>{PERMISSION_LABEL[sa.permission] ?? sa.permission}</Badge>
+                      <ExpiryBadge expiresAt={sa.expiresAt} />
+                    </div>
+                    <div className="mt-0.5 text-xs text-ink-2">
+                      <span className="font-mono">{sa.tokenPrefix}</span> · created {relativeTime(sa.createdAt)} · {lastUsedText(sa.lastUsedAt, sa.lastUsedIp)}
+                    </div>
+                    {sa.description && <div className="mt-0.5 text-xs text-ink-3">{sa.description}</div>}
                   </div>
-                  <div className="mt-0.5 text-xs text-ink-2">
-                    <span className="font-mono">{sa.tokenPrefix}</span> · created{" "}
-                    {relativeTime(sa.createdAt)} · last used {relativeTime(sa.lastUsedAt)}
-                    {sa.expiresAt && ` · expires ${new Date(sa.expiresAt).toLocaleDateString()}`}
-                  </div>
-                  {sa.description && <div className="mt-0.5 text-xs text-ink-3">{sa.description}</div>}
+                  <RotateButton sa={sa} registryHost={registryHost} />
+                  <form action={deleteServiceAccount}>
+                    <input type="hidden" name="id" value={sa.id} />
+                    <button
+                      type="submit"
+                      aria-label={`Delete ${sa.name}`}
+                      className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </form>
                 </div>
-                <form action={deleteServiceAccount}>
-                  <input type="hidden" name="id" value={sa.id} />
-                  <button
-                    type="submit"
-                    aria-label={`Delete ${sa.name}`}
-                    className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </form>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

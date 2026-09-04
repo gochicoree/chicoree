@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/session";
 import { instanceStats } from "@/lib/data";
 import { recentJobRuns } from "@/lib/jobs";
+import { credentialStats } from "@/lib/credential-auth";
 import { registryHealth } from "@/lib/registry-client";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { PageHeader, StatTile } from "@/components/page-header";
@@ -17,7 +18,13 @@ export const metadata: Metadata = { title: "Administration" };
 
 export default async function AdminPage() {
   const session = await requireAdmin();
-  const [stats, health, runs, checklist] = await Promise.all([instanceStats(), registryHealth(), recentJobRuns(6), adminSetupChecklist(session.user.id)]);
+  const [stats, health, runs, checklist, credentials] = await Promise.all([
+    instanceStats(),
+    registryHealth(),
+    recentJobRuns(6),
+    adminSetupChecklist(session.user.id),
+    credentialStats(),
+  ]);
   const dedupSaved = Math.max(stats.logicalBytes - stats.blobBytes, 0);
 
   return (
@@ -46,6 +53,48 @@ export default async function AdminPage() {
         <StatTile label="Logical storage" value={formatBytes(stats.logicalBytes)} />
         <StatTile label="Saved by dedup" value={formatBytes(dedupSaved)} />
       </div>
+
+      <Card className="mt-6" data-credentials-card>
+        <CardHeader
+          eyebrow="Credentials"
+          title="Access tokens and service accounts"
+          description="Expiry across every user and organization. The token-expiry job emails owners a week ahead; revoke individual tokens from a user's page."
+          action={
+            <Link href="/admin/users" className={buttonClasses("secondary", "sm")}>
+              Users
+            </Link>
+          }
+        />
+        <div className="grid grid-cols-3 divide-x divide-line">
+          <div className="px-4 py-3 sm:px-5">
+            <div className="eyebrow">Expiring within 7 days</div>
+            <div className={`font-display text-xl font-semibold ${credentials.expiringSoon > 0 ? "text-danger" : ""}`} data-stat="expiring">
+              {credentials.expiringSoon}
+            </div>
+            <div className="text-xs text-ink-3">
+              {credentials.tokens.expiringSoon} tokens · {credentials.serviceAccounts.expiringSoon} service accounts
+            </div>
+          </div>
+          <div className="px-4 py-3 sm:px-5">
+            <div className="eyebrow">Never expiring</div>
+            <div className="font-display text-xl font-semibold" data-stat="never">
+              {credentials.neverExpiring}
+            </div>
+            <div className="text-xs text-ink-3">
+              {credentials.tokens.neverExpiring} tokens · {credentials.serviceAccounts.neverExpiring} service accounts
+            </div>
+          </div>
+          <div className="px-4 py-3 sm:px-5">
+            <div className="eyebrow">Expired</div>
+            <div className="font-display text-xl font-semibold" data-stat="expired">
+              {credentials.expired}
+            </div>
+            <div className="text-xs text-ink-3">
+              {credentials.tokens.expired} tokens · {credentials.serviceAccounts.expired} service accounts
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader

@@ -13,12 +13,20 @@ import {
   user as userTable,
 } from "@/db/schema";
 import { isDockerHubUrl, proxyLocalName } from "./proxy-shared";
+import { restrictionAllows, type TokenRestriction } from "./token-policy-shared";
 
 export type RegistryAction = "pull" | "push" | "delete";
 
 export type Caller =
   | { kind: "anonymous" }
-  | { kind: "user"; userId: string; isAdmin: boolean; patScope: "read" | "write" | null }
+  | {
+      kind: "user";
+      userId: string;
+      isAdmin: boolean;
+      patScope: "read" | "write" | null;
+      /** Personal access tokens can be limited to one organization / a few repositories (lib/token-policy-shared.ts). */
+      restriction?: TokenRestriction | null;
+    }
   | {
       kind: "sa";
       saId: string;
@@ -94,6 +102,11 @@ export async function allowedRepositoryActions(
         if (allowed.length === 0 && visibility === "public") allowed = ["pull"];
       }
       if (caller.patScope === "read") allowed = allowed.filter((a) => a === "pull");
+      // A restricted token grants nothing outside its organization / repositories,
+      // whatever the user's roles would allow — the scope is simply not granted.
+      if (caller.restriction && !restrictionAllows(caller.restriction, { organizationId: org.id, repositoryId: repo?.id ?? null })) {
+        allowed = [];
+      }
       break;
     }
 
@@ -127,6 +140,8 @@ export async function allowedRepositoryActions(
 /** Instance admins (user.role = 'admin') may list the full catalog. */
 export async function mayAccessCatalog(caller: Caller): Promise<boolean> {
   if (caller.kind !== "user") return false;
+  // The catalog spans every organization; a token limited to one cannot list it.
+  if (caller.restriction) return false;
   if (caller.isAdmin) return true;
   const u = await db.query.user.findFirst({ where: eq(userTable.id, caller.userId) });
   return u?.role === "admin";
