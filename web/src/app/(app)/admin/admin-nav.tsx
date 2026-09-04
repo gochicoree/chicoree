@@ -5,6 +5,8 @@ const items = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/organizations", label: "Organizations" },
   { href: "/admin/jobs", label: "Jobs" },
+  { href: "/admin/scanning", label: "Scanning" },
+  { href: "/admin/security", label: "Security" },
   { href: "/admin/metrics", label: "Metrics" },
   { href: "/admin/health", label: "Health" },
   { href: "/admin/audit", label: "Audit" },

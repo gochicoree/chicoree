@@ -55,12 +55,34 @@ export const env = {
     return process.env.JOB_SCHEDULER !== "false";
   },
 
-  // Clair
+  // Vulnerability scanning defaults (Administration → Scanning overrides them).
+  // Whether scanning is on is answered by lib/scanners `scanningEnabled()`,
+  // never by these getters alone.
+  /** off | clair | trivy; unset = clair when CLAIR_URL is set, else off. */
+  get scanner(): "off" | "clair" | "trivy" {
+    const v = (process.env.SCANNER ?? "").trim().toLowerCase();
+    if (v === "clair" || v === "trivy" || v === "off") return v;
+    return this.clairUrl ? "clair" : "off";
+  },
   get clairUrl() {
     return process.env.CLAIR_URL ?? "";
   },
-  get clairEnabled() {
-    return this.clairUrl !== "";
+  /** Optional Trivy server (client/server mode); empty = standalone trivy with a local database. */
+  get trivyServerUrl() {
+    return process.env.TRIVY_SERVER_URL ?? "";
+  },
+  get trivyTimeoutSeconds() {
+    const n = Number(process.env.TRIVY_TIMEOUT_SECONDS ?? 600);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 600;
+  },
+  /** The trivy binary (on PATH in the container image). */
+  get trivyBin() {
+    return process.env.TRIVY_BIN ?? "trivy";
+  },
+  /** Where trivy keeps its vulnerability database; the compose files mount a volume here. */
+  get trivyCacheDir() {
+    if (process.env.TRIVY_CACHE_DIR) return process.env.TRIVY_CACHE_DIR;
+    return process.env.NODE_ENV === "production" ? "/var/lib/chicoree/trivy" : ".trivy-cache";
   },
 
   // SMTP

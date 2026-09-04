@@ -77,8 +77,15 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in .env}
       JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
       JOB_SCHEDULER: ${JOB_SCHEDULER:-true}
-      # Empty disables scanning and hides vulnerability data (see README).
+      # Vulnerability scanner: SCANNER=off|clair|trivy (empty: clair when
+      # CLAIR_URL is set, else off); Administration → Scanning overrides it.
+      SCANNER: ${SCANNER:-}
+      # Empty disables Clair and hides vulnerability data (see README).
       CLAIR_URL: ${CLAIR_URL-http://clair:6060}
+      # Trivy (SCANNER=trivy) runs inside this container and downloads its own
+      # database unless TRIVY_SERVER_URL points at the trivy service (COMPOSE_PROFILES=trivy).
+      TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
+      TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       PASSKEY_RP_ID: ${DOMAIN}
       PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Chicorée Registry}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -123,6 +130,7 @@ services:
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
     volumes:
       - token-keys:/var/lib/chicoree/keys
+      - trivy-cache:/var/lib/chicoree/trivy
     labels:
       - traefik.enable=true
       - traefik.http.routers.web.rule=Host(`${DOMAIN}`)
@@ -234,8 +242,22 @@ services:
       web:
         condition: service_healthy
 
+  trivy:
+    # Optional Trivy server (COMPOSE_PROFILES=trivy, SCANNER=trivy): keeps the
+    # vulnerability database updated once for every web replica; the web
+    # container runs the trivy client against it.
+    image: aquasec/trivy:0.74.0
+    profiles: [trivy]
+    restart: unless-stopped
+    logging: *logging
+    command: ["server", "--listen", "0.0.0.0:4954"]
+    volumes:
+      - trivy-server-cache:/root/.cache/trivy
+
 volumes:
   traefik-acme:
   pg-data:
   registry-data:
   token-keys:
+  trivy-cache:
+  trivy-server-cache:

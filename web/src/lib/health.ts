@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { env } from "./env";
 import { formatBytes, relativeTime } from "./format";
 import { registryStatus, type RegistryStatus } from "./registry-client";
+import { getScanner, scanningEnabled } from "./scanners";
 
 export type HealthStatus = "ok" | "warn" | "error" | "none";
 
@@ -172,77 +173,24 @@ async function checkDatabase(): Promise<HealthCheck> {
   };
 }
 
-// --- Clair -------------------------------------------------------------------
+// --- Scanner backend ---------------------------------------------------------
 
-async function checkClair(): Promise<HealthCheck> {
-  const key = "clair";
-  const title = "Clair (vulnerability scanning)";
-  if (!env.clairEnabled) {
-    return { key, title, status: "none", summary: "Not configured (CLAIR_URL is empty); scanning is off.", details: [] };
-  }
-  const base = env.clairUrl.replace(/\/$/, "");
-  const details: { label: string; value: string }[] = [{ label: "URL", value: base }];
-  const started = Date.now();
-  // /healthz lives on Clair's introspection port; on the API port it is a 404,
-  // so fall back to the indexer state endpoint as a liveness probe.
-  let alive = false;
-  let probeNote = "";
-  try {
-    const res = await fetch(`${base}/healthz`, { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (res.ok) {
-      alive = true;
-      probeNote = "/healthz";
-    } else {
-      const state = await fetch(`${base}/indexer/api/v1/index_state`, { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
-      alive = state.ok;
-      probeNote = state.ok ? "/indexer/api/v1/index_state" : `index_state answered ${state.status}`;
-    }
-  } catch (e) {
-    return { key, title, status: "error", summary: `Unreachable: ${message(e)}`, details };
-  }
-  const latencyMs = Date.now() - started;
-  details.push({ label: "Liveness", value: `${probeNote} · ${latencyMs} ms` });
-  if (!alive) return { key, title, status: "error", summary: "Clair is not answering", details, latencyMs };
-
-  // Updater freshness (Clair 4.8: GET /matcher/api/v1/internal/update_operation
-  // returns { "<updater>": [ { ref, updater, fingerprint, date } ... ] }).
-  try {
-    const res = await fetch(`${base}/matcher/api/v1/internal/update_operation`, { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) {
-      details.push({ label: "Updaters", value: `update_operation answered ${res.status}` });
-      return { key, title, status: "warn", summary: "Up; updater status unavailable", details, latencyMs };
-    }
-    const ops = (await res.json()) as Record<string, { date?: string }[]>;
-    let updaters = 0;
-    let latest = 0;
-    for (const list of Object.values(ops ?? {})) {
-      if (!Array.isArray(list) || list.length === 0) continue;
-      updaters++;
-      for (const op of list) {
-        const t = op?.date ? Date.parse(op.date) : NaN;
-        if (Number.isFinite(t)) latest = Math.max(latest, t);
-      }
-    }
-    details.push({ label: "Updaters with data", value: String(updaters) });
-    if (updaters === 0) {
-      details.push({ label: "Last update", value: "none yet" });
-      return { key, title, status: "warn", summary: "Up; vulnerability databases are still syncing (no updater has run)", details, latencyMs };
-    }
-    const age = Date.now() - latest;
-    details.push({ label: "Last update", value: `${new Date(latest).toISOString()} (${relativeTime(new Date(latest))})` });
-    const stale = age > 48 * 3600_000;
+/** Clair or Trivy, whichever Administration → Scanning selects; each backend probes itself. */
+async function checkScanner(): Promise<HealthCheck> {
+  const key = "scanner";
+  const scanner = await getScanner();
+  if (!scanner) {
     return {
       key,
-      title,
-      status: stale ? "warn" : "ok",
-      summary: stale ? "Up, but no updater ran in the last 48 hours" : `Up; advisories updated ${relativeTime(new Date(latest))}`,
-      details,
-      latencyMs,
+      title: "Vulnerability scanner",
+      status: "none",
+      summary: "Scanning is off (Administration → Scanning, or SCANNER / CLAIR_URL in the environment).",
+      details: [],
     };
-  } catch (e) {
-    details.push({ label: "Updaters", value: message(e) });
-    return { key, title, status: "warn", summary: "Up; updater status unavailable", details, latencyMs };
   }
+  const title = `Vulnerability scanner (${scanner.label})`;
+  const h = await scanner.health();
+  return { key, title, status: h.status, summary: h.summary, details: h.details, latencyMs: h.latencyMs };
 }
 
 // --- token keys --------------------------------------------------------------
@@ -288,7 +236,7 @@ async function checkTokenKeys(status: RegistryStatus | null): Promise<HealthChec
 async function checkScans(): Promise<HealthCheck> {
   const key = "scans";
   const title = "Vulnerability scans";
-  if (!env.clairEnabled) return { key, title, status: "none", summary: "Scanning is off (no Clair).", details: [] };
+  if (!(await scanningEnabled())) return { key, title, status: "none", summary: "Scanning is off (no scanner backend configured).", details: [] };
   const { rows } = await db.execute(sql`
     SELECT count(*) FILTER (WHERE status = 'pending')::int AS pending,
            count(*) FILTER (WHERE status = 'indexing')::int AS indexing,
@@ -444,7 +392,7 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
   const checks = await Promise.all([
     guarded("registry", "Registry (registryd)", () => checkRegistry(probe, status, statusError)),
     guarded("database", "Postgres", checkDatabase),
-    guarded("clair", "Clair (vulnerability scanning)", checkClair),
+    guarded("scanner", "Vulnerability scanner", checkScanner),
     guarded("keys", "Token signing keys", () => checkTokenKeys(status)),
     guarded("scans", "Vulnerability scans", checkScans),
     guarded("webhooks", "Webhooks", checkWebhooks),

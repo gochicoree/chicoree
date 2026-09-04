@@ -3,6 +3,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { env } from "./env";
+import { scannerLabel, scanningEnabled } from "./scanners";
 import { quickHealth } from "./health";
 import { getInstanceSettings } from "./instance-settings";
 import { listSchedules } from "./schedules";
@@ -31,11 +32,13 @@ export interface AdminChecklist {
 export const BACKUPS_DOC_URL = "https://github.com/ruohki/chicoree#operations";
 
 export async function adminSetupChecklist(userId: string): Promise<AdminChecklist> {
-  const [settings, schedules, health, dismissedRow] = await Promise.all([
+  const [settings, schedules, health, dismissedRow, scanning, scanner] = await Promise.all([
     getInstanceSettings(),
     listSchedules(),
     quickHealth(),
     db.execute(sql`SELECT admin_checklist_dismissed_at AS at FROM user_settings WHERE user_id = ${userId}`),
+    scanningEnabled(),
+    scannerLabel(),
   ]);
   const providers = [
     settings.github.enabled && settings.github.clientId ? "GitHub" : null,
@@ -74,10 +77,10 @@ export async function adminSetupChecklist(userId: string): Promise<AdminChecklis
     {
       key: "scanner",
       title: "Vulnerability scanning",
-      status: env.clairEnabled ? "ok" : "warn",
-      summary: env.clairEnabled ? `Clair at ${env.clairUrl}; images are scanned on push.` : "CLAIR_URL is empty: images are stored but never scanned.",
-      href: "/admin/health",
-      linkLabel: "Health",
+      status: scanning ? "ok" : "warn",
+      summary: scanning ? `${scanner}; images are scanned on push.` : "No scanner configured: images are stored but never scanned.",
+      href: "/admin/scanning",
+      linkLabel: "Scanning",
     },
     {
       key: "metrics",

@@ -19,7 +19,10 @@ import { Button } from "@/components/ui/button";
 import { VulnerabilityPanel } from "./vulnerability-panel";
 import { imageReference } from "@/lib/library";
 import { decodeRepoParam, repoHref } from "@/lib/proxy-shared";
-import { manifestBlockReason } from "@/lib/pull-policy";
+import { loadExceptionRules, manifestBlockReason } from "@/lib/pull-policy";
+import { getScanner } from "@/lib/scanners";
+import { ensureFindings } from "@/lib/scan";
+import { reportKind } from "@/lib/scanners/normalize";
 import { manifestDeleteBlocker } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { RuleBadges } from "@/components/tag-rules-manager";
@@ -137,7 +140,8 @@ export default async function TagDetailPage({
 
   const actor = await resolveActor(manifest.pushedBy);
   const blocked = await manifestBlockReason(found.repo.id, digest);
-  const scanning = env.clairEnabled;
+  const scanner = await getScanner();
+  const scanning = !!scanner;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
   // Tag rules: lock badges for a tag reference, and whether the image may be deleted by digest.
@@ -145,6 +149,14 @@ export default async function TagDetailPage({
   const rules = await effectiveTagRules(found.repo.organizationId, found.repo.id);
   const flags = isDigestRef ? null : tagFlags(rules, reference);
   const deletion = canManage ? await manifestDeleteBlocker(found.repo, digest) : null;
+  // Findings (legacy Clair rows are normalised on first read) and the exceptions that may accept them.
+  const findings = scan?.status === "scanned" ? await ensureFindings(scan) : [];
+  const exceptionRules = scanning
+    ? (await loadExceptionRules(found.repo.organizationId, found.repo.id)).map((r) => ({
+        ...r,
+        expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+      }))
+    : [];
 
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],
@@ -308,13 +320,20 @@ export default async function TagDetailPage({
                             ? {
                                 status: scan.status,
                                 summary: (scan.summary as SeveritySummary) ?? null,
-                                report: scan.report,
                                 error: scan.error,
                                 updatedAt: scan.updatedAt.toISOString(),
+                                // Legacy rows get their label from the report shape until the write-back lands.
+                                scanner: scan.scanner ?? reportKind(scan.report),
+                                scannerVersion: scan.scannerVersion,
                               }
                             : null
                         }
-                        clairEnabled={scanning}
+                        findings={findings}
+                        rules={exceptionRules}
+                        scannerLabel={scanner?.label ?? null}
+                        canManage={canManage}
+                        organizationId={found.repo.organizationId}
+                        repositoryId={found.repo.id}
                       />
                     ),
                   },

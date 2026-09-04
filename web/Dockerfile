@@ -21,9 +21,14 @@ RUN npm ci --omit=dev --no-audit --no-fund --maxsockets 4 --fetch-retries 5
 
 FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 \
+    TRIVY_CACHE_DIR=/var/lib/chicoree/trivy
 RUN addgroup -S app && adduser -S app -G app \
-    && mkdir -p /var/lib/chicoree/keys && chown app:app /var/lib/chicoree/keys
+    && mkdir -p /var/lib/chicoree/keys /var/lib/chicoree/trivy \
+    && chown app:app /var/lib/chicoree/keys /var/lib/chicoree/trivy
+# Trivy scanner backend (SCANNER=trivy): a static binary, so it runs on alpine
+# as is. Its database lands in TRIVY_CACHE_DIR (mount a volume there).
+COPY --from=aquasec/trivy:0.74.0 /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=migrate-deps /migrate/node_modules /migrate/node_modules

@@ -5,7 +5,9 @@ import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { jobRuns, manifests, organization, repositories, tags, vulnerabilityScans } from "@/db/schema";
 import { triggerGarbageCollection } from "./registry-client";
-import { runScan } from "./scan";
+import { normalizeLegacyScans, runScan } from "./scan";
+import { scanningEnabled } from "./scanners";
+import { expireExceptions } from "./security";
 import { env } from "./env";
 import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
@@ -47,13 +49,13 @@ export const JOBS: Record<string, JobDefinition> = {
     name: "scan-stale",
     title: "Re-scan stale images",
     description:
-      "Re-submits tagged images to Clair whose last scan is older than the given age (or that were never scanned).",
+      "Re-scans tagged images with the configured scanner (Administration → Scanning) whose last scan is older than the given age, that were never scanned, or whose last scan failed. olderThan=0s re-scans everything.",
     params: [
       { name: "olderThan", description: "Age threshold, e.g. 7d, 12h", default: "7d" },
       { name: "limit", description: "Maximum images to scan in one run", default: "50" },
     ],
     run: async (params) => {
-      if (!env.clairEnabled) throw new Error("Clair is not configured (CLAIR_URL)");
+      if (!(await scanningEnabled())) throw new Error("Scanning is off (Administration → Scanning)");
       const cutoff = new Date(Date.now() - durationToMs(params.olderThan, 7 * 86_400_000));
       const limit = Math.max(1, Math.min(500, Number(params.limit) || 50));
       const { rows } = await db.execute(sql`
@@ -138,9 +140,28 @@ JOBS.retention = {
     }),
 };
 
-/** Jobs that make sense in this deployment (scanning needs Clair). */
-export function listJobs(): JobDefinition[] {
-  return Object.values(JOBS).filter((j) => j.name !== "scan-stale" || env.clairEnabled);
+JOBS["scan-normalize"] = {
+  name: "scan-normalize",
+  title: "Normalise legacy scan reports",
+  description:
+    "One-off backfill after upgrading: turns scan rows that only hold Clair's raw report into normalised findings and fills the scan_findings table behind the CVE search and the security pages. Safe to run repeatedly; does nothing once every row is converted.",
+  params: [{ name: "limit", description: "Rows to convert per run", default: "200" }],
+  run: async (params) => normalizeLegacyScans(Math.max(1, Math.min(5000, Number(params.limit) || 200))),
+};
+
+JOBS["exceptions-expire"] = {
+  name: "exceptions-expire",
+  title: "Apply expired vulnerability exceptions",
+  description:
+    "Recomputes pull blocks for organizations whose accepted risks (Security → exceptions) have expired, so the findings count against the pull policy again, and drops exceptions expired for more than 30 days. Schedule it hourly or daily.",
+  params: [],
+  run: async () => expireExceptions(),
+};
+
+/** Jobs that make sense in this deployment (re-scanning needs a scanner backend). */
+export async function listJobs(): Promise<JobDefinition[]> {
+  const scanning = await scanningEnabled();
+  return Object.values(JOBS).filter((j) => j.name !== "scan-stale" || scanning);
 }
 
 /** Execute a job and record the run. Resolves with the job_runs row id. */

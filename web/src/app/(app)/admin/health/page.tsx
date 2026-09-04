@@ -33,7 +33,7 @@ export default async function AdminHealthPage() {
       <PageHeader
         eyebrow="Instance"
         title="Administration"
-        description="Live checks against the registry, the database, Clair, the token keys and the background machinery. Each probe times out after 3 seconds."
+        description="Live checks against the registry, the database, the vulnerability scanner, the token keys and the background machinery. Each probe times out after 3 seconds."
         action={
           <>
             <Badge tone={TONE[worst]}>{worst === "ok" ? "all systems healthy" : worst === "warn" ? "needs attention" : "problems found"}</Badge>

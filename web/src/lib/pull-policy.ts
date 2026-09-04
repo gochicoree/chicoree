@@ -2,14 +2,46 @@
 // per-repository override. Images whose scan has findings at or above the
 // threshold are recorded in manifest_blocks, which registryd consults on
 // every manifest pull (its own service reads excepted).
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { manifestBlocks, manifests, organizationSettings, repositories, vulnerabilityScans } from "@/db/schema";
+import { manifestBlocks, manifests, organizationSettings, repositories, vulnerabilityExceptions, vulnerabilityScans } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
 import { effectivePolicy, violation } from "./pull-policy-shared";
 import { notify } from "./notify";
+import { effectiveSummary, type ExceptionRule } from "./scanner-shared";
+import { findingsOf } from "./scanners/normalize";
 
 export * from "./pull-policy-shared";
+
+/**
+ * The exceptions that can apply to a repository: the organization-wide ones
+ * plus its own. Expired rows are returned too; the pure helpers ignore them.
+ */
+export async function loadExceptionRules(organizationId: string, repositoryId: string | null): Promise<(typeof vulnerabilityExceptions.$inferSelect)[]> {
+  return db.query.vulnerabilityExceptions.findMany({
+    where: and(
+      eq(vulnerabilityExceptions.organizationId, organizationId),
+      repositoryId
+        ? or(isNull(vulnerabilityExceptions.repositoryId), eq(vulnerabilityExceptions.repositoryId, repositoryId))
+        : isNull(vulnerabilityExceptions.repositoryId),
+    ),
+  });
+}
+
+/**
+ * The severity counts the pull policy judges: the scan's findings minus
+ * whatever the exceptions accept. Rows without findings or report (never
+ * normalised) fall back to their stored summary.
+ */
+export function effectiveScanSummary(
+  scan: { findings: unknown; report: unknown; scanner: string | null; summary: unknown },
+  rules: ExceptionRule[],
+  repositoryId: string | null,
+): SeveritySummary | null {
+  const { findings } = findingsOf(scan);
+  if (findings.length === 0 && !Array.isArray(scan.findings) && !scan.report) return (scan.summary as SeveritySummary | null) ?? null;
+  return effectiveSummary(findings, rules, repositoryId);
+}
 
 /**
  * Recompute manifest_blocks for one repository from its scans and policy.
@@ -37,10 +69,12 @@ export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ b
       ),
     });
     const byDigest = new Map(scans.map((s) => [s.digest, s]));
+    const rules = await loadExceptionRules(repo.organizationId, repositoryId);
     for (const r of rows) {
       const scan = byDigest.get(r.digest);
       if (scan?.status !== "scanned") continue; // only definitive results block
-      const why = violation(scan.summary as SeveritySummary | null, policy);
+      // Accepted risks (vulnerability_exceptions) never count against the policy.
+      const why = violation(effectiveScanSummary(scan, rules, repositoryId), policy);
       if (why) blocked.set(r.digest, why);
     }
     for (const r of rows) {

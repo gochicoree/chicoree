@@ -30,8 +30,15 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?run scripts/gen-keys.sh first}
       JOBS_API_TOKEN: ${JOBS_API_TOKEN:-}
       JOB_SCHEDULER: ${JOB_SCHEDULER:-true}
-      # Empty disables scanning (and hides vulnerability data in the UI).
+      # Vulnerability scanner: SCANNER=off|clair|trivy (empty: clair when
+      # CLAIR_URL is set, else off); Administration → Scanning overrides it.
+      SCANNER: ${SCANNER:-}
+      # Empty disables Clair (and hides vulnerability data in the UI).
       CLAIR_URL: ${CLAIR_URL-http://clair:6060}
+      # Trivy runs inside this container and downloads its own database unless
+      # TRIVY_SERVER_URL points at the optional trivy service (profile "trivy").
+      TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
+      TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
@@ -77,6 +84,7 @@ services:
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-}
     volumes:
       - ./secrets/registry-token.key:/run/secrets/registry-token.key:ro
+      - trivy-cache:/var/lib/chicoree/trivy
     ports:
       - "3000:3000"
     depends_on:
@@ -155,6 +163,21 @@ services:
       postgres:
         condition: service_healthy
 
+  trivy:
+    # Optional Trivy server (COMPOSE_PROFILES=trivy with SCANNER=trivy): keeps
+    # the vulnerability database updated once for every web replica; the web
+    # container runs the trivy client against it. Without this service the
+    # web container downloads the database itself.
+    image: aquasec/trivy:0.74.0
+    profiles: [trivy]
+    command: ["server", "--listen", "0.0.0.0:4954"]
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "3"
+    volumes:
+      - trivy-server-cache:/root/.cache/trivy
+
   mailpit:
     image: axllent/mailpit:latest
     ports:
@@ -192,3 +215,5 @@ volumes:
   pg-data:
   registry-data:
   minio-data:
+  trivy-cache:
+  trivy-server-cache:

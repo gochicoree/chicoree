@@ -53,9 +53,16 @@ services:
       # Generated on first start into the shared token-keys volume.
       - JWT_PRIVATE_KEY_FILE=/var/lib/chicoree/keys/registry-token.key
       - JWT_PUBLIC_KEY_FILE=/var/lib/chicoree/keys/registry-token.pub
-      # Empty disables scanning and hides vulnerability data; then delete the
+      # Vulnerability scanner: SCANNER=off|clair|trivy (empty: clair when
+      # CLAIR_URL is set, else off); Administration → Scanning overrides it.
+      - SCANNER=${SCANNER:-}
+      # Empty disables Clair and hides vulnerability data; then delete the
       # clair service below as well.
       - CLAIR_URL=${CLAIR_URL-http://clair:6060}
+      # Trivy (SCANNER=trivy) runs inside this container against the trivy
+      # service below (delete it and leave the URL empty for standalone mode).
+      - TRIVY_SERVER_URL=${TRIVY_SERVER_URL-http://trivy:4954}
+      - TRIVY_CACHE_DIR=/var/lib/chicoree/trivy
       - PASSKEY_RP_ID=${SERVICE_FQDN_WEB}
       - PASSKEY_RP_NAME=${PASSKEY_RP_NAME:-Chicorée Registry}
       # Email (leave SMTP_HOST empty to log mail to the container output)
@@ -103,6 +110,7 @@ services:
       - RATE_LIMIT_TRUSTED_PROXIES=${RATE_LIMIT_TRUSTED_PROXIES:-}
     volumes:
       - token-keys:/var/lib/chicoree/keys
+      - trivy-cache:/var/lib/chicoree/trivy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sign-in"]
       interval: 10s
@@ -213,7 +221,25 @@ services:
       web:
         condition: service_healthy
 
+  trivy:
+    # Optional Trivy server (SCANNER=trivy): keeps the vulnerability database
+    # updated for the web container's trivy client. Delete this service and
+    # leave TRIVY_SERVER_URL empty to let the web container fetch the
+    # database itself.
+    image: aquasec/trivy:0.74.0
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    command: ["server", "--listen", "0.0.0.0:4954"]
+    volumes:
+      - trivy-server-cache:/root/.cache/trivy
+
 volumes:
   pg-data:
   registry-data:
   token-keys:
+  trivy-cache:
+  trivy-server-cache:

@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await authenticateJobsRequest(req.headers.get("authorization"));
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
-  const runs = await recentJobRuns(20);
+  const [runs, jobs] = await Promise.all([recentJobRuns(20), listJobs()]);
   return NextResponse.json({
-    jobs: listJobs().map(({ name, title, description, params }) => ({ name, title, description, params })),
+    jobs: jobs.map(({ name, title, description, params }) => ({ name, title, description, params })),
     runs,
   });
 }
