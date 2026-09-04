@@ -74,6 +74,9 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
       })
     : null;
   if (u && credential?.password) {
+    if ((await getInstanceSettings()).access.localSignIn !== "everyone") {
+      return { error: "password sign-in is disabled on this registry; docker login with an access token instead" };
+    }
     const ctx = await (await getAuth()).$context;
     const valid = await ctx.password.verify({ hash: credential.password, password });
     if (!valid) return { error: "invalid credentials" };

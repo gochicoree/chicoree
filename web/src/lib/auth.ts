@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
   admin,
@@ -20,10 +20,11 @@ import { orgAccessControl, orgRoles } from "./org-roles";
 import { checkOrgCreationQuota } from "./quota";
 import { ensureLibraryOrg, LIBRARY_SLUG } from "./library";
 import { ldap } from "./auth-ldap";
+import { enforceLocalSignIn } from "./auth-access";
 import { bindingsFor, parseGroupBindings } from "./group-bindings";
 import { needsGoogleGroupsApi, syncOAuthGroups } from "./oauth-groups";
 import { getInstanceSettings, settingsVersion, type EffectiveSettings } from "./instance-settings";
-import { auditAfterHook, auditBeforeHook, auditOrganizationHooks, auditSessionCreated, auditSessionDeleted, auditUserCreated, auditUserUpdate } from "./auth-audit";
+import { auditAfterHook, auditBefore, auditOrganizationHooks, auditSessionCreated, auditSessionDeleted, auditUserCreated, auditUserUpdate } from "./auth-audit";
 import { canCreateOrganization, enforceSignUpPolicy, INVITATION_HEADER, ORG_CREATION_DENIED } from "./signup-policy";
 import { clearOrganizationRedirect } from "./redirects";
 
@@ -66,7 +67,13 @@ function buildAuth(settings: EffectiveSettings) {
 
   return betterAuth({
   appName: `${brand} Registry`,
-  hooks: { before: auditBeforeHook, after: auditAfterHook },
+  hooks: {
+    before: createAuthMiddleware(async (raw) => {
+      await enforceLocalSignIn(raw as { path?: string; headers?: Headers | null; body?: unknown });
+      await auditBefore(raw);
+    }),
+    after: auditAfterHook,
+  },
   baseURL: env.appUrl,
   secret: env.authSecret,
   database: drizzleAdapter(db, { provider: "pg" }),

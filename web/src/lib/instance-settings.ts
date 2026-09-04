@@ -13,7 +13,7 @@ export type SettingsSource = "database" | "environment" | "none";
 
 // Sign-up controls and branding: shapes live in the *-shared modules so client
 // components can import them without touching the database.
-import { DEFAULT_ACCESS, type AccessSettings } from "./access-shared";
+import { DEFAULT_ACCESS, normalizeLocalSignInPath, type AccessSettings } from "./access-shared";
 import { DEFAULT_BRANDING, type BrandingSettings } from "./branding-shared";
 import type { ScannerSettings } from "./scanner-shared";
 export type { AccessSettings } from "./access-shared";
@@ -167,6 +167,8 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       allowOrganizationCreation: env.orgCreation,
       maxTokenLifetimeDays: env.tokenMaxLifetimeDays,
       requireTokenExpiry: env.tokenRequireExpiry,
+      localSignIn: env.localSignIn,
+      localSignInPath: normalizeLocalSignInPath(env.localSignInPath),
     },
     branding: {
       ...DEFAULT_BRANDING,
@@ -205,6 +207,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return d.metrics.enabled;
     case "access":
       return (
+        !!process.env.LOCAL_SIGNIN ||
         !!process.env.SIGNUP_MODE ||
         !!process.env.SIGNUP_ALLOWED_DOMAINS ||
         !!process.env.ORG_CREATION ||

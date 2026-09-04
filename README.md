@@ -438,6 +438,17 @@ sign-in page hides its *Create an account* link. When organization creation
 is restricted, non-admins see no *New organization* button and the API
 refuses.
 
+**Local sign-in.** *Local sign-in* on the same tab decides where password,
+magic-link and email-code sign-in are offered (`LOCAL_SIGNIN=everyone|hidden|off`
+as the default): *Everyone* is the normal sign-in page; *Hidden URL only*
+removes those methods from `/sign-in` and keeps them working on
+`/sign-in/<path>` (`LOCAL_SIGNIN_PATH`, default `local`) for a break-glass
+administrator while everybody else uses SSO, LDAP or passkeys; *Off* refuses
+them everywhere. The server enforces it: the auth endpoints reject local
+attempts that did not come through the hidden page, and `docker login` with
+an email and password is refused (access tokens keep working). Passkeys and
+LDAP are never affected.
+
 ### Access token policy
 
 The same *Access* tab (or the environment defaults) sets the rules every new

@@ -3,6 +3,12 @@
 
 export type SignUpMode = "open" | "invite" | "closed";
 export type OrgCreationPolicy = "everyone" | "admins";
+/**
+ * Local sign-in = password, magic link and email code (passkeys and LDAP
+ * are unaffected). "hidden" keeps it working only on /sign-in/<path>, for a
+ * break-glass administrator account when everyone else uses SSO.
+ */
+export type LocalSignInMode = "everyone" | "hidden" | "off";
 
 export interface AccessSettings {
   /** open: anyone; invite: only through an organization invitation; closed: no new accounts. */
@@ -14,6 +20,9 @@ export interface AccessSettings {
   maxTokenLifetimeDays: number;
   /** Refuse to create tokens that never expire. */
   requireTokenExpiry: boolean;
+  localSignIn: LocalSignInMode;
+  /** Last path segment of the hidden sign-in page: /sign-in/<localSignInPath>. */
+  localSignInPath: string;
 }
 
 /** Header the sign-up form sends so an invitee is matched to their invitation. */
@@ -25,7 +34,36 @@ export const DEFAULT_ACCESS: AccessSettings = {
   allowOrganizationCreation: "everyone",
   maxTokenLifetimeDays: 0,
   requireTokenExpiry: false,
+  localSignIn: "everyone",
+  localSignInPath: "local",
 };
+
+export const LOCAL_SIGNIN_MODES: { value: LocalSignInMode; label: string; description: string }[] = [
+  { value: "everyone", label: "Everyone", description: "Password, magic link and email code are offered on the sign-in page." },
+  { value: "hidden", label: "Hidden URL only", description: "The sign-in page shows only SSO, LDAP and passkeys; local methods work on the hidden page below." },
+  { value: "off", label: "Off", description: "Local methods are refused everywhere, including docker login with a password." },
+];
+
+/** Cookie that proves the browser opened the hidden page; its value is an HMAC of AUTH_SECRET. */
+export const LOCAL_SIGNIN_COOKIE = "chicoree-local-signin";
+export const LOCAL_SIGNIN_DISABLED = "Password sign-in is disabled on this registry; use your identity provider, a passkey, or an access token.";
+
+/** The hidden page's path segment: lowercase letters, digits and dashes, 1–64 characters. */
+export function normalizeLocalSignInPath(raw: string): string {
+  const v = raw.trim().toLowerCase().replace(/^\/+|\/+$/g, "");
+  return /^[a-z0-9-]{1,64}$/.test(v) && v !== "local-signin" ? v : "local";
+}
+
+/** Whether a better-auth request is a local (password / magic link / email code) sign-in attempt. */
+export function isLocalSignInRequest(path: string, body: unknown): boolean {
+  if (path === "/sign-in/email" || path === "/sign-in/magic-link" || path === "/sign-in/email-otp") return true;
+  if (path === "/email-otp/send-verification-otp") {
+    const type = body && typeof body === "object" ? (body as { type?: string }).type : undefined;
+    return !type || type === "sign-in";
+  }
+  return false;
+}
+
 
 export const SIGN_UP_MODES: { value: SignUpMode; label: string; description: string }[] = [
   { value: "open", label: "Open", description: "Anyone can create an account." },

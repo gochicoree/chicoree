@@ -306,7 +306,9 @@ fetch("http://127.0.0.1:3000/api/auth/sign-up/email", { method: "POST", headers:
   .then(async (r) => { console.log(r.status + " " + (await r.text()).slice(0, 200)); })
   .catch((e) => { console.log("0 " + e.message); });' 2>/dev/null || echo "0 exec failed")
 case "$SIGNUP" in
-  200*) ADMIN_STATE=created;;
+  200*) ADMIN_STATE=created
+        # The administrator typed this address themselves; skip the verification round trip.
+        $COMPOSE exec -T postgres psql -U chicoree -d chicoree -q -c "UPDATE \"user\" SET email_verified = true WHERE email = '$CH_ADMIN_EMAIL'" >/dev/null 2>&1 || true;;
   *"already"*|*"exist"*|422*) ADMIN_STATE=exists;;
   *) ADMIN_STATE="failed ($SIGNUP)";;
 esac

@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveAccessSettings } from "@/app/actions/admin-platform";
 import type { SettingsResult } from "@/app/actions/instance-settings";
 import type { AccessSettings } from "@/lib/access-shared";
-import { SIGN_UP_MODES } from "@/lib/access-shared";
+import { LOCAL_SIGNIN_MODES, SIGN_UP_MODES } from "@/lib/access-shared";
 import type { SettingsSource } from "@/lib/instance-settings";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,11 @@ function Radio({
   );
 }
 
-export function AccessForm({ access, source }: { access: AccessSettings; source: SettingsSource }) {
+export function AccessForm({ access, source, appUrl }: { access: AccessSettings; source: SettingsSource; appUrl: string }) {
   const [state, save, saving] = useActionState<SettingsResult | null, FormData>(saveAccessSettings, null);
   useResultToast(state);
+  const [localMode, setLocalMode] = useState(access.localSignIn);
+  const [localPath, setLocalPath] = useState(access.localSignInPath);
 
   return (
     <Card>
@@ -82,6 +84,55 @@ export function AccessForm({ access, source }: { access: AccessSettings; source:
               className="font-mono text-[13px]"
             />
           </Field>
+
+          <fieldset>
+            <legend className="mb-2 text-[13px] font-medium text-ink">Local sign-in (password, magic link, email code)</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {LOCAL_SIGNIN_MODES.map((m) => (
+                <label
+                  key={m.value}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line px-3 py-2.5 hover:bg-card-2 has-checked:border-action has-checked:bg-card-2"
+                >
+                  <input
+                    type="radio"
+                    name="localSignIn"
+                    value={m.value}
+                    checked={localMode === m.value}
+                    onChange={() => setLocalMode(m.value)}
+                    className="mt-1 size-4 accent-[var(--action)]"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">{m.label}</span>
+                    <span className="block text-xs text-ink-2">{m.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {localMode === "hidden" && (
+              <div className="mt-3 sm:max-w-md">
+                <Field
+                  label="Hidden page"
+                  htmlFor="localSignInPath"
+                  hint={`${appUrl}/sign-in/${localPath || "local"} — share it only with the people who need a local account. Letters, digits and dashes.`}
+                >
+                  <Input
+                    id="localSignInPath"
+                    name="localSignInPath"
+                    value={localPath}
+                    onChange={(e) => setLocalPath(e.target.value)}
+                    className="font-mono"
+                    placeholder="local"
+                    maxLength={64}
+                  />
+                </Field>
+              </div>
+            )}
+            {localMode === "off" && (
+              <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">
+                Make sure at least one administrator can sign in through a provider or a passkey before turning local sign-in off, and note that docker login with a password stops working too (access tokens keep working).
+              </p>
+            )}
+          </fieldset>
 
           <fieldset>
             <legend className="mb-2 text-[13px] font-medium text-ink">Organization creation</legend>

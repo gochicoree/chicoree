@@ -32,6 +32,7 @@ export default async function SignInPage({
         ldapName: s.ldap.name,
       }}
       signUp={{ mode: s.access.signUpMode, invitationId }}
+      local={{ mode: s.access.localSignIn }}
       next={next}
     />
   );
