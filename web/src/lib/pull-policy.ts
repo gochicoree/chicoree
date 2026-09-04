@@ -4,12 +4,13 @@
 // every manifest pull (its own service reads excepted).
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { manifestBlocks, manifests, organizationSettings, repositories, vulnerabilityExceptions, vulnerabilityScans } from "@/db/schema";
+import { manifestBlocks, manifestSignatures, manifests, organizationSettings, repositories, tags, vulnerabilityExceptions, vulnerabilityScans } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
-import { effectivePolicy, violation } from "./pull-policy-shared";
+import { effectivePolicy, effectiveSignaturePolicy, violation } from "./pull-policy-shared";
 import { notify } from "./notify";
 import { effectiveSummary, type ExceptionRule } from "./scanner-shared";
 import { findingsOf } from "./scanners/normalize";
+import { looksLikeArtifact, SIGNATURE_BLOCK_REASON } from "./signatures-shared";
 
 export * from "./pull-policy-shared";
 
@@ -44,10 +45,16 @@ export function effectiveScanSummary(
 }
 
 /**
- * Recompute manifest_blocks for one repository from its scans and policy.
- * Index manifests are blocked when any of their platform variants is.
+ * Recompute manifest_blocks for one repository from its scans and policies.
+ * Index manifests are blocked when any of their platform variants is. When
+ * the signature policy applies, every image without a cosign signature
+ * verified by a trusted key is blocked too (attached artifacts never are;
+ * variants of a verified index inherit its signature). Both reasons can
+ * apply to one image; the reason text names each. `quiet` skips the
+ * signature.blocked notification (pushes: the signature usually follows the
+ * image within seconds).
  */
-export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ blocked: number }> {
+export async function refreshRepositoryBlocks(repositoryId: string, opts: { quiet?: boolean } = {}): Promise<{ blocked: number }> {
   const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
   if (!repo) return { blocked: 0 };
   const org = await db.query.organizationSettings.findFirst({
@@ -56,7 +63,7 @@ export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ b
   const policy = effectivePolicy(org, repo);
 
   const rows = await db
-    .select({ digest: manifests.digest, mediaType: manifests.mediaType, payload: manifests.payload })
+    .select({ digest: manifests.digest, mediaType: manifests.mediaType, payload: manifests.payload, subjectDigest: manifests.subjectDigest })
     .from(manifests)
     .where(eq(manifests.repositoryId, repositoryId));
   const blocked = new Map<string, string>();
@@ -91,30 +98,82 @@ export async function refreshRepositoryBlocks(repositoryId: string): Promise<{ b
     }
   }
 
+  // Signature policy: images (not attached artifacts) without a verified signature.
+  const unsigned = new Set<string>();
+  if (rows.length > 0 && effectiveSignaturePolicy(org, repo)) {
+    const tagRows = await db.select({ name: tags.name, digest: tags.manifestDigest }).from(tags).where(eq(tags.repositoryId, repositoryId));
+    const tagsByDigest = new Map<string, string[]>();
+    for (const t of tagRows) tagsByDigest.set(t.digest, [...(tagsByDigest.get(t.digest) ?? []), t.name]);
+    const verifiedRows = await db
+      .select({ digest: manifestSignatures.manifestDigest })
+      .from(manifestSignatures)
+      .where(
+        and(eq(manifestSignatures.repositoryId, repositoryId), eq(manifestSignatures.kind, "signature"), eq(manifestSignatures.status, "verified")),
+      );
+    const verified = new Set(verifiedRows.map((v) => v.digest));
+    const parsedRows = rows.map((r) => {
+      let parsed: { config?: { mediaType?: string }; layers?: { mediaType?: string }[]; manifests?: { digest?: string }[] } = {};
+      try {
+        parsed = JSON.parse(r.payload);
+      } catch {
+        // unparsable payloads are treated as images
+      }
+      return { ...r, parsed: parsed ?? {} };
+    });
+    const coveredByIndex = new Set<string>();
+    for (const r of parsedRows) {
+      if (!/index|list/.test(r.mediaType) || !verified.has(r.digest)) continue;
+      for (const c of r.parsed.manifests ?? []) if (c.digest) coveredByIndex.add(c.digest);
+    }
+    for (const r of parsedRows) {
+      const artifact = looksLikeArtifact({
+        hasSubject: !!r.subjectDigest,
+        tags: tagsByDigest.get(r.digest) ?? [],
+        layerMediaTypes: (r.parsed.layers ?? []).map((l) => l.mediaType ?? ""),
+        configMediaType: r.parsed.config?.mediaType ?? null,
+      });
+      if (artifact || verified.has(r.digest) || coveredByIndex.has(r.digest)) continue;
+      unsigned.add(r.digest);
+    }
+  }
+  const final = new Map<string, string>(blocked);
+  for (const digest of unsigned) {
+    final.set(digest, final.has(digest) ? `${final.get(digest)}; ${SIGNATURE_BLOCK_REASON}` : SIGNATURE_BLOCK_REASON);
+  }
+
   const existing = await db.query.manifestBlocks.findMany({ where: eq(manifestBlocks.repositoryId, repositoryId) });
-  const current = new Map(existing.map((e) => [e.digest, e.reason]));
+  const current = new Map(existing.map((e) => [e.digest, `${e.pushersExempt ? "1" : "0"}${e.reason}`]));
   const newlyBlocked: { digest: string; reason: string }[] = [];
-  for (const [digest, reason] of blocked) {
-    if (current.get(digest) === reason) continue;
+  for (const [digest, reason] of final) {
+    // Only a pure signature block lets pushers (the signers) still read the image.
+    const pushersExempt = unsigned.has(digest) && !blocked.has(digest);
+    if (current.get(digest) === `${pushersExempt ? "1" : "0"}${reason}`) continue;
     if (!current.has(digest)) newlyBlocked.push({ digest, reason });
     await db
       .insert(manifestBlocks)
-      .values({ repositoryId, digest, reason })
-      .onConflictDoUpdate({ target: [manifestBlocks.repositoryId, manifestBlocks.digest], set: { reason } });
+      .values({ repositoryId, digest, reason, pushersExempt })
+      .onConflictDoUpdate({ target: [manifestBlocks.repositoryId, manifestBlocks.digest], set: { reason, pushersExempt } });
   }
   for (const e of existing) {
-    if (!blocked.has(e.digest)) {
+    if (!final.has(e.digest)) {
       await db
         .delete(manifestBlocks)
         .where(and(eq(manifestBlocks.repositoryId, repositoryId), eq(manifestBlocks.digest, e.digest)));
     }
   }
-  if (newlyBlocked.length > 0) {
-    await notify({ event: "scan.blocked", repositoryId, blocked: newlyBlocked }).catch((err) =>
+  const byScan = newlyBlocked.filter((b) => blocked.has(b.digest));
+  const bySignature = newlyBlocked.filter((b) => !blocked.has(b.digest));
+  if (byScan.length > 0) {
+    await notify({ event: "scan.blocked", repositoryId, blocked: byScan }).catch((err) =>
       console.error("scan.blocked notification failed:", err),
     );
   }
-  return { blocked: blocked.size };
+  if (bySignature.length > 0 && !opts.quiet) {
+    await notify({ event: "signature.blocked", repositoryId, blocked: bySignature }).catch((err) =>
+      console.error("signature.blocked notification failed:", err),
+    );
+  }
+  return { blocked: final.size };
 }
 
 /** Recompute every repository of an organization (after its policy changed). */

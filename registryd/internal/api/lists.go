@@ -74,15 +74,7 @@ func (s *Server) handleReferrers(w http.ResponseWriter, r *http.Request, rc *req
 		writeInternal(w, r, err)
 		return
 	}
-	descriptors := make([]manifest.Descriptor, 0, len(refs))
-	for _, ref := range refs {
-		descriptors = append(descriptors, manifest.Descriptor{
-			MediaType:    ref.MediaType,
-			Digest:       ref.Digest,
-			Size:         ref.Size,
-			ArtifactType: ref.ArtifactType,
-		})
-	}
+	descriptors := referrerDescriptors(refs)
 	if filter != "" {
 		w.Header().Set("OCI-Filters-Applied", "artifactType")
 	}
@@ -118,4 +110,21 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"repositories": repos})
+}
+
+// referrerDescriptors turns store rows into the descriptors of the referrers
+// index: media type, digest, size, artifactType and — as the distribution
+// spec requires — the annotations of the referring manifest.
+func referrerDescriptors(refs []store.Referrer) []manifest.Descriptor {
+	descriptors := make([]manifest.Descriptor, 0, len(refs))
+	for _, ref := range refs {
+		descriptors = append(descriptors, manifest.Descriptor{
+			MediaType:    ref.MediaType,
+			Digest:       ref.Digest,
+			Size:         ref.Size,
+			ArtifactType: ref.ArtifactType,
+			Annotations:  ref.Annotations,
+		})
+	}
+	return descriptors
 }

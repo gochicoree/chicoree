@@ -40,6 +40,8 @@ export const repositories = pgTable(
     blockUnrated: boolean("block_unrated"),
     /** Markdown shown on the repository page (Settings → General), at most README_MAX_BYTES. */
     readme: text("readme"),
+    /** Signature policy override: null = inherit the organization's; true/false = require a verified cosign signature or not. */
+    requireSignature: boolean("require_signature"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -129,6 +131,13 @@ export const manifestBlocks = pgTable(
     digest: text("digest").notNull(),
     /** Human-readable cause, returned to docker clients. */
     reason: text("reason").notNull(),
+    /**
+     * Signature-policy blocks only: callers whose token grants push on the
+     * repository may still read the manifest (they are the ones who sign
+     * it — cosign has to fetch the image before it can attach a signature).
+     * Vulnerability blocks never set this.
+     */
+    pushersExempt: boolean("pushers_exempt").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -326,6 +335,8 @@ export const organizationSettings = pgTable("organization_settings", {
   blockPullsAt: text("block_pulls_at", { enum: ["critical", "high", "medium", "low"] }),
   /** Whether findings without a severity rating count against the threshold. */
   blockUnrated: boolean("block_unrated").notNull().default(false),
+  /** Signature policy: pulls of images without a cosign signature from a trusted key are refused. */
+  requireSignature: boolean("require_signature").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -7,6 +7,9 @@ import { TagRulesManager, type TagRuleItem } from "@/components/tag-rules-manage
 import { orgPolicy } from "@/lib/pull-policy";
 import { getRetentionPolicies, toSettings } from "@/lib/retention";
 import { listTagRules, type TagRuleRow } from "@/lib/tag-rules";
+import { listTrustedKeys, type TrustedKeyRow } from "@/lib/signatures";
+import { SignaturePolicyForm } from "@/components/signature-policy-form";
+import { TrustedKeysManager, type TrustedKeyItem } from "@/components/trusted-keys-manager";
 import { repoSettingsContext } from "../context";
 
 function serializeRules(rows: TagRuleRow[]): TagRuleItem[] {
@@ -20,15 +23,28 @@ function serializeRules(rows: TagRuleRow[]): TagRuleItem[] {
   }));
 }
 
+function serializeKeys(rows: TrustedKeyRow[]): TrustedKeyItem[] {
+  return rows.map((k) => ({
+    id: k.id,
+    name: k.name,
+    fingerprint: k.fingerprint,
+    keyType: k.keyType,
+    repositoryId: k.repositoryId,
+    createdAt: k.createdAt.toISOString(),
+  }));
+}
+
 export default async function RepoPolicyPage({ params }: { params: Promise<{ org: string; repo: string }> }) {
   const { repo } = await repoSettingsContext(params);
-  const [orgSettings, rules, orgRules, retention] = await Promise.all([
+  const [orgSettings, rules, orgRules, retention, keys, orgKeys] = await Promise.all([
     db.query.organizationSettings.findFirst({
       where: eq(organizationSettings.organizationId, repo.organizationId),
     }),
     listTagRules(repo.organizationId, repo.id),
     listTagRules(repo.organizationId, null),
     getRetentionPolicies(repo.organizationId, repo.id),
+    listTrustedKeys(repo.organizationId, repo.id),
+    listTrustedKeys(repo.organizationId, null),
   ]);
   return (
     <div className="space-y-6">
@@ -38,6 +54,20 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
         level={repo.blockPullsAt ?? null}
         unrated={repo.blockUnrated ?? null}
         inherited={orgPolicy(orgSettings)}
+      />
+      <SignaturePolicyForm
+        scope="repository"
+        repositoryId={repo.id}
+        value={repo.requireSignature ?? null}
+        inherited={orgSettings?.requireSignature ?? false}
+        keyCount={keys.length + orgKeys.length}
+      />
+      <TrustedKeysManager
+        scope="repository"
+        organizationId={repo.organizationId}
+        repositoryId={repo.id}
+        keys={serializeKeys(keys)}
+        inherited={serializeKeys(orgKeys)}
       />
       <TagRulesManager
         scope="repository"

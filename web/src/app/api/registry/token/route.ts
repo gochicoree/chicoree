@@ -144,9 +144,17 @@ export async function GET(req: NextRequest) {
     // A renamed or transferred repository keeps answering pulls under its
     // former name: authorize those against the target, never for writes.
     const moved = await resolveRepositoryRedirect(target.orgSlug, target.repoName);
-    const granted = moved
+    let granted = moved
       ? await allowedRepositoryActions(caller, moved.orgSlug, moved.repoName, requested.filter((a) => a === "pull"))
       : await allowedRepositoryActions(caller, target.orgSlug, target.repoName, requested);
+    // Callers who may push get "push" on their pull tokens as well: the
+    // signature pull policy lets such tokens read an unsigned image (they
+    // are the ones who sign it), and cosign reads with a pull-only scope
+    // before it pushes the signature. Nothing else in registryd keys on it.
+    if (!moved && granted.includes("pull") && !granted.includes("push") && !requested.includes("push")) {
+      const extra = await allowedRepositoryActions(caller, target.orgSlug, target.repoName, ["push"]);
+      if (extra.includes("push")) granted = [...granted, "push"];
+    }
     if (granted.length > 0) {
       access.push({ type: "repository", name, actions: granted });
     }

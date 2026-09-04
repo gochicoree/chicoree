@@ -3,6 +3,7 @@
 
 export type NotificationEvent =
   | "scan.blocked"
+  | "signature.blocked"
   | "scan.completed"
   | "mirror.failed"
   | "webhook.failed"
@@ -25,6 +26,13 @@ export const NOTIFICATION_EVENTS: NotificationEventInfo[] = [
     event: "scan.blocked",
     label: "Pull blocked by scan",
     description: "A vulnerability scan pushed an image over the organization's pull policy threshold.",
+    scope: "organization",
+    defaultEmail: true,
+  },
+  {
+    event: "signature.blocked",
+    label: "Pull blocked by signature policy",
+    description: "The signature policy blocks images that carry no cosign signature from a trusted key (after a policy or key change).",
     scope: "organization",
     defaultEmail: true,
   },

@@ -3,3 +3,4 @@ export * from "./registry-schema";
 export * from "./audit-schema";
 export * from "./scanning-schema";
 export * from "./credentials-schema";
+export * from "./supply-chain-schema";

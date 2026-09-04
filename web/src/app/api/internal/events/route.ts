@@ -9,6 +9,7 @@ import { buildPushPayload, dispatchRepositoryWebhooks, emitRepositoryEvent, reso
 import { checkQuotaWarningsForRepository } from "@/lib/notify";
 import { getRepoByPath } from "@/lib/data";
 import { imageReference, splitImagePath } from "@/lib/library";
+import { onManifestPushed } from "@/lib/signatures";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,11 @@ export async function POST(req: NextRequest) {
           );
         }
       }
+      // Signatures and attestations arrive as pushes too: verify what was
+      // attached (or the image itself) and refresh the signature policy.
+      await onManifestPushed(event.repository, event.digest, event.tag).catch((err) =>
+        console.error("signature verification failed:", err),
+      );
       await runScan(event.repository, event.digest).catch((err) =>
         console.error("scan failed:", err),
       );

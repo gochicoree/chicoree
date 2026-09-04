@@ -42,6 +42,38 @@ export async function fetchBlobJson(repositoryPath: string, digest: string): Pro
 }
 
 /**
+ * Fetch raw blob bytes through the registry (signature payloads, SBOMs).
+ * Returns null when missing or larger than `maxBytes`.
+ */
+export async function fetchBlobBytes(
+  repositoryPath: string,
+  digest: string,
+  maxBytes = 16 * 1024 * 1024,
+): Promise<{ bytes: Buffer; mediaType: string | null } | null> {
+  const token = await systemPullToken(repositoryPath);
+  const res = await fetch(`${env.registryInternalUrl}/v2/${repositoryPath}/blobs/${digest}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length > maxBytes) return null;
+  return { bytes, mediaType: res.headers.get("content-type") };
+}
+
+/** Open a blob for streaming (the artifact download route); the caller forwards `res.body`. */
+export async function openBlobStream(repositoryPath: string, digest: string): Promise<Response | null> {
+  const token = await systemPullToken(repositoryPath);
+  const res = await fetch(`${env.registryInternalUrl}/v2/${repositoryPath}/blobs/${digest}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  return res.ok ? res : null;
+}
+
+/**
  * The message from an OCI error body ({"errors":[{"code","message"}]}), or
  * a generic "HTTP <status>" when the response carries none.
  */

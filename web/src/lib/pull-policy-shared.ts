@@ -57,3 +57,15 @@ export function violation(summary: SeveritySummary | null | undefined, policy: P
   if (parts.length === 0) return null;
   return `${parts.join(", ")} finding${parts.length === 1 && /^1 /.test(parts[0]) ? "" : "s"}; policy blocks ${describePolicy(policy)}`;
 }
+
+/**
+ * Whether the signature policy applies to a repository: its own override
+ * (true/false) wins, otherwise the organization's setting. When it does,
+ * images without a cosign signature verified by a trusted key are blocked.
+ */
+export function effectiveSignaturePolicy(
+  org: { requireSignature?: boolean | null } | null | undefined,
+  repo: { requireSignature?: boolean | null },
+): boolean {
+  return repo.requireSignature ?? org?.requireSignature ?? false;
+}
