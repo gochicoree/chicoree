@@ -1,15 +1,13 @@
 // Instance health: one check per subsystem for /admin/health, and the cheap
 // probe behind GET /api/health. Every check is bounded by a timeout and turns
 // failures into a red card instead of an exception.
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { env } from "./env";
 import { formatBytes, relativeTime } from "./format";
 import { registryStatus, type RegistryStatus } from "./registry-client";
 import { getScanner, scanningEnabled } from "./scanners";
+import { activeSigner, fileKeyInfo, listSigningKeys, privateKeyFingerprint, KEY_DROP_WINDOW_MS } from "./signing-keys";
 
 export type HealthStatus = "ok" | "warn" | "error" | "none";
 
@@ -201,38 +199,57 @@ async function checkScanner(): Promise<HealthCheck> {
 
 // --- token keys --------------------------------------------------------------
 
-/** SHA-256 over the SPKI DER of the public key derived from the private key file. */
-export function privateKeyFingerprint(pem: string): string {
-  const pub = createPublicKey(createPrivateKey(pem));
-  return createHash("sha256").update(pub.export({ type: "spki", format: "der" })).digest("hex");
-}
+export { privateKeyFingerprint };
 
+/**
+ * The key this app signs with must be one of the keys the registry
+ * verifies with. With database keys (Administration → Signing keys) several
+ * keys are trusted at once; the file key is always among them.
+ */
 async function checkTokenKeys(status: RegistryStatus | null): Promise<HealthCheck> {
   const key = "keys";
   const title = "Token signing keys";
-  const file = path.resolve(process.cwd(), env.tokenPrivateKeyFile);
-  const details: { label: string; value: string }[] = [{ label: "Private key", value: file }];
-  let fingerprint: string;
+  const details: { label: string; value: string }[] = [];
+  const file = fileKeyInfo();
+  details.push({ label: "File key", value: file.fingerprint ? `${file.fingerprint} (${file.path})` : `${file.path}: ${file.error}` });
+
+  let signer: { kid: string; source: "database" | "file" };
   try {
-    fingerprint = privateKeyFingerprint(readFileSync(file, "utf8"));
+    signer = await activeSigner();
   } catch (e) {
-    return { key, title, status: "error", summary: `Private key unreadable: ${message(e)}`, details };
+    return { key, title, status: "error", summary: `No usable signing key: ${message(e)}`, details };
   }
-  details.push({ label: "Public key SHA-256", value: fingerprint });
+  details.push({ label: "Signs with", value: `${signer.kid} (${signer.source === "database" ? "database key" : "file key"})` });
+  const dbKeys = await listSigningKeys().catch(() => []);
+  const cutoff = Date.now() - KEY_DROP_WINDOW_MS;
+  const active = dbKeys.filter((k) => !k.retiredAt).length;
+  const draining = dbKeys.filter((k) => k.retiredAt && k.retiredAt.getTime() > cutoff).length;
+  details.push({ label: "Database keys", value: `${active} active${draining ? `, ${draining} retired within the last 10 min` : ""}, ${dbKeys.length} total` });
+
   if (!status) {
-    return { key, title, status: "warn", summary: "Private key readable; registry fingerprint unavailable for comparison", details };
+    return { key, title, status: "warn", summary: "Signing key available; registry fingerprints unavailable for comparison", details };
   }
-  if (status.authDisabled || !status.publicKeyFingerprint) {
-    details.push({ label: "Registry", value: status.authDisabled ? "auth disabled" : "no key advertised" });
-    return { key, title, status: "warn", summary: "Private key readable; the registry does not verify tokens (AUTH_DISABLED)", details };
+  if (status.authDisabled) {
+    details.push({ label: "Registry", value: "auth disabled" });
+    return { key, title, status: "warn", summary: "Signing key available; the registry does not verify tokens (AUTH_DISABLED)", details };
   }
-  details.push({ label: "Registry SHA-256", value: status.publicKeyFingerprint });
-  const match = status.publicKeyFingerprint === fingerprint;
+  const trusted = status.publicKeyFingerprints?.length ? status.publicKeyFingerprints : status.publicKeyFingerprint ? [status.publicKeyFingerprint] : [];
+  if (trusted.length === 0) {
+    details.push({ label: "Registry", value: "no key advertised" });
+    return { key, title, status: "warn", summary: "Signing key available; the registry advertises no verification key", details };
+  }
+  details.push({ label: "Registry trusts", value: trusted.join(", ") });
+  const match = trusted.includes(signer.kid);
+  const stale = signer.source === "database" && !match && !!status.publicKeyFingerprints;
   return {
     key,
     title,
     status: match ? "ok" : "error",
-    summary: match ? "The registry trusts the key this app signs with" : "Key mismatch: the registry will reject every token this app signs",
+    summary: match
+      ? `The registry trusts the ${signer.source === "database" ? "database" : "file"} key this app signs with${trusted.length > 1 ? ` (${trusted.length} keys trusted)` : ""}`
+      : stale
+        ? "The registry has not picked up the active signing key yet (it reloads keys every 60 s); tokens fail until it does"
+        : "Key mismatch: the registry will reject every token this app signs",
     details,
   };
 }

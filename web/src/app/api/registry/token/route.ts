@@ -10,21 +10,17 @@ import { and, eq } from "drizzle-orm";
 import { isAPIError } from "better-auth/api";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/db";
-import {
-  accessTokens,
-  account as accountTable,
-  serviceAccounts,
-  user as userTable,
-} from "@/db/schema";
+import { account as accountTable, user as userTable } from "@/db/schema";
 import {
   allowedRepositoryActions,
   callerSubject,
-  findServiceAccountByHash,
   mayAccessCatalog,
   type Caller,
   type RegistryAction,
 } from "@/lib/access";
-import { hashSecret, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
+import { clientIp } from "@/lib/audit";
+import { identifyAccessToken, identifyServiceAccount } from "@/lib/credential-auth";
+import { PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
 import { signRegistryToken, type AccessGrant } from "@/lib/registry-jwt";
 import { splitImagePath } from "@/lib/library";
 import { resolveRepositoryRedirect } from "@/lib/redirects";
@@ -56,36 +52,13 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
   const username = decoded.slice(0, sep);
   const password = decoded.slice(sep + 1);
 
-  if (password.startsWith(SA_PREFIX)) {
-    const sa = await findServiceAccountByHash(hashSecret(password));
-    if (!sa) return { error: "unknown service account credential" };
-    if (sa.expiresAt && sa.expiresAt < new Date()) return { error: "service account credential expired" };
-    db.update(serviceAccounts)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(serviceAccounts.id, sa.id))
-      .catch(() => {});
-    return {
-      kind: "sa",
-      saId: sa.id,
-      organizationId: sa.organizationId,
-      permission: sa.permission,
-      repositoryIds: sa.repositoryIds ?? null,
-    };
-  }
+  // Opaque credentials: expiry, restriction and last-use bookkeeping live in
+  // lib/credential-auth.ts (shared with the jobs API).
+  if (password.startsWith(SA_PREFIX)) return identifyServiceAccount(password, clientIp(req.headers));
 
   if (password.startsWith(PAT_PREFIX)) {
-    const pat = await db.query.accessTokens.findFirst({
-      where: eq(accessTokens.tokenHash, hashSecret(password)),
-    });
-    if (!pat) return { error: "unknown access token" };
-    if (pat.expiresAt && pat.expiresAt < new Date()) return { error: "access token expired" };
-    db.update(accessTokens)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(accessTokens.id, pat.id))
-      .catch(() => {});
-    const u = await db.query.user.findFirst({ where: eq(userTable.id, pat.userId) });
-    if (!u || u.banned) return { error: "account unavailable" };
-    return { kind: "user", userId: u.id, isAdmin: u.role === "admin", patScope: pat.scope };
+    const res = await identifyAccessToken(password, clientIp(req.headers));
+    return "error" in res ? res : res.caller;
   }
 
   // Fall back to a password, but never around two-factor auth. Local
@@ -181,8 +154,9 @@ export async function GET(req: NextRequest) {
 
   // Instance administrators always carry the catalog grant, so registryd
   // recognises them (they are exempt from pull rate limits) whatever scope
-  // the client asked for — admins may do everything anyway.
-  if (caller.kind === "user" && caller.isAdmin && !access.some((g) => g.type === "registry" && g.name === "catalog")) {
+  // the client asked for — admins may do everything anyway. A token limited
+  // to one organization is not an instance-wide credential, so it does not.
+  if (caller.kind === "user" && caller.isAdmin && !caller.restriction && !access.some((g) => g.type === "registry" && g.name === "catalog")) {
     access.push({ type: "registry", name: "catalog", actions: ["*"] });
   }
 

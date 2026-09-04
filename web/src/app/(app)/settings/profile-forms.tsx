@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
-import { relativeTime } from "@/lib/format";
+import { formatDate, relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 
 export interface SessionRow {
@@ -17,6 +17,8 @@ export interface SessionRow {
   userAgent: string;
   ipAddress: string;
   createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
 }
 
 export function ProfileDetailsForm({
@@ -138,24 +140,46 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const [busy, setBusy] = useState(false);
+
   async function revoke(token: string) {
     await authClient.revokeSession({ token });
     toast({ title: "Session revoked" });
     router.refresh();
   }
 
+  async function revokeOthers() {
+    setBusy(true);
+    const res = await authClient.revokeOtherSessions();
+    setBusy(false);
+    if (res.error) toast({ title: res.error.message ?? "Could not sign out other sessions" });
+    else toast({ title: "Signed out everywhere else" });
+    router.refresh();
+  }
+
+  const others = sessions.filter((s) => !s.current).length;
+
   return (
     <Card>
-      <CardHeader eyebrow="Sessions" title="Active sessions" />
+      <CardHeader
+        eyebrow="Sessions"
+        title="Active sessions"
+        description="Every browser and device signed in to your account, with its address and last activity."
+        action={
+          <Button type="button" variant="secondary" size="sm" disabled={busy || others === 0} onClick={revokeOthers} data-revoke-others>
+            Sign out everywhere else{others > 0 ? ` (${others})` : ""}
+          </Button>
+        }
+      />
       <div>
         {sessions.map((s) => (
-          <div key={s.token} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5">
+          <div key={s.token} data-session-row className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5">
             <MonitorSmartphone className="size-4 shrink-0 text-ink-3" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px]">{s.userAgent}</div>
+              <div className="truncate text-[13px]" title={s.userAgent}>{s.userAgent}</div>
               <div className="text-xs text-ink-3">
-                {s.ipAddress && `${s.ipAddress} · `}
-                started {relativeTime(s.createdAt)}
+                {s.ipAddress ? <span className="font-mono">{s.ipAddress}</span> : "unknown address"} · started {relativeTime(s.createdAt)} · last active{" "}
+                {relativeTime(s.lastActiveAt)} · expires {formatDate(s.expiresAt)}
               </div>
             </div>
             {s.current ? (

@@ -14,6 +14,7 @@ const items = [
   { href: "/admin/auth", label: "Auth providers" },
   { href: "/admin/branding", label: "Branding" },
   { href: "/admin/settings/limits", label: "Rate limits" },
+  { href: "/admin/settings/keys", label: "Signing keys" },
 ];
 
 export function AdminNav() {

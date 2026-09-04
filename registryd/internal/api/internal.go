@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"registryd/internal/auth"
 	"registryd/internal/version"
 )
 
@@ -49,14 +50,18 @@ type StatusResponse struct {
 	StagingDir       string `json:"stagingDir"`
 	StagingFreeBytes int64  `json:"stagingFreeBytes"`
 	// UploadSessions counts in-flight shared upload sessions (-1 in local mode).
-	UploadSessions       int64   `json:"uploadSessions"`
-	BlobCount            int64   `json:"blobCount"`
-	BlobBytes            int64   `json:"blobBytes"`
-	StartedAt            string  `json:"startedAt"`
-	UptimeSeconds        float64 `json:"uptimeSeconds"`
-	PublicKeyFingerprint string  `json:"publicKeyFingerprint"`
-	AuthDisabled         bool    `json:"authDisabled"`
-	DatabaseError        string  `json:"databaseError,omitempty"`
+	UploadSessions int64   `json:"uploadSessions"`
+	BlobCount      int64   `json:"blobCount"`
+	BlobBytes      int64   `json:"blobBytes"`
+	StartedAt      string  `json:"startedAt"`
+	UptimeSeconds  float64 `json:"uptimeSeconds"`
+	// PublicKeyFingerprint is the file key (kept for older web builds);
+	// PublicKeyFingerprints / TrustedKeys list every key that verifies now.
+	PublicKeyFingerprint  string                `json:"publicKeyFingerprint"`
+	PublicKeyFingerprints []string              `json:"publicKeyFingerprints"`
+	TrustedKeys           []auth.TrustedKeyInfo `json:"trustedKeys"`
+	AuthDisabled          bool                  `json:"authDisabled"`
+	DatabaseError         string                `json:"databaseError,omitempty"`
 }
 
 // handleStatus reports build and runtime facts for the admin health page.
@@ -67,20 +72,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := StatusResponse{
-		Status:               "ok",
-		Version:              version.Version,
-		GoVersion:            runtime.Version(),
-		Storage:              s.driver.Name(),
-		Staging:              s.staging.Mode(),
-		StagingDir:           s.cfg.StagingDir,
-		StagingFreeBytes:     diskFreeBytes(s.cfg.StagingDir),
-		UploadSessions:       -1,
-		BlobCount:            -1,
-		BlobBytes:            -1,
-		StartedAt:            s.started.UTC().Format(time.RFC3339),
-		UptimeSeconds:        time.Since(s.started).Seconds(),
-		PublicKeyFingerprint: s.verifier.PublicKeyFingerprint(),
-		AuthDisabled:         s.verifier.Disabled(),
+		Status:                "ok",
+		Version:               version.Version,
+		GoVersion:             runtime.Version(),
+		Storage:               s.driver.Name(),
+		Staging:               s.staging.Mode(),
+		StagingDir:            s.cfg.StagingDir,
+		StagingFreeBytes:      diskFreeBytes(s.cfg.StagingDir),
+		UploadSessions:        -1,
+		BlobCount:             -1,
+		BlobBytes:             -1,
+		StartedAt:             s.started.UTC().Format(time.RFC3339),
+		UptimeSeconds:         time.Since(s.started).Seconds(),
+		PublicKeyFingerprint:  s.verifier.PublicKeyFingerprint(),
+		PublicKeyFingerprints: s.verifier.PublicKeyFingerprints(),
+		TrustedKeys:           s.verifier.TrustedKeys(),
+		AuthDisabled:          s.verifier.Disabled(),
 	}
 	if count, bytes, err := s.store.BlobStats(r.Context()); err != nil {
 		resp.Status = "degraded"

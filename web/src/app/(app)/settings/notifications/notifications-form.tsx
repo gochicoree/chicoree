@@ -11,7 +11,7 @@ export interface NotificationItem {
   event: string;
   label: string;
   description: string;
-  scope: "organization" | "instance";
+  scope: "organization" | "instance" | "account";
   email: boolean;
 }
 
@@ -23,6 +23,7 @@ export function NotificationsForm({ items, email }: { items: NotificationItem[];
   useActionToast(state, "Notification preferences saved");
   const orgItems = items.filter((i) => i.scope === "organization");
   const adminItems = items.filter((i) => i.scope === "instance");
+  const accountItems = items.filter((i) => i.scope === "account");
 
   const row = (i: NotificationItem) => (
     <label key={i.event} className="flex items-start gap-3 px-4 py-3 sm:px-5">
@@ -46,6 +47,14 @@ export function NotificationsForm({ items, email }: { items: NotificationItem[];
           description={`Sent to ${email} for the organizations you own or administer. Webhooks are configured per repository or organization and are not affected by these switches.`}
         />
         <div className="divide-y divide-line">{orgItems.map(row)}</div>
+        {accountItems.length > 0 && (
+          <>
+            <div className="border-t border-line px-4 pb-1 pt-3 sm:px-5">
+              <div className="eyebrow">Your account</div>
+            </div>
+            <div className="divide-y divide-line">{accountItems.map(row)}</div>
+          </>
+        )}
         {adminItems.length > 0 && (
           <>
             <div className="border-t border-line px-4 pb-1 pt-3 sm:px-5">

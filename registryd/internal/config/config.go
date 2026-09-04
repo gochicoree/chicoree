@@ -31,6 +31,11 @@ type Config struct {
 	TokenIssuer  string // expected "iss" claim
 	JWTPublicKey string // path to PEM-encoded ES256 public key
 	AuthDisabled bool   // dev escape hatch, never use in production
+	// Signing keys generated in the admin panel (token_signing_keys) are
+	// re-read every KeyReloadInterval; a retired key stays trusted for
+	// KeyDropWindow (must exceed the 5-minute token lifetime).
+	KeyReloadInterval time.Duration
+	KeyDropWindow     time.Duration
 
 	// Webhook to the web app
 	WebhookURL    string
@@ -103,6 +108,9 @@ func Load() (*Config, error) {
 		JWTPublicKey: env("JWT_PUBLIC_KEY_FILE", "/run/secrets/registry-token.pub"),
 		AuthDisabled: envBool("AUTH_DISABLED", false),
 
+		KeyReloadInterval: envDuration("TOKEN_KEY_RELOAD_INTERVAL", time.Minute),
+		KeyDropWindow:     envDuration("TOKEN_KEY_DROP_WINDOW", 10*time.Minute),
+
 		WebhookURL:     os.Getenv("WEBHOOK_URL"),
 		WebhookSecret:  os.Getenv("WEBHOOK_SECRET"),
 		InternalAPIURL: os.Getenv("INTERNAL_API_URL"),
@@ -123,6 +131,12 @@ func Load() (*Config, error) {
 	}
 	if !c.AuthDisabled && c.TokenRealm == "" {
 		return nil, fmt.Errorf("TOKEN_REALM is required unless AUTH_DISABLED=true")
+	}
+	if c.KeyReloadInterval < 5*time.Second {
+		return nil, fmt.Errorf("TOKEN_KEY_RELOAD_INTERVAL must be at least 5s")
+	}
+	if c.KeyDropWindow < 5*time.Minute {
+		return nil, fmt.Errorf("TOKEN_KEY_DROP_WINDOW must be at least 5m (the token lifetime)")
 	}
 	if c.InternalAPIURL == "" {
 		c.InternalAPIURL = DeriveInternalAPIURL(c.WebhookURL)

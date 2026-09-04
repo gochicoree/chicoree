@@ -29,16 +29,23 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
   const orgs = str(fd, "allowOrganizationCreation");
   if (!["open", "invite", "closed"].includes(mode)) return { error: "Unknown sign-up mode." };
   if (!["everyone", "admins"].includes(orgs)) return { error: "Unknown organization policy." };
+  const maxTokenLifetimeDays = Number(str(fd, "maxTokenLifetimeDays") || 0);
+  if (!Number.isInteger(maxTokenLifetimeDays) || maxTokenLifetimeDays < 0 || maxTokenLifetimeDays > 3650) {
+    return { error: "The token lifetime cap must be a whole number of days between 0 (unlimited) and 3650." };
+  }
   const access: AccessSettings = {
     signUpMode: mode as SignUpMode,
     allowedEmailDomains: parseDomainList(String(fd.get("domains") ?? "")),
     allowOrganizationCreation: orgs as OrgCreationPolicy,
+    maxTokenLifetimeDays,
+    requireTokenExpiry: fd.get("requireTokenExpiry") === "on",
   };
   await saveSettingsSection("access", { ...access });
   await recordAudit({ action: "settings.update", targetType: "settings", targetId: "access", targetLabel: "access", details: { ...access } });
   revalidatePath("/admin/auth", "layout");
   revalidatePath("/sign-in");
   revalidatePath("/sign-up");
+  revalidatePath("/settings/tokens");
   revalidatePath("/", "layout");
   return { saved: true, message: "Access settings saved" };
 }

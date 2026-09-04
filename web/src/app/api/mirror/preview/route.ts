@@ -9,7 +9,7 @@ import type { TagSelector } from "@/db/schema";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const auth = await authenticateJobsRequest(req.headers.get("authorization"));
+  const auth = await authenticateJobsRequest(req.headers.get("authorization"), req.headers);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   const q = req.nextUrl.searchParams;
   const source = q.get("source") ?? "";

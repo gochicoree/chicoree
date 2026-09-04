@@ -83,6 +83,24 @@ func main() {
 	}
 	if cfg.AuthDisabled {
 		slog.Warn("AUTH_DISABLED is set: every request is treated as an administrator; never use this in production")
+	} else {
+		// Keys generated in the admin panel: loaded now, re-read periodically
+		// and on the first token that names an unknown key.
+		verifier.UseKeySource(auth.KeySourceFunc(func(ctx context.Context, retiredAfter time.Time) ([]auth.SigningKey, error) {
+			rows, err := st.SigningKeys(ctx, retiredAfter)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]auth.SigningKey, len(rows))
+			for i, r := range rows {
+				out[i] = auth.SigningKey{Kid: r.Kid, PublicKeyPEM: r.PublicKeyPEM, RetiredAt: r.RetiredAt}
+			}
+			return out, nil
+		}), cfg.KeyDropWindow)
+		if err := verifier.RefreshKeys(ctx); err != nil {
+			slog.Warn("token signing keys could not be read; verifying with the file key only until the next reload", "err", err)
+		}
+		go verifier.RunKeyReload(ctx, cfg.KeyReloadInterval)
 	}
 
 	notifier := hooks.NewNotifier(cfg.WebhookURL, cfg.WebhookSecret)
