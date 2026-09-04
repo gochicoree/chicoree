@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
 import { authClient } from "@/lib/auth-client";
+import { SearchBox } from "./search-box";
 
 export interface NavOrg {
   slug: string;
@@ -74,9 +75,12 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pb-5 pt-5">
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pb-4 pt-5">
         <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} />
       </Link>
+      <div className="px-2.5 pb-4">
+        <SearchBox shortcut placeholder="Search…" />
+      </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5">
         <div className="space-y-0.5">

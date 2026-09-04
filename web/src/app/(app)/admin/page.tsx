@@ -10,12 +10,14 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { AdminNav } from "./admin-nav";
+import { adminSetupChecklist } from "@/lib/admin-checklist";
+import { SetupChecklist } from "@/components/admin/setup-checklist";
 
 export const metadata: Metadata = { title: "Administration" };
 
 export default async function AdminPage() {
-  await requireAdmin();
-  const [stats, health, runs] = await Promise.all([instanceStats(), registryHealth(), recentJobRuns(6)]);
+  const session = await requireAdmin();
+  const [stats, health, runs, checklist] = await Promise.all([instanceStats(), registryHealth(), recentJobRuns(6), adminSetupChecklist(session.user.id)]);
   const dedupSaved = Math.max(stats.logicalBytes - stats.blobBytes, 0);
 
   return (
@@ -31,6 +33,8 @@ export default async function AdminPage() {
         }
       />
       <AdminNav />
+
+      {!checklist.dismissed && <SetupChecklist checklist={checklist} />}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Users" value={stats.users} />

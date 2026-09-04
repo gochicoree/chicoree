@@ -1,0 +1,64 @@
+/* Rendered repository READMEs (lib/readme.ts). Scoped under .markdown so the
+   rest of the UI is untouched; colours come from the theme tokens. */
+.markdown {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.5em 0 0.5em;
+  line-height: 1.25;
+}
+.markdown h1 { font-size: 1.5rem; }
+.markdown h2 { font-size: 1.25rem; padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+.markdown h3 { font-size: 1.05rem; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 0.95rem; }
+.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table, .markdown pre { margin: 0 0 0.9em; }
+.markdown ul, .markdown ol { padding-left: 1.5em; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li + li { margin-top: 0.2em; }
+.markdown li > input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
+.markdown a { color: var(--action); text-decoration: underline; text-underline-offset: 2px; }
+.markdown a:hover { color: var(--action-hover); }
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  padding: 0.1em 0.35em;
+}
+.markdown pre {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+}
+.markdown pre code { background: none; border: 0; padding: 0; font-size: 0.82rem; }
+.markdown blockquote {
+  border-left: 3px solid var(--line-2);
+  padding: 0.1em 1em;
+  color: var(--ink-2);
+}
+.markdown hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+.markdown img { max-width: 100%; height: auto; border-radius: 0.5rem; }
+.markdown table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; font-size: 0.85rem; }
+.markdown th, .markdown td { border: 1px solid var(--line); padding: 0.4em 0.7em; text-align: left; }
+.markdown th { background: var(--card-2); font-weight: 600; }
+.markdown kbd {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 0.3rem;
+  padding: 0.05em 0.35em;
+  background: var(--card-2);
+}

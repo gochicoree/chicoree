@@ -19,6 +19,12 @@ import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHr
 import { describeMediaType, listUntaggedManifests } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
+import { after } from "next/server";
+import { getSession } from "@/lib/session";
+import { imageAbout, renderReadme } from "@/lib/readme";
+import { recordRepositoryVisit, repoStarState } from "@/lib/stars";
+import { ReadmeCard } from "@/components/readme/readme-card";
+import { StarButton } from "@/components/star-button";
 
 export default async function RepoPage({
   params,
@@ -32,8 +38,9 @@ export default async function RepoPage({
   const ctx = await getOrgContext(orgSlug);
   const role = ctx?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
+  const session = await getSession();
 
-  const [tagList, series, proxy, egress, traffic, rules, untagged] = await Promise.all([
+  const [tagList, series, proxy, egress, traffic, rules, untagged, star, about] = await Promise.all([
     listRepoTags(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
@@ -41,7 +48,16 @@ export default async function RepoPage({
     role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     effectiveTagRules(found.repo.organizationId, found.repo.id),
     listUntaggedManifests(found.repo.id),
+    repoStarState(found.repo.id, session?.user.id ?? null),
+    // The About block only matters when there is no README.
+    found.repo.readme ? Promise.resolve(null) : imageAbout(found.repo.id),
   ]);
+  const readmeHtml = found.repo.readme ? renderReadme(found.repo.readme) : null;
+  // "Recently viewed" on the dashboard; throttled to one write per minute inside.
+  if (session) {
+    const userId = session.user.id;
+    after(() => recordRepositoryVisit(userId, found.repo.id).catch((err) => console.error("visit record failed:", err)));
+  }
   const path = `${orgSlug}/${repoName}`;
   const base = repoHref(orgSlug, repoName);
   const lastChecked = tagList.reduce<Date | null>(
@@ -85,11 +101,14 @@ export default async function RepoPage({
             {proxy && ` · upstream checked ${lastChecked ? relativeTime(lastChecked) : "never"}`}
           </p>
         </div>
-        {(role === "owner" || role === "admin") && (
-          <Link href={`${base}/settings`} className={buttonClasses("secondary", "sm")}>
-            <Settings className="size-3.5" /> Settings
-          </Link>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {session && <StarButton repositoryId={found.repo.id} starred={star.starred} count={star.count} />}
+          {(role === "owner" || role === "admin") && (
+            <Link href={`${base}/settings`} className={buttonClasses("secondary", "sm")}>
+              <Settings className="size-3.5" /> Settings
+            </Link>
+          )}
+        </div>
       </div>
 
       <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, tagList[0]?.name)}`} />
@@ -198,6 +217,8 @@ export default async function RepoPage({
           </div>
         )}
       </Card>
+
+      <ReadmeCard html={readmeHtml} about={about} canEdit={role === "owner" || role === "admin"} settingsHref={`${base}/settings`} />
 
       {showUntagged && (
         <Card>

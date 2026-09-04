@@ -14,17 +14,29 @@ import { buttonClasses } from "@/components/ui/button";
 import { imageReference } from "@/lib/library";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { canCreateOrganization } from "@/lib/signup-policy";
+import { userOnboarding } from "@/lib/onboarding";
+import { listRecentlyViewed, listStarredRepos } from "@/lib/stars";
+import { viewerFromSession } from "@/lib/viewer";
+import { relativeTime } from "@/lib/format";
+import { repoHref } from "@/lib/proxy-shared";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { RepoShortlist } from "@/components/repo-shortlist";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const session = await requireSession();
-  const [orgs, series, activity, settings] = await Promise.all([
+  const viewer = viewerFromSession(session);
+  const [orgs, series, activity, settings, onboarding, starred, recent] = await Promise.all([
     listUserOrgs(session.user.id),
     pullSeries({ userId: session.user.id, days: 30 }),
     recentActivity({ userId: session.user.id, limit: 12 }),
     getInstanceSettings(),
+    userOnboarding(session.user.id),
+    listStarredRepos(viewer, session.user.id, 50),
+    listRecentlyViewed(viewer, session.user.id, 50),
   ]);
+  const showOnboarding = !onboarding.dismissed && !onboarding.complete;
   const canCreateOrgs = canCreateOrganization(settings.access, session.user.role);
   const totalRepos = orgs.reduce((sum, o) => sum + o.repoCount, 0);
   const totalStorage = orgs.reduce((sum, o) => sum + o.storageBytes, 0);
@@ -52,6 +64,12 @@ export default async function DashboardPage() {
         <StatTile label="Pulls, 30 days" value={pulls30d} />
       </div>
 
+      {showOnboarding && (
+        <div className="mt-6">
+          <OnboardingChecklist state={onboarding} registryHost={env.registryHost} />
+        </div>
+      )}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader eyebrow="Activity" title="Pulls per day" description="Last 30 days, all your organizations" />
@@ -63,6 +81,43 @@ export default async function DashboardPage() {
           <CardHeader eyebrow="Log" title="Recent activity" />
           <CardBody className="max-h-80 overflow-y-auto">
             <ActivityFeed items={activity} />
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader eyebrow="Yours" title="Starred" description="Repositories you starred, newest first." />
+          <CardBody>
+            <RepoShortlist
+              name="starred"
+              emptyText="Star a repository from its page and it shows up here."
+              items={starred.map((r) => ({
+                id: r.id,
+                path: `${r.orgSlug}/${r.name}`,
+                href: repoHref(r.orgSlug ?? "", r.name),
+                visibility: r.visibility,
+                proxy: r.proxy,
+                meta: `starred ${relativeTime(r.starredAt)}`,
+              }))}
+            />
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader eyebrow="History" title="Recently viewed" description="Repository pages you opened." />
+          <CardBody>
+            <RepoShortlist
+              name="recent"
+              emptyText="Open a repository and it will be listed here."
+              items={recent.map((r) => ({
+                id: r.id,
+                path: `${r.orgSlug}/${r.name}`,
+                href: repoHref(r.orgSlug ?? "", r.name),
+                visibility: r.visibility,
+                proxy: r.proxy,
+                meta: `viewed ${relativeTime(r.lastVisitedAt)}`,
+              }))}
+            />
           </CardBody>
         </Card>
       </div>
