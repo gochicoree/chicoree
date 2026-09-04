@@ -876,9 +876,8 @@ through an old name get no grant at all.
   `signature.reverify`, `token.rotate`, `admin.token.revoke`, `sa.rotate`,
   `keys.generate`, `keys.retire`, `repo.bulk_transfer` (one summary row per
   bulk run, under the existing `repo` group) and `image.copy` / `image.move`
-  (written in both organizations; `AUDIT_ACTION_GROUPS` has no `image` entry,
-  so those two are reachable through the free-text search rather than the
-  group filter). Once an hour after an insert, rows older
+  (written in both organizations, under the `image` group added to
+  `AUDIT_ACTION_GROUPS` for them). Once an hour after an insert, rows older
   than `AUDIT_RETENTION_DAYS` are deleted. registryd never writes it.
 - **Branding** (`src/lib/branding.ts`, `branding-shared.ts`; settings section
   `branding`, env defaults `INSTANCE_NAME`, `INSTANCE_TAGLINE`): the logo is
