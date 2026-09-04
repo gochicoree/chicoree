@@ -110,17 +110,19 @@ export async function checkRepoQuota(
   orgId: string,
   visibility: "public" | "private",
   orgLabel = "this organization",
+  /** Repositories of this visibility already promised to the org but not stored yet (bulk preview). */
+  pending = 0,
 ): Promise<string | null> {
   const key = visibility === "public" ? "maxPublicRepos" : "maxPrivateRepos";
   const usageKey = visibility === "public" ? "publicRepos" : "privateRepos";
 
   const [orgLimit, orgUsage] = await Promise.all([getOrgLimits(orgId), getOrgUsage(orgId)]);
-  if (orgLimit[key] !== null && orgUsage[usageKey] >= orgLimit[key]) {
+  if (orgLimit[key] !== null && orgUsage[usageKey] + pending >= orgLimit[key]) {
     return `${orgLabel} has reached its limit of ${orgLimit[key]} ${visibility} repositories.`;
   }
   for (const ownerId of await orgOwnerIds(orgId)) {
     const [limit, usage] = await Promise.all([getUserLimits(ownerId), getUserUsage(ownerId)]);
-    if (limit[key] !== null && usage[usageKey] >= limit[key]) {
+    if (limit[key] !== null && usage[usageKey] + pending >= limit[key]) {
       return `The organization owner's account has reached its limit of ${limit[key]} ${visibility} repositories.`;
     }
   }

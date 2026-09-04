@@ -7,18 +7,16 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { after } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { isAPIError } from "better-auth/api";
 import { db } from "@/db";
-import { organization, organizationProxies, repositories, retentionPolicies, tagRules } from "@/db/schema";
+import { organization, organizationProxies, repositories } from "@/db/schema";
 import { getAuth, RESERVED_SLUGS } from "@/lib/auth";
 import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
-import { checkRepoQuota, checkStorageQuota } from "@/lib/quota";
-import { checkQuotaWarnings } from "@/lib/notify";
 import { recordAudit } from "@/lib/audit";
 import { emitRepositoryEvent } from "@/lib/webhooks";
-import { refreshRepositoryBlocks } from "@/lib/pull-policy";
+import { moveRepositoryToOrganization } from "@/lib/repo-move";
 import { imageReference, LIBRARY_SLUG } from "@/lib/library";
 import { env } from "@/lib/env";
 import { repoHref } from "@/lib/proxy-shared";
@@ -97,82 +95,23 @@ export async function renameRepository(formData: FormData): Promise<RepoToolResu
   return { href: repoHref(org.slug, newName), pullReference: imageReference(env.registryHost, org.slug, newName) };
 }
 
-/** Bytes of the repository's blobs the target organization does not hold yet (what the transfer adds to its storage). */
-async function bytesNewToOrg(repositoryId: string, organizationId: string): Promise<number> {
-  const { rows } = await db.execute(sql`
-    SELECT COALESCE(sum(b.size), 0)::bigint AS bytes
-    FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
-    WHERE rb.repository_id = ${repositoryId}
-      AND NOT EXISTS (
-        SELECT 1 FROM repository_blobs o JOIN repositories r ON r.id = o.repository_id
-        WHERE o.blob_digest = rb.blob_digest AND r.organization_id = ${organizationId})`);
-  return Number(rows[0]?.bytes ?? 0);
-}
-
 /**
  * Move a repository to another organization. The caller must manage both
  * (instance admins manage everything); the target's repository and storage
- * quotas apply as for a new push there.
+ * quotas apply as for a new push there. The rules live in `lib/repo-move.ts`
+ * so this and the administrator's bulk screen behave identically.
  */
 export async function transferRepository(formData: FormData): Promise<RepoToolResult> {
   const repositoryId = String(formData.get("repositoryId") ?? "");
-  const targetId = String(formData.get("targetOrganizationId") ?? "");
+  const targetOrganizationId = String(formData.get("targetOrganizationId") ?? "");
   const session = await requireSession();
-  const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
-  if (!repo) return { error: "Repository not found." };
-  const sourceRole = await getOrgRole(repo.organizationId);
-  if (!sourceRole || !MANAGER_ROLES.includes(sourceRole)) return denied();
-  const source = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
-  const target = await db.query.organization.findFirst({ where: eq(organization.id, targetId) });
-  if (!source || !target) return { error: "Organization not found." };
-  if (target.id === source.id) return { error: "The repository is already in that organization." };
-  const targetRole = await getOrgRole(target.id);
-  if (!targetRole || !MANAGER_ROLES.includes(targetRole)) {
-    return { error: `You need to be an owner or admin of ${target.name} to move a repository there.` };
-  }
-  if (await isProxyOrg(source.id)) return { error: "Repositories in a proxy cache cannot be moved." };
-  if (await isProxyOrg(target.id)) return { error: `${target.name} is a proxy cache; only its upstream fills it.` };
-  const problem = repoNameProblem(repo.name, false);
-  if (problem) return { error: `The name ${repo.name} is not valid in ${target.slug}: ${problem}` };
-  const taken = await db.query.repositories.findFirst({
-    where: and(eq(repositories.organizationId, target.id), eq(repositories.name, repo.name)),
-    columns: { id: true },
+  const result = await moveRepositoryToOrganization({
+    repositoryId,
+    targetOrganizationId,
+    actor: { userId: session.user.id, userName: session.user.name, isAdmin: session.user.role === "admin" },
   });
-  if (taken) return { error: `${target.slug} already has a repository named ${repo.name}; rename one of them first.` };
-
-  const quota = await checkRepoQuota(target.id, repo.visibility, target.name);
-  if (quota) return { error: quota };
-  const additional = await bytesNewToOrg(repo.id, target.id);
-  const storage = await checkStorageQuota(target.id, additional);
-  if (storage) return { error: `${target.name}: ${storage}` };
-
-  await db.transaction(async (tx) => {
-    await tx.update(repositories).set({ organizationId: target.id, updatedAt: new Date() }).where(eq(repositories.id, repo.id));
-    // Repository-scoped rules and policies belong to the repository and move
-    // with it (their organization column must follow the row).
-    await tx.update(tagRules).set({ organizationId: target.id }).where(eq(tagRules.repositoryId, repo.id));
-    await tx.update(retentionPolicies).set({ organizationId: target.id }).where(eq(retentionPolicies.repositoryId, repo.id));
-    await clearRepositoryRedirects(target.id, target.slug, repo.name, tx);
-    await addRepositoryRedirect(source.slug, repo.name, repo.id, session.user.id, tx);
-  });
-
-  const details = { from: `${source.slug}/${repo.name}`, to: `${target.slug}/${repo.name}`, fromOrganizationId: source.id, toOrganizationId: target.id, visibility: repo.visibility, bytesAdded: additional };
-  await recordAudit({ action: "repo.transfer", organizationId: source.id, targetType: "repository", targetId: repo.id, targetLabel: `${target.slug}/${repo.name}`, details });
-  await recordAudit({ action: "repo.transfer", organizationId: target.id, targetType: "repository", targetId: repo.id, targetLabel: `${target.slug}/${repo.name}`, details });
-  after(async () => {
-    // The pull policy is the target organization's now.
-    await refreshRepositoryBlocks(repo.id).catch((err) => console.error("pull policy refresh after transfer failed:", err));
-    await checkQuotaWarnings(target.id).catch((err) => console.error("quota warning check failed:", err));
-    await emitRepositoryEvent(repo.id, "repository.transferred", {
-      previous: { organization: source.slug, name: repo.name, path: `${source.slug}/${repo.name}` },
-      actor: { type: "user", id: session.user.id, name: session.user.name },
-    }).catch((err) => console.error("repository.transferred webhook failed:", err));
-  });
-  revalidatePath(`/${source.slug}`);
-  revalidatePath(`/${target.slug}`);
-  revalidatePath(repoHref(source.slug, repo.name));
-  revalidatePath(repoHref(target.slug, repo.name));
-  return { href: repoHref(target.slug, repo.name), pullReference: imageReference(env.registryHost, target.slug, repo.name) };
+  if (!result.moved) return { error: result.message ?? "Could not move the repository." };
+  return { href: result.href, pullReference: result.pullReference };
 }
 
 /** Change an organization's slug (its image namespace); owners only, never `library`. */
