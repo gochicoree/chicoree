@@ -8,6 +8,7 @@ import { env } from "./env";
 import { imagePath } from "./library";
 import { registryErrorMessage } from "./registry-client";
 import { signRegistryToken } from "./registry-jwt";
+import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 import { effectiveTagRules, protectedReason } from "./tag-rules";
 
 export interface UntaggedManifest {
@@ -42,14 +43,10 @@ const untaggedSelect = sql`
     WHERE s.repository_id = m.repository_id AND s.digest = m.subject_digest)) AS is_referrer,
   (SELECT count(*)::int FROM manifests r WHERE r.repository_id = m.repository_id AND r.subject_digest = m.digest) AS referrer_count`;
 
-/** Manifests in the repository that no tag points at, newest first. One query. */
-export async function listUntaggedManifests(repoId: string): Promise<UntaggedManifest[]> {
-  const { rows } = await db.execute(sql`
-    SELECT ${untaggedSelect}
-    FROM manifests m
-    WHERE m.repository_id = ${repoId}
-      AND NOT EXISTS (SELECT 1 FROM tags t WHERE t.repository_id = m.repository_id AND t.manifest_digest = m.digest)
-    ORDER BY m.created_at DESC`);
+const untaggedWhere = (repoId: string) => sql`m.repository_id = ${repoId}
+      AND NOT EXISTS (SELECT 1 FROM tags t WHERE t.repository_id = m.repository_id AND t.manifest_digest = m.digest)`;
+
+function mapUntagged(rows: Record<string, unknown>[]): UntaggedManifest[] {
   return rows.map((r) => {
     const mediaType = r.media_type as string;
     return {
@@ -67,6 +64,43 @@ export async function listUntaggedManifests(repoId: string): Promise<UntaggedMan
       subjectDigest: (r.subject_digest as string | null) ?? null,
       referrerCount: Number(r.referrer_count),
     };
+  });
+}
+
+/**
+ * Every untagged manifest of the repository, newest first. One query — the
+ * retention planner needs the complete set.
+ */
+export async function listUntaggedManifests(repoId: string): Promise<UntaggedManifest[]> {
+  const { rows } = await db.execute(sql`
+    SELECT ${untaggedSelect}
+    FROM manifests m
+    WHERE ${untaggedWhere(repoId)}
+    ORDER BY m.created_at DESC`);
+  return mapUntagged(rows as Record<string, unknown>[]);
+}
+
+/** One page of the untagged manifests, newest first, plus how many there are. */
+export async function untaggedManifestsPage(
+  repoId: string,
+  opts: { page?: number; pageSize?: number } = {},
+): Promise<{ rows: UntaggedManifest[]; state: PageState }> {
+  return paginatedQuery<UntaggedManifest>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.untagged,
+    count: async () => {
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM manifests m WHERE ${untaggedWhere(repoId)}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
+        SELECT ${untaggedSelect}
+        FROM manifests m
+        WHERE ${untaggedWhere(repoId)}
+        ORDER BY m.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}`);
+      return mapUntagged(rows as Record<string, unknown>[]);
+    },
   });
 }
 

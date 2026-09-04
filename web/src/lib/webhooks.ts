@@ -4,7 +4,7 @@
 // other event shares the same envelope (event, timestamp, repository, …)
 // with event-specific fields next to it.
 import { randomUUID, createHmac } from "crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   manifests,
@@ -19,6 +19,7 @@ import {
 import { decryptSecret } from "./crypto";
 import { env } from "./env";
 import { imagePath, imageReference } from "./library";
+import { WEBHOOK_LOG_MAX } from "./paginate-shared";
 import {
   MAX_WEBHOOKS_PER_ORG,
   MAX_WEBHOOKS_PER_REPO,
@@ -318,10 +319,10 @@ export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Prom
     .update(repositoryWebhooks)
     .set({ lastStatus: statusCode, lastDeliveredAt: new Date(), lastError: failure })
     .where(eq(repositoryWebhooks.id, hook.id));
-  // Keep the delivery log bounded per hook.
+  // Keep the delivery log bounded per hook (WEBHOOK_LOG_MAX rows).
   await db.execute(sql`
     DELETE FROM webhook_deliveries WHERE webhook_id = ${hook.id} AND id NOT IN (
-      SELECT id FROM webhook_deliveries WHERE webhook_id = ${hook.id} ORDER BY created_at DESC LIMIT 50)`);
+      SELECT id FROM webhook_deliveries WHERE webhook_id = ${hook.id} ORDER BY created_at DESC LIMIT ${WEBHOOK_LOG_MAX})`);
 
   // Retries exhausted or a hard refusal: tell the organization (email only —
   // this never fans out to webhooks, so a broken receiver cannot loop).
@@ -441,19 +442,48 @@ export async function findScopedWebhook(scope: WebhookScope, id: string): Promis
   return row ?? null;
 }
 
-/** Hooks of a repository or organization with their last 10 deliveries, for the UI. */
+/**
+ * Hooks of a repository or organization with their delivery log, for the UI.
+ *
+ * The log is pruned to WEBHOOK_LOG_MAX rows per hook on every delivery, so
+ * one window-function query reads the complete log of every hook of the
+ * scope at once (no query per hook); the manager pages through it in the
+ * browser, which is also where the log is opened and closed.
+ */
 export async function listWebhookRows(scope: WebhookScope): Promise<WebhookRow[]> {
   const hooks = await db.query.repositoryWebhooks.findMany({
     where: scopeWhere(scope),
     orderBy: (t, { asc }) => [asc(t.createdAt)],
   });
+  if (hooks.length === 0) return [];
+  const ids = hooks.map((h) => h.id);
+  const { rows: deliveryRows } = await db.execute(sql`
+    SELECT id, webhook_id, event, ok, status_code, attempts, duration_ms, error, created_at
+    FROM (
+      SELECT d.*, row_number() OVER (PARTITION BY d.webhook_id ORDER BY d.created_at DESC, d.id DESC) AS rn
+      FROM webhook_deliveries d
+      WHERE d.webhook_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+    ) x
+    WHERE x.rn <= ${WEBHOOK_LOG_MAX}
+    ORDER BY x.webhook_id, x.rn`);
+  const byHook = new Map<string, WebhookRow["deliveries"]>();
+  for (const d of deliveryRows) {
+    const list = byHook.get(String(d.webhook_id)) ?? [];
+    list.push({
+      id: String(d.id),
+      event: String(d.event),
+      ok: Boolean(d.ok),
+      statusCode: d.status_code == null ? null : Number(d.status_code),
+      attempts: Number(d.attempts ?? 0),
+      durationMs: d.duration_ms == null ? null : Number(d.duration_ms),
+      error: (d.error as string | null) ?? null,
+      createdAt: new Date(d.created_at as string).toISOString(),
+    });
+    byHook.set(String(d.webhook_id), list);
+  }
   return Promise.all(
     hooks.map(async (h) => {
-      const deliveries = await db.query.webhookDeliveries.findMany({
-        where: eq(webhookDeliveries.webhookId, h.id),
-        orderBy: [desc(webhookDeliveries.createdAt)],
-        limit: 10,
-      });
+      const deliveries = byHook.get(h.id) ?? [];
       return {
         id: h.id,
         name: h.name,
@@ -469,16 +499,7 @@ export async function listWebhookRows(scope: WebhookScope): Promise<WebhookRow[]
         lastStatus: h.lastStatus,
         lastDeliveredAt: h.lastDeliveredAt?.toISOString() ?? null,
         lastError: h.lastError,
-        deliveries: deliveries.map((d) => ({
-          id: d.id,
-          event: d.event,
-          ok: d.ok,
-          statusCode: d.statusCode,
-          attempts: d.attempts,
-          durationMs: d.durationMs,
-          error: d.error,
-          createdAt: d.createdAt.toISOString(),
-        })),
+        deliveries,
       };
     }),
   );

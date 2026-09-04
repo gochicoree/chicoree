@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { jobDefinition, listJobs, recentJobRuns } from "@/lib/jobs";
+import { jobDefinition, jobRunsPage, listJobs } from "@/lib/jobs";
 import { lastScheduledRun, listSchedules, toScheduleView } from "@/lib/schedules";
 import { schedulerStatus } from "@/lib/scheduler";
 import { env } from "@/lib/env";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
+import { PaginationFooter } from "@/components/ui/pagination";
+import { pageParam } from "@/lib/paginate-shared";
 import { RunJobForm, ScheduleForm } from "../job-forms";
 import { RunsTable } from "../runs-table";
 
@@ -15,12 +17,23 @@ export async function generateMetadata({ params }: { params: Promise<{ job: stri
   return { title: jobDefinition(job)?.title ?? "Jobs" };
 }
 
-export default async function JobPage({ params }: { params: Promise<{ job: string }> }) {
+export default async function JobPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ job: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { job: name } = await params;
   const job = jobDefinition(name);
   // Jobs hidden for this deployment (no scanner) are not reachable either.
   if (!job || !(await listJobs()).some((j) => j.name === name)) notFound();
-  const [runs, schedules, last] = await Promise.all([recentJobRuns(30, name), listSchedules(), lastScheduledRun(name)]);
+  const urlParams = await searchParams;
+  const [runs, schedules, last] = await Promise.all([
+    jobRunsPage({ job: name, page: pageParam(urlParams) }),
+    listSchedules(),
+    lastScheduledRun(name),
+  ]);
   const schedule = schedules.get(name);
   const scheduler = schedulerStatus();
   const info = { name: job.name, title: job.title, description: job.description, params: job.params };
@@ -58,8 +71,15 @@ export default async function JobPage({ params }: { params: Promise<{ job: strin
       </div>
 
       <Card className="mt-6">
-        <CardHeader eyebrow="History" title={`Runs (${runs.length})`} description={runs.length >= 30 ? "The 30 most recent runs." : undefined} />
-        <RunsTable runs={runs} showJob={false} emptyText="This job has not run yet." />
+        <CardHeader eyebrow="History" title={`Runs (${runs.state.total.toLocaleString("en-US")})`} description="Every run of this job, newest first." />
+        <RunsTable runs={runs.rows} showJob={false} emptyText="This job has not run yet." />
+        <PaginationFooter
+          state={runs.state}
+          noun="runs"
+          basePath={`/admin/jobs/${job.name}`}
+          params={urlParams}
+          label="Run history pages"
+        />
       </Card>
 
       <Card className="mt-6">

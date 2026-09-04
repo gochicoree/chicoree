@@ -12,6 +12,7 @@ import {
   vulnerabilityScans,
 } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
+import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 
 export interface OrgWithMeta {
   id: string;
@@ -137,6 +138,52 @@ export async function listOrgRepos(orgId: string, includePrivate: boolean): Prom
   return rows.map(mapRepoRow);
 }
 
+export interface OrgRepoTotals {
+  count: number;
+  sizeBytes: number;
+  pullCount: number;
+}
+
+/**
+ * One page of an organization's repositories (newest first) with the totals
+ * the header tiles show — the count query doubles as the totals query.
+ */
+export async function orgReposPage(
+  orgId: string,
+  includePrivate: boolean,
+  opts: { page?: number; pageSize?: number } = {},
+): Promise<{ rows: RepoListItem[]; state: PageState; totals: OrgRepoTotals }> {
+  const visibility = includePrivate ? sql`` : sql`AND r.visibility = 'public'`;
+  let totals: OrgRepoTotals = { count: 0, sizeBytes: 0, pullCount: 0 };
+  const { rows, state } = await paginatedQuery<RepoListItem>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.repositories,
+    count: async () => {
+      const { rows } = await db.execute(sql`
+        SELECT count(*)::int AS n, COALESCE(sum(t.pulls), 0)::bigint AS pulls, COALESCE(sum(t.bytes), 0)::bigint AS bytes
+        FROM (
+          SELECT r.pull_count AS pulls,
+            COALESCE((SELECT sum(b.size) FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
+              WHERE rb.repository_id = r.id), 0) AS bytes
+          FROM repositories r
+          WHERE r.organization_id = ${orgId} ${visibility}) t`);
+      const r = rows[0] ?? {};
+      totals = { count: Number(r.n ?? 0), sizeBytes: Number(r.bytes ?? 0), pullCount: Number(r.pulls ?? 0) };
+      return totals.count;
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
+        SELECT ${repoListSelect}
+        FROM repositories r JOIN organization o ON o.id = r.organization_id
+        WHERE r.organization_id = ${orgId} ${visibility}
+        ORDER BY r.updated_at DESC
+        LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map(mapRepoRow);
+    },
+  });
+  return { rows, state, totals };
+}
+
 export async function listPublicRepos(limit = 50): Promise<RepoListItem[]> {
   const { rows } = await db.execute(sql`
     SELECT ${repoListSelect}
@@ -175,8 +222,56 @@ export interface TagListItem {
   signed: boolean;
 }
 
-export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
+/** Tag names offered in the compare selector (a dropdown, not a list). */
+export const COMPARE_TAG_LIMIT = 500;
+
+export interface RepoTagOverview {
+  /** Tags in the repository. */
+  total: number;
+  /** The most recently pushed tag names, capped at COMPARE_TAG_LIMIT. */
+  names: string[];
+  /** Digest the "latest" tag points at, when there is one. */
+  latestDigest: string | null;
+  /** Proxy caches: the newest upstream check of any tag. */
+  lastCheckedAt: Date | null;
+}
+
+/**
+ * Everything the repository page needs about the tags as a whole — the count
+ * for the pager, the names for the compare selector, and the two derived
+ * values the tag table used to read off the full list. One query.
+ */
+export async function repoTagOverview(repoId: string, nameLimit = COMPARE_TAG_LIMIT): Promise<RepoTagOverview> {
   const { rows } = await db.execute(sql`
+    SELECT (SELECT count(*)::int FROM tags WHERE repository_id = ${repoId}) AS total,
+      (SELECT max(manifest_digest) FROM tags WHERE repository_id = ${repoId} AND name = 'latest') AS latest_digest,
+      (SELECT max(proxy_checked_at) FROM tags WHERE repository_id = ${repoId}) AS last_checked,
+      COALESCE((SELECT array_agg(s.name) FROM (
+        SELECT name FROM tags WHERE repository_id = ${repoId} ORDER BY updated_at DESC LIMIT ${nameLimit}
+      ) s), '{}') AS names`);
+  const r = rows[0] ?? {};
+  return {
+    total: Number(r.total ?? 0),
+    names: (r.names as string[] | null) ?? [],
+    latestDigest: (r.latest_digest as string | null) ?? null,
+    lastCheckedAt: r.last_checked ? new Date(r.last_checked as string) : null,
+  };
+}
+
+/** One page of a repository's tags, newest first, plus how many there are. */
+export async function listRepoTags(
+  repoId: string,
+  opts: { page?: number; pageSize?: number } = {},
+): Promise<{ rows: TagListItem[]; state: PageState }> {
+  return paginatedQuery<TagListItem>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.tags,
+    count: async () => {
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM tags WHERE repository_id = ${repoId}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
     SELECT t.name, t.manifest_digest, t.updated_at, t.proxy_checked_at, m.media_type, m.size AS manifest_size,
       EXISTS (SELECT 1 FROM manifest_signatures ms WHERE ms.repository_id = t.repository_id
         AND ms.manifest_digest = t.manifest_digest AND ms.kind = 'signature' AND ms.status = 'verified') AS signed,
@@ -190,24 +285,27 @@ export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
     LEFT JOIN vulnerability_scans vs ON vs.digest = t.manifest_digest
     LEFT JOIN manifest_blocks mb ON mb.repository_id = t.repository_id AND mb.digest = t.manifest_digest
     WHERE t.repository_id = ${repoId}
-    ORDER BY t.updated_at DESC`);
-  return rows.map((r) => {
-    const mediaType = r.media_type as string | null;
-    const isIndex = !!mediaType && (mediaType.includes("index") || mediaType.includes("list"));
-    return {
-      name: r.name as string,
-      manifestDigest: r.manifest_digest as string,
-      updatedAt: new Date(r.updated_at as string),
-      mediaType,
-      isIndex,
-      sizeBytes: r.content_bytes != null ? Number(r.content_bytes) : null,
-      layerCount: r.ref_count != null ? Math.max(Number(r.ref_count) - 1, 0) : null,
-      scanStatus: (r.scan_status as string) ?? null,
-      scanSummary: (r.scan_summary as SeveritySummary) ?? null,
-      blocked: (r.blocked as string | null) ?? null,
-      proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
-      signed: Boolean(r.signed),
-    };
+    ORDER BY t.updated_at DESC
+    LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => {
+        const mediaType = r.media_type as string | null;
+        const isIndex = !!mediaType && (mediaType.includes("index") || mediaType.includes("list"));
+        return {
+          name: r.name as string,
+          manifestDigest: r.manifest_digest as string,
+          updatedAt: new Date(r.updated_at as string),
+          mediaType,
+          isIndex,
+          sizeBytes: r.content_bytes != null ? Number(r.content_bytes) : null,
+          layerCount: r.ref_count != null ? Math.max(Number(r.ref_count) - 1, 0) : null,
+          scanStatus: (r.scan_status as string) ?? null,
+          scanSummary: (r.scan_summary as SeveritySummary) ?? null,
+          blocked: (r.blocked as string | null) ?? null,
+          proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
+          signed: Boolean(r.signed),
+        };
+      });
+    },
   });
 }
 
@@ -325,13 +423,14 @@ export interface ActivityItem {
   createdAt: Date;
 }
 
+/** One page of the push / delete feed for a repository, organization or user. */
 export async function recentActivity(opts: {
   repoId?: string;
   orgId?: string;
   userId?: string;
-  limit?: number;
-}): Promise<ActivityItem[]> {
-  const limit = opts.limit ?? 20;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ rows: ActivityItem[]; state: PageState }> {
   const scope = opts.repoId
     ? sql`AND e.repository_id = ${opts.repoId}`
     : opts.orgId
@@ -339,7 +438,19 @@ export async function recentActivity(opts: {
       : opts.userId
         ? sql`AND r.organization_id IN (SELECT organization_id FROM member WHERE user_id = ${opts.userId})`
         : sql``;
-  const { rows } = await db.execute(sql`
+  return paginatedQuery<ActivityItem>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.activity,
+    count: async () => {
+      const { rows } = await db.execute(sql`
+        SELECT count(*)::int AS n
+        FROM events e
+        JOIN repositories r ON r.id = e.repository_id
+        WHERE e.type IN ('push', 'delete') ${scope}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
     SELECT e.id, e.type, e.actor_type, e.tag, e.manifest_digest, e.created_at,
       o.slug || '/' || r.name AS repo_path,
       CASE e.actor_type
@@ -352,18 +463,20 @@ export async function recentActivity(opts: {
     JOIN repositories r ON r.id = e.repository_id
     JOIN organization o ON o.id = r.organization_id
     WHERE e.type IN ('push', 'delete') ${scope}
-    ORDER BY e.created_at DESC
-    LIMIT ${limit}`);
-  return rows.map((r) => ({
-    id: Number(r.id),
-    type: r.type as string,
-    actorType: r.actor_type as string,
-    actorName: r.actor_name as string | null,
-    repoPath: r.repo_path as string,
-    tag: r.tag as string | null,
-    digest: r.manifest_digest as string | null,
-    createdAt: new Date(r.created_at as string),
-  }));
+    ORDER BY e.created_at DESC, e.id DESC
+    LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => ({
+        id: Number(r.id),
+        type: r.type as string,
+        actorType: r.actor_type as string,
+        actorName: r.actor_name as string | null,
+        repoPath: r.repo_path as string,
+        tag: r.tag as string | null,
+        digest: r.manifest_digest as string | null,
+        createdAt: new Date(r.created_at as string),
+      }));
+    },
+  });
 }
 
 export async function instanceStats() {
@@ -406,18 +519,26 @@ export async function listMembersWithUsers(orgId: string) {
     .orderBy(member.createdAt);
 }
 
-export async function listAdminUsers() {
-  return db
-    .select({
-      id: userTable.id,
-      name: userTable.name,
-      email: userTable.email,
-      role: userTable.role,
-      banned: userTable.banned,
-      createdAt: userTable.createdAt,
-      emailVerified: userTable.emailVerified,
-    })
-    .from(userTable)
-    .orderBy(desc(userTable.createdAt))
-    .limit(200);
+/** One page of the instance's users, newest first, plus how many there are. */
+export async function listAdminUsers(opts: { page?: number; pageSize?: number } = {}) {
+  return paginatedQuery({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.users,
+    count: () => db.$count(userTable),
+    rows: (limit, offset) =>
+      db
+        .select({
+          id: userTable.id,
+          name: userTable.name,
+          email: userTable.email,
+          role: userTable.role,
+          banned: userTable.banned,
+          createdAt: userTable.createdAt,
+          emailVerified: userTable.emailVerified,
+        })
+        .from(userTable)
+        .orderBy(desc(userTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+  });
 }

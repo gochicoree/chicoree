@@ -16,7 +16,7 @@ export default async function AdminAuditPage({
 }) {
   await requireAdmin();
   const filter = auditFilterFromParams(await searchParams);
-  const [{ rows, total }, organizations] = await Promise.all([queryAudit({ filter }), auditOrganizations()]);
+  const [{ rows, total, state }, organizations] = await Promise.all([queryAudit({ filter }), auditOrganizations()]);
 
   return (
     <>
@@ -32,7 +32,7 @@ export default async function AdminAuditPage({
         organizations={organizations}
         exportHref={`/api/admin/audit.csv${auditFilterQuery(filter)}`}
       />
-      <AuditTable rows={rows} total={total} filter={filter} basePath="/admin/audit" />
+      <AuditTable rows={rows} total={total} state={state} filter={filter} basePath="/admin/audit" />
     </>
   );
 }

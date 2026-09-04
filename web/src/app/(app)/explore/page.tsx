@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { getSession } from "@/lib/session";
-import { listVisibleOrganizations, searchRepositories, type RepoSort } from "@/lib/search";
+import { listVisibleOrganizations, searchRepositoriesPage, type RepoSort } from "@/lib/search";
 import { normalizeQuery } from "@/lib/search-shared";
 import { viewerFromSession } from "@/lib/viewer";
 import { PageHeader } from "@/components/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
 import { RepoTable } from "@/components/repo-table";
 import { ExploreFilters } from "./explore-filters";
 
@@ -24,7 +26,14 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
   const session = await getSession();
   const viewer = viewerFromSession(session);
   const [repos, orgs] = await Promise.all([
-    searchRepositories(viewer, { q, orgSlug: org || undefined, visibility, sort, limit: 200 }),
+    searchRepositoriesPage(viewer, {
+      q,
+      orgSlug: org || undefined,
+      visibility,
+      sort,
+      page: pageParam(params),
+      pageSize: PAGE_SIZES.explore,
+    }),
     listVisibleOrganizations(viewer),
   ]);
   const filtered = !!(q || org || visibility);
@@ -41,15 +50,23 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
         }
       />
       <ExploreFilters value={{ q, org, visibility: visibility ?? "all", sort }} orgs={orgs} showVisibility={viewer.kind === "user"} />
-      {repos.length === 0 ? (
+      {repos.state.total === 0 ? (
         <p className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-sm text-ink-3" data-explore-empty>
           {filtered
             ? "No repositories match these filters."
             : "No public repositories yet. Make a repository public in its settings and it will appear here."}
         </p>
       ) : (
-        <div data-explore-results data-sort={sort} data-count={repos.length}>
-          <RepoTable repos={repos} showOrg />
+        <div data-explore-results data-sort={sort} data-count={repos.state.total}>
+          <RepoTable repos={repos.rows} showOrg />
+          <Pagination
+            state={repos.state}
+            noun="repositories"
+            basePath="/explore"
+            params={params}
+            label="Repository pages"
+            className="mt-3"
+          />
         </div>
       )}
     </>

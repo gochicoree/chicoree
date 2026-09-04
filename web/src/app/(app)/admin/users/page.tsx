@@ -3,17 +3,24 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/session";
 import { listAdminUsers } from "@/lib/data";
 import { relativeTime } from "@/lib/format";
+import { pageParam } from "@/lib/paginate-shared";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PaginationFooter } from "@/components/ui/pagination";
 import { AdminNav } from "../admin-nav";
 import { CreateUserForm } from "./create-user-form";
 
 export const metadata: Metadata = { title: "Users" };
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireAdmin();
-  const users = await listAdminUsers();
+  const params = await searchParams;
+  const users = await listAdminUsers({ page: pageParam(params) });
 
   return (
     <>
@@ -23,7 +30,11 @@ export default async function AdminUsersPage() {
         <CreateUserForm />
       </div>
       <Card>
-        <CardHeader eyebrow="People" title={`Users (${users.length})`} description="Open a user to change their role, set limits, or impersonate them." />
+        <CardHeader
+          eyebrow="People"
+          title={`Users (${users.state.total.toLocaleString("en-US")})`}
+          description="Open a user to change their role, set limits, or impersonate them."
+        />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -35,7 +46,7 @@ export default async function AdminUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {users.rows.map((u) => (
                 <tr key={u.id} className="border-b border-line last:border-0 hover:bg-card-2">
                   <td className="px-4 py-3 sm:px-5">
                     <Link href={`/admin/users/${u.id}`} className="text-sm font-medium hover:underline">
@@ -62,6 +73,7 @@ export default async function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+        <PaginationFooter state={users.state} noun="users" basePath="/admin/users" params={params} label="User pages" />
       </Card>
     </>
   );

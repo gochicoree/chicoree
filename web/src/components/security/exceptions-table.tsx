@@ -12,6 +12,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmModal } from "@/components/ui/modal";
+import { PaginationFooter } from "@/components/ui/pagination";
+import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { useActionToast } from "@/components/ui/toast";
 
 type Row = Omit<ExceptionView, "expiresAt" | "createdAt"> & { expiresAt: string | null; createdAt: string };
@@ -20,7 +22,23 @@ const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const td = "border-t border-line px-4 py-2 align-top first:pl-5 last:pr-5";
 
 /** Accepted risks with a revoke button for organization managers. */
-export function ExceptionsTable({ rows, canManage, showOrganization }: { rows: Row[]; canManage: boolean; showOrganization: boolean }) {
+export function ExceptionsTable({
+  rows,
+  state: pageState,
+  basePath,
+  params,
+  canManage,
+  showOrganization,
+}: {
+  rows: Row[];
+  state: PageState;
+  /** Path the pager links to. */
+  basePath: string;
+  /** The page's other search parameters, kept across page changes. */
+  params?: QueryLike;
+  canManage: boolean;
+  showOrganization: boolean;
+}) {
   const router = useRouter();
   const [state, action, pending] = useActionState<ExceptionResult | null, FormData>(revokeExceptionAction, null);
   const [revoking, setRevoking] = useState<Row | null>(null);
@@ -37,7 +55,7 @@ export function ExceptionsTable({ rows, canManage, showOrganization }: { rows: R
     <Card>
       <CardHeader
         eyebrow="Accepted risks"
-        title={`Exceptions (${rows.length})`}
+        title={`Exceptions (${pageState.total.toLocaleString("en-US")})`}
         description="Vulnerabilities taken out of the pull policy with a justification. Findings stay visible in the reports, struck through."
       />
       {rows.length === 0 ? (
@@ -116,6 +134,14 @@ export function ExceptionsTable({ rows, canManage, showOrganization }: { rows: R
           </table>
         </div>
       )}
+      <PaginationFooter
+        state={pageState}
+        noun="exceptions"
+        basePath={basePath}
+        params={params}
+        paramKey="exc"
+        label="Exception pages"
+      />
       {canManage && (
         <ConfirmModal
           open={!!revoking}

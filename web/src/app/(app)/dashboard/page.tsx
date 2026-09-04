@@ -7,6 +7,8 @@ import { env } from "@/lib/env";
 import { formatBytes } from "@/lib/format";
 import { PageHeader, StatTile } from "@/components/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { PaginationFooter } from "@/components/ui/pagination";
+import { pageParam } from "@/lib/paginate-shared";
 import { CommandLine } from "@/components/ui/copy";
 import { PullsChart } from "@/components/pulls-chart";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -24,13 +26,18 @@ import { RepoShortlist } from "@/components/repo-shortlist";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await requireSession();
+  const params = await searchParams;
   const viewer = viewerFromSession(session);
   const [orgs, series, activity, settings, onboarding, starred, recent] = await Promise.all([
     listUserOrgs(session.user.id),
     pullSeries({ userId: session.user.id, days: 30 }),
-    recentActivity({ userId: session.user.id, limit: 12 }),
+    recentActivity({ userId: session.user.id, page: pageParam(params, "activity") }),
     getInstanceSettings(),
     userOnboarding(session.user.id),
     listStarredRepos(viewer, session.user.id, 50),
@@ -78,10 +85,18 @@ export default async function DashboardPage() {
           </CardBody>
         </Card>
         <Card className="lg:col-span-2">
-          <CardHeader eyebrow="Log" title="Recent activity" />
+          <CardHeader eyebrow="Log" title={`Activity (${activity.state.total.toLocaleString("en-US")})`} />
           <CardBody className="max-h-80 overflow-y-auto">
-            <ActivityFeed items={activity} />
+            <ActivityFeed items={activity.rows} />
           </CardBody>
+          <PaginationFooter
+            state={activity.state}
+            noun="events"
+            basePath="/dashboard"
+            params={params}
+            paramKey="activity"
+            label="Activity pages"
+          />
         </Card>
       </div>
 

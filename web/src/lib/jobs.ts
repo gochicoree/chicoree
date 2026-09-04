@@ -12,6 +12,7 @@ import { env } from "./env";
 import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
 import { notify } from "./notify";
+import { PAGE_SIZES, paginatedQuery } from "./paginate-shared";
 import { runRetention } from "./retention";
 import { runTokenExpiryReminders } from "./token-expiry";
 
@@ -226,6 +227,23 @@ export async function recentJobRuns(limit = 30, job?: string) {
     where: job ? eq(jobRuns.job, job) : undefined,
     orderBy: (t, { desc }) => [desc(t.startedAt)],
     limit,
+  });
+}
+
+/** One page of the run history, newest first, plus how many runs there are. */
+export async function jobRunsPage(opts: { job?: string; page?: number; pageSize?: number } = {}) {
+  const where = opts.job ? eq(jobRuns.job, opts.job) : undefined;
+  return paginatedQuery<typeof jobRuns.$inferSelect>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.jobRuns,
+    count: () => db.$count(jobRuns, where),
+    rows: (limit, offset) =>
+      db.query.jobRuns.findMany({
+        where,
+        orderBy: (t, { desc }) => [desc(t.startedAt)],
+        limit,
+        offset,
+      }),
   });
 }
 

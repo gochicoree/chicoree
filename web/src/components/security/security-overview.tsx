@@ -6,6 +6,8 @@ import { repoHref } from "@/lib/proxy-shared";
 import { StatTile } from "@/components/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
+import { PaginationFooter } from "@/components/ui/pagination";
+import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { SeverityBar, SeverityChips, totalFindings } from "@/components/severity";
 
 const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-3 first:pl-5 last:pr-5";
@@ -17,11 +19,19 @@ export function SecurityOverview({
   totals,
   worst,
   blocked,
+  blockedState,
+  basePath,
+  params,
   showOrganization,
 }: {
   totals: SecurityTotals;
   worst: WorstRepository[];
   blocked: BlockedImage[];
+  blockedState: PageState;
+  /** Path the blocked-images pager links to. */
+  basePath: string;
+  /** The page's other search parameters, kept across page changes. */
+  params?: QueryLike;
   showOrganization: boolean;
 }) {
   const total = totalFindings(totals.summary);
@@ -53,7 +63,11 @@ export function SecurityOverview({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader eyebrow="Repositories" title="Most affected" description="Open findings in tagged images, most severe first." />
+          <CardHeader
+            eyebrow="Repositories"
+            title={`Top ${worst.length || 10} most affected`}
+            description="The repositories with the most severe open findings in tagged images — a shortlist, not every repository."
+          />
           {worst.length === 0 ? (
             <p className="px-5 py-4 text-sm text-ink-3">No open findings in any tagged image.</p>
           ) : (
@@ -90,7 +104,11 @@ export function SecurityOverview({
         </Card>
 
         <Card>
-          <CardHeader eyebrow="Pull policy" title="Blocked images" description="Manifests the registry refuses to serve until a re-scan, an exception or a policy change clears them." />
+          <CardHeader
+            eyebrow="Pull policy"
+            title={`Blocked images (${blockedState.total.toLocaleString("en-US")})`}
+            description="Manifests the registry refuses to serve until a re-scan, an exception or a policy change clears them."
+          />
           {blocked.length === 0 ? (
             <p className="px-5 py-4 text-sm text-ink-3">No image is blocked right now.</p>
           ) : (
@@ -125,6 +143,14 @@ export function SecurityOverview({
               </table>
             </div>
           )}
+          <PaginationFooter
+            state={blockedState}
+            noun="blocked images"
+            basePath={basePath}
+            params={params}
+            paramKey="blocked"
+            label="Blocked image pages"
+          />
         </Card>
       </div>
       {totals.images.scanned === 0 && totals.images.unscanned > 0 && (

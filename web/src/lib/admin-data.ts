@@ -2,6 +2,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accessTokens, passkey, session, user as userTable } from "@/db/schema";
+import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 import { getOrgLimits, getOrgUsage, getUserLimits, getUserUsage } from "./quota";
 
 export interface AdminOrgRow {
@@ -18,8 +19,19 @@ export interface AdminOrgRow {
   maxPrivateRepos: number | null;
 }
 
-export async function listAdminOrganizations(): Promise<AdminOrgRow[]> {
-  const { rows } = await db.execute(sql`
+/** One page of the instance's organizations by name, plus how many there are. */
+export async function listAdminOrganizations(
+  opts: { page?: number; pageSize?: number } = {},
+): Promise<{ rows: AdminOrgRow[]; state: PageState }> {
+  return paginatedQuery<AdminOrgRow>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.organizations,
+    count: async () => {
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM organization`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
     SELECT o.id, o.name, o.slug, o.created_at,
       (SELECT count(*)::int FROM member m WHERE m.organization_id = o.id) AS member_count,
       (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id AND r.visibility = 'public') AS public_repos,
@@ -32,20 +44,23 @@ export async function listAdminOrganizations(): Promise<AdminOrgRow[]> {
       l.max_storage_bytes, l.max_public_repos, l.max_private_repos
     FROM organization o
     LEFT JOIN organization_limits l ON l.organization_id = o.id
-    ORDER BY o.name`);
-  return rows.map((r) => ({
-    id: r.id as string,
-    name: r.name as string,
-    slug: r.slug as string,
-    createdAt: new Date(r.created_at as string),
-    memberCount: Number(r.member_count),
-    publicRepos: Number(r.public_repos),
-    privateRepos: Number(r.private_repos),
-    storageBytes: Number(r.storage_bytes),
-    maxStorageBytes: r.max_storage_bytes == null ? null : Number(r.max_storage_bytes),
-    maxPublicRepos: r.max_public_repos == null ? null : Number(r.max_public_repos),
-    maxPrivateRepos: r.max_private_repos == null ? null : Number(r.max_private_repos),
-  }));
+    ORDER BY o.name
+    LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        slug: r.slug as string,
+        createdAt: new Date(r.created_at as string),
+        memberCount: Number(r.member_count),
+        publicRepos: Number(r.public_repos),
+        privateRepos: Number(r.private_repos),
+        storageBytes: Number(r.storage_bytes),
+        maxStorageBytes: r.max_storage_bytes == null ? null : Number(r.max_storage_bytes),
+        maxPublicRepos: r.max_public_repos == null ? null : Number(r.max_public_repos),
+        maxPrivateRepos: r.max_private_repos == null ? null : Number(r.max_private_repos),
+      }));
+    },
+  });
 }
 
 export async function getAdminUserDetail(userId: string) {

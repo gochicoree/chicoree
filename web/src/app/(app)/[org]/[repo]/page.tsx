@@ -2,13 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { egressSeries, getRepoByPath, listRepoTags, pullSeries, trafficSummary } from "@/lib/data";
+import { egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, trafficSummary } from "@/lib/data";
+import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
 import { env } from "@/lib/env";
 import { scanningEnabled } from "@/lib/scanners";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { Layers, Link2, ShieldBan, ShieldCheck } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { PaginationFooter } from "@/components/ui/pagination";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { SeverityChips } from "@/components/severity";
 import { PullsChart } from "@/components/pulls-chart";
@@ -17,7 +19,7 @@ import { RuleBadges } from "@/components/tag-rules-manager";
 import { imageReference } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
-import { describeMediaType, listUntaggedManifests } from "@/lib/manifests";
+import { describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
 import { after } from "next/server";
@@ -32,10 +34,13 @@ import { CompareBar } from "./compare/compare-bar";
 
 export default async function RepoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ org: string; repo: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { org: orgSlug, repo: rawRepo } = await params;
+  const query = await searchParams;
   const repoName = decodeRepoParam(rawRepo);
   const found = await getRepoByPath(orgSlug, repoName);
   // Renamed / transferred repositories: 308 to the new address.
@@ -45,14 +50,15 @@ export default async function RepoPage({
   if (found.repo.visibility === "private" && !role) notFound();
   const session = await getSession();
 
-  const [tagList, series, proxy, egress, traffic, rules, untagged, star, about, storage] = await Promise.all([
-    listRepoTags(found.repo.id),
+  const [tags, overview, series, proxy, egress, traffic, rules, untagged, star, about, storage] = await Promise.all([
+    listRepoTags(found.repo.id, { page: pageParam(query, "tags"), pageSize: PAGE_SIZES.tags }),
+    repoTagOverview(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
     role ? egressSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     effectiveTagRules(found.repo.organizationId, found.repo.id),
-    listUntaggedManifests(found.repo.id),
+    untaggedManifestsPage(found.repo.id, { page: pageParam(query, "untagged"), pageSize: PAGE_SIZES.untagged }),
     repoStarState(found.repo.id, session?.user.id ?? null),
     // The About block only matters when there is no README.
     found.repo.readme ? Promise.resolve(null) : imageAbout(found.repo.id),
@@ -66,18 +72,16 @@ export default async function RepoPage({
   }
   const path = `${orgSlug}/${repoName}`;
   const base = repoHref(orgSlug, repoName);
-  const lastChecked = tagList.reduce<Date | null>(
-    (latest, t) => (t.proxyCheckedAt && (!latest || t.proxyCheckedAt > latest) ? t.proxyCheckedAt : latest),
-    null,
-  );
+  const tagList = tags.rows;
+  const lastChecked = overview.lastCheckedAt;
   const scanning = await scanningEnabled();
   // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
   const canDelete = role === "owner" || role === "admin";
-  const latestDigest = tagList.find((t) => t.name === "latest")?.manifestDigest ?? null;
+  const latestDigest = overview.latestDigest;
   // Which tag rules lock each tag (immutable / protected) — for badges and the delete button.
   const flagsByTag = new Map(tagList.map((t) => [t.name, tagFlags(rules, t.name)]));
   // Digests referenced by other manifests in this repository (index children); those cannot be deleted alone.
-  const showUntagged = untagged.length > 0 || canDelete;
+  const showUntagged = untagged.state.total > 0 || canDelete;
 
   return (
     <div className="space-y-6">
@@ -127,19 +131,19 @@ export default async function RepoPage({
         </div>
       </div>
 
-      <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, tagList[0]?.name)}`} />
+      <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, overview.names[0])}`} />
 
       <Card>
         <CardHeader
           eyebrow="Tags"
-          title={`Tags (${tagList.length})`}
+          title={`Tags (${overview.total.toLocaleString("en-US")})`}
           action={
-            tagList.length >= 2 ? (
-              <CompareBar base={base} tags={tagList.map((t) => t.name)} from={tagList[1]?.name} to={tagList[0]?.name} compact />
+            overview.names.length >= 2 ? (
+              <CompareBar base={base} tags={overview.names} from={overview.names[1]} to={overview.names[0]} compact />
             ) : undefined
           }
         />
-        {tagList.length === 0 ? (
+        {overview.total === 0 ? (
           <CardBody>
             <p className="text-sm text-ink-3">
               {proxy ? (
@@ -245,6 +249,14 @@ export default async function RepoPage({
             </table>
           </div>
         )}
+        <PaginationFooter
+          state={tags.state}
+          noun="tags"
+          basePath={base}
+          params={query}
+          paramKey="tags"
+          label="Tag pages"
+        />
       </Card>
 
       <ReadmeCard html={readmeHtml} about={about} canEdit={role === "owner" || role === "admin"} settingsHref={`${base}/settings`} />
@@ -253,10 +265,10 @@ export default async function RepoPage({
         <Card>
           <CardHeader
             eyebrow="Untagged"
-            title={`Untagged manifests (${untagged.length})`}
+            title={`Untagged manifests (${untagged.state.total.toLocaleString("en-US")})`}
             description="Images no tag points at: left behind by deleted or re-pointed tags, platform variants of a multi-arch index, or artifacts attached to another image. Retention policies and the prune job clean them up; layer data is reclaimed by garbage collection."
           />
-          {untagged.length === 0 ? (
+          {untagged.state.total === 0 ? (
             <CardBody>
               <p className="text-sm text-ink-3">Every manifest in this repository has a tag.</p>
             </CardBody>
@@ -273,7 +285,7 @@ export default async function RepoPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {untagged.map((m) => {
+                  {untagged.rows.map((m) => {
                     const blocked = m.isChild
                       ? "Platform variant of a multi-arch index that still exists; delete the index instead."
                       : null;
@@ -326,6 +338,14 @@ export default async function RepoPage({
               </table>
             </div>
           )}
+          <PaginationFooter
+            state={untagged.state}
+            noun="manifests"
+            basePath={base}
+            params={query}
+            paramKey="untagged"
+            label="Untagged manifest pages"
+          />
         </Card>
       )}
 

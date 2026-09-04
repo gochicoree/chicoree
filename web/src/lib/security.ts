@@ -6,6 +6,7 @@ import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { organization, repositories, vulnerabilityExceptions } from "@/db/schema";
 import { refreshOrganizationBlocks, refreshRepositoryBlocks } from "./pull-policy";
+import { PAGE_SIZES, paginate, paginatedQuery, type PageState } from "./paginate-shared";
 import { SEVERITY_ORDER, type Severity } from "./scanner-shared";
 
 /** Tag → manifest digest, plus tag → index child digests. */
@@ -176,31 +177,63 @@ export async function worstRepositories(organizationId: string | null, limit = 1
   }));
 }
 
-export async function blockedImages(organizationId: string | null, limit = 50): Promise<BlockedImage[]> {
-  const { rows } = await db.execute(sql`
-    SELECT mb.repository_id, mb.digest, mb.reason, mb.created_at, r.name AS repo_name, o.slug AS org_slug,
-           (SELECT string_agg(t.name, ',' ORDER BY t.name) FROM tags t WHERE t.repository_id = mb.repository_id AND t.manifest_digest = mb.digest) AS tags
-    FROM manifest_blocks mb
-    JOIN repositories r ON r.id = mb.repository_id
-    JOIN organization o ON o.id = r.organization_id
-    WHERE ${orgFilter(organizationId)}
-    ORDER BY mb.created_at DESC LIMIT ${limit}`);
-  return rows.map((r) => ({
-    repositoryId: r.repository_id as string,
-    digest: r.digest as string,
-    reason: r.reason as string,
-    createdAt: new Date(r.created_at as string),
-    repoName: r.repo_name as string,
-    orgSlug: r.org_slug as string,
-    tags: r.tags ? String(r.tags).split(",") : [],
-  }));
+/** One page of blocked images, newest first, plus how many there are. */
+export async function blockedImages(
+  organizationId: string | null,
+  page = 1,
+  pageSize = PAGE_SIZES.blockedImages,
+): Promise<{ rows: BlockedImage[]; state: PageState }> {
+  const where = orgFilter(organizationId);
+  return paginatedQuery<BlockedImage>({
+    page,
+    pageSize,
+    count: async () => {
+      const { rows } = await db.execute(sql`
+        SELECT count(*)::int AS n FROM manifest_blocks mb
+        JOIN repositories r ON r.id = mb.repository_id
+        WHERE ${where}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
+        SELECT mb.repository_id, mb.digest, mb.reason, mb.created_at, r.name AS repo_name, o.slug AS org_slug,
+               (SELECT string_agg(t.name, ',' ORDER BY t.name) FROM tags t WHERE t.repository_id = mb.repository_id AND t.manifest_digest = mb.digest) AS tags
+        FROM manifest_blocks mb
+        JOIN repositories r ON r.id = mb.repository_id
+        JOIN organization o ON o.id = r.organization_id
+        WHERE ${where}
+        ORDER BY mb.created_at DESC LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => ({
+        repositoryId: r.repository_id as string,
+        digest: r.digest as string,
+        reason: r.reason as string,
+        createdAt: new Date(r.created_at as string),
+        repoName: r.repo_name as string,
+        orgSlug: r.org_slug as string,
+        tags: r.tags ? String(r.tags).split(",") : [],
+      }));
+    },
+  });
 }
 
-export async function listExceptions(organizationId: string | null, repositoryId?: string | null): Promise<ExceptionView[]> {
-  const scope = repositoryId
-    ? sql`(ve.repository_id IS NULL OR ve.repository_id = ${repositoryId})`
+/** One page of accepted risks, newest first, plus how many there are. */
+export async function listExceptions(
+  organizationId: string | null,
+  opts: { repositoryId?: string | null; page?: number; pageSize?: number } = {},
+): Promise<{ rows: ExceptionView[]; state: PageState }> {
+  const scope = opts.repositoryId
+    ? sql`(ve.repository_id IS NULL OR ve.repository_id = ${opts.repositoryId})`
     : sql`TRUE`;
-  const { rows } = await db.execute(sql`
+  const where = sql`${organizationId ? sql`ve.organization_id = ${organizationId}` : sql`TRUE`} AND ${scope}`;
+  return paginatedQuery<ExceptionView>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.exceptions,
+    count: async () => {
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM vulnerability_exceptions ve WHERE ${where}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
     WITH ${TAGGED_CTE}
     SELECT ve.*, o.slug AS org_slug, o.name AS org_name, r.name AS repo_name, u.email AS created_by_email, u.name AS created_by_name,
            (SELECT count(*) FROM (
@@ -216,9 +249,10 @@ export async function listExceptions(organizationId: string | null, repositoryId
     JOIN organization o ON o.id = ve.organization_id
     LEFT JOIN repositories r ON r.id = ve.repository_id
     LEFT JOIN "user" u ON u.id = ve.created_by
-    WHERE ${organizationId ? sql`ve.organization_id = ${organizationId}` : sql`TRUE`} AND ${scope}
-    ORDER BY ve.created_at DESC`);
-  return rows.map((r) => {
+    WHERE ${where}
+    ORDER BY ve.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => {
     const expiresAt = r.expires_at ? new Date(r.expires_at as string) : null;
     return {
       id: r.id as string,
@@ -236,7 +270,9 @@ export async function listExceptions(organizationId: string | null, repositoryId
       createdBy: (r.created_by as string | null) ?? null,
       createdByLabel: (r.created_by_name as string | null) ?? (r.created_by_email as string | null) ?? null,
       covers: Number(r.covers ?? 0),
-    };
+        };
+      });
+    },
   });
 }
 
@@ -259,12 +295,35 @@ export interface FindingHit {
   blocked: string | null;
 }
 
-/** Every tagged image that contains a vulnerability id or a package (substring, case-insensitive). */
-export async function searchFindings(query: string, organizationId: string | null, limit = 200): Promise<FindingHit[]> {
+/**
+ * One page of the tagged images that contain a vulnerability id or a package
+ * (substring, case-insensitive), most severe first, plus the match count.
+ */
+export async function searchFindings(
+  query: string,
+  organizationId: string | null,
+  page = 1,
+  pageSize = PAGE_SIZES.cveSearch,
+): Promise<{ rows: FindingHit[]; state: PageState }> {
   const q = query.trim();
-  if (!q) return [];
+  if (!q) return { rows: [], state: paginate(0, 1, pageSize) };
   const like = `%${q}%`;
-  const { rows } = await db.execute(sql`
+  const match = sql`(sf.vulnerability_id ILIKE ${like} OR sf.package ILIKE ${like}) AND ${orgFilter(organizationId)}`;
+  return paginatedQuery<FindingHit>({
+    page,
+    pageSize,
+    count: async () => {
+      const { rows } = await db.execute(sql`
+        WITH ${TAGGED_CTE}
+        SELECT count(*)::int AS n
+        FROM scan_findings sf
+        JOIN tagged tg ON tg.digest = sf.digest
+        JOIN repositories r ON r.id = tg.repository_id
+        WHERE ${match}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
     WITH ${TAGGED_CTE}
     SELECT o.slug AS org_slug, r.name AS repo_name, r.id AS repository_id, tg.tag, tg.tag_digest, sf.digest,
            sf.vulnerability_id, sf.package, sf.version, sf.fixed_in, sf.severity, vs.scanner,
@@ -275,25 +334,27 @@ export async function searchFindings(query: string, organizationId: string | nul
     JOIN organization o ON o.id = r.organization_id
     LEFT JOIN vulnerability_scans vs ON vs.digest = sf.digest
     LEFT JOIN manifest_blocks mb ON mb.repository_id = tg.repository_id AND mb.digest = tg.tag_digest
-    WHERE (sf.vulnerability_id ILIKE ${like} OR sf.package ILIKE ${like}) AND ${orgFilter(organizationId)}
+    WHERE ${match}
     ORDER BY ${SEVERITY_RANK_SQL}, o.slug, r.name, tg.tag, sf.package
-    LIMIT ${limit}`);
-  return rows.map((r) => ({
-    orgSlug: r.org_slug as string,
-    repoName: r.repo_name as string,
-    repositoryId: r.repository_id as string,
-    tag: r.tag as string,
-    tagDigest: r.tag_digest as string,
-    digest: r.digest as string,
-    vulnerabilityId: r.vulnerability_id as string,
-    package: r.package as string,
-    version: (r.version as string) ?? "",
-    fixedIn: (r.fixed_in as string | null) ?? null,
-    severity: r.severity as Severity,
-    scanner: (r.scanner as string | null) ?? null,
-    accepted: r.accepted === true,
-    blocked: (r.blocked as string | null) ?? null,
-  }));
+    LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => ({
+        orgSlug: r.org_slug as string,
+        repoName: r.repo_name as string,
+        repositoryId: r.repository_id as string,
+        tag: r.tag as string,
+        tagDigest: r.tag_digest as string,
+        digest: r.digest as string,
+        vulnerabilityId: r.vulnerability_id as string,
+        package: r.package as string,
+        version: (r.version as string) ?? "",
+        fixedIn: (r.fixed_in as string | null) ?? null,
+        severity: r.severity as Severity,
+        scanner: (r.scanner as string | null) ?? null,
+        accepted: r.accepted === true,
+        blocked: (r.blocked as string | null) ?? null,
+      }));
+    },
+  });
 }
 
 // --- Exceptions ---------------------------------------------------------------------

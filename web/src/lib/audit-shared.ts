@@ -1,5 +1,6 @@
 // Audit log: pure helpers shared by the server queries, the pages and the CSV
-// export (no database imports here).
+// export (no database imports here). Paging goes through lib/paginate-shared.
+import { PAGE_SIZES, pageHref, parsePage } from "./paginate-shared";
 
 /** Action prefixes offered in the filter dropdown, with a readable label. */
 export const AUDIT_ACTION_GROUPS: { prefix: string; label: string }[] = [
@@ -19,7 +20,7 @@ export const AUDIT_ACTION_GROUPS: { prefix: string; label: string }[] = [
   { prefix: "user", label: "User settings" },
 ];
 
-export const AUDIT_PAGE_SIZE = 50;
+export const AUDIT_PAGE_SIZE = PAGE_SIZES.audit;
 export const AUDIT_EXPORT_MAX = 10_000;
 
 export interface AuditFilter {
@@ -37,14 +38,13 @@ export function auditFilterFromParams(params: Record<string, string | string[] |
     const v = params instanceof URLSearchParams ? params.get(k) : params[k];
     return (Array.isArray(v) ? v[0] : v) ?? "";
   };
-  const page = Number(get("page"));
   return {
     q: get("q").trim().slice(0, 200),
     action: get("action").trim().slice(0, 64),
     organizationId: get("org").trim().slice(0, 64),
     from: validDate(get("from")),
     to: validDate(get("to")),
-    page: Number.isInteger(page) && page > 0 ? page : 1,
+    page: parsePage(get("page")),
   };
 }
 
@@ -52,17 +52,20 @@ function validDate(v: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
 }
 
+/** The filter as plain query parameters, for links and <Pagination params>. */
+export function auditFilterParams(f: AuditFilter): Record<string, string> {
+  const p: Record<string, string> = {};
+  if (f.q) p.q = f.q;
+  if (f.action) p.action = f.action;
+  if (f.organizationId) p.org = f.organizationId;
+  if (f.from) p.from = f.from;
+  if (f.to) p.to = f.to;
+  return p;
+}
+
 /** Query string for links that keep the current filter (page optional). */
 export function auditFilterQuery(f: AuditFilter, page?: number): string {
-  const p = new URLSearchParams();
-  if (f.q) p.set("q", f.q);
-  if (f.action) p.set("action", f.action);
-  if (f.organizationId) p.set("org", f.organizationId);
-  if (f.from) p.set("from", f.from);
-  if (f.to) p.set("to", f.to);
-  if (page && page > 1) p.set("page", String(page));
-  const s = p.toString();
-  return s ? `?${s}` : "";
+  return pageHref("", auditFilterParams(f), page ?? 1);
 }
 
 export interface AuditRow {

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { getRepoByPath, listRepoTags } from "@/lib/data";
+import { getRepoByPath, repoTagOverview } from "@/lib/data";
 import { env } from "@/lib/env";
 import { scanningEnabled } from "@/lib/scanners";
 import { formatBytes, formatDate, relativeTime } from "@/lib/format";
@@ -58,8 +58,7 @@ export default async function ComparePage({
   if (found!.repo.visibility === "private" && !role) notFound();
   const repo = found!.repo;
   const base = repoHref(orgSlug, repoName);
-  const tagList = await listRepoTags(repo.id);
-  const tagNames = tagList.map((t) => t.name);
+  const { names: tagNames } = await repoTagOverview(repo.id);
   // Defaults: the newest two tags (the newer one on the right).
   const fromRef = fromParam ?? tagNames[1] ?? null;
   const toRef = toParam ?? tagNames[0] ?? null;
