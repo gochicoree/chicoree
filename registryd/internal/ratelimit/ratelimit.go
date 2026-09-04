@@ -1,10 +1,12 @@
 // Package ratelimit implements the pull rate limit: a per-client counter
 // over a fixed window, configured from the admin panel (instance_settings
-// row "ratelimit") with environment variables as the fallback. Counters
-// live in memory, so every registry replica enforces the limit on its own.
+// row "ratelimit") with environment variables as the fallback. Counters live
+// in Postgres, so every replica draws from the same budget; a Manager built
+// without a Counter falls back to per-process counters.
 package ratelimit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -243,31 +245,84 @@ func (l *Limiter) sweep(now time.Time) {
 	l.lastSweep = now
 }
 
-// Manager holds the live configuration and one limiter per client class.
-type Manager struct {
-	mu   sync.RWMutex
-	cfg  Config
-	anon *Limiter
-	auth *Limiter
+// Counter is the shared tally behind the limit: one row per key and window
+// in Postgres (internal/store). Take adds one request to the window that
+// starts at windowStart and reports the resulting count, so several replicas
+// enforce one budget.
+type Counter interface {
+	TakeRateLimit(ctx context.Context, key string, windowStart time.Time) (int64, error)
 }
 
-// NewManager starts with cfg applied.
+// shared counts through a Counter. Windows are aligned to the wall clock
+// (a 1h limit resets on the hour) so every replica agrees on the boundary
+// without coordinating; the in-memory Limiter instead starts a window with
+// the key's first request.
+type shared struct {
+	limit   Limit
+	counter Counter
+}
+
+func (s *shared) take(ctx context.Context, key string, now time.Time) (Decision, error) {
+	start := now.Truncate(s.limit.Window)
+	count, err := s.counter.TakeRateLimit(ctx, key, start)
+	if err != nil {
+		return Decision{}, err
+	}
+	return Decision{
+		Allowed:   count <= s.limit.Count,
+		Limit:     s.limit,
+		Remaining: max(0, s.limit.Count-count),
+		Reset:     start.Add(s.limit.Window),
+	}, nil
+}
+
+// Manager holds the live configuration and one limiter per client class.
+type Manager struct {
+	mu      sync.RWMutex
+	cfg     Config
+	counter Counter
+	anon    *Limiter
+	auth    *Limiter
+	sanon   *shared
+	sauth   *shared
+}
+
+// NewManager starts with cfg applied and counts in this process only.
 func NewManager(cfg Config) *Manager {
 	m := &Manager{}
 	m.apply(cfg)
 	return m
 }
 
+// NewSharedManager counts through the given Counter, so every replica draws
+// from one budget.
+func NewSharedManager(cfg Config, counter Counter) *Manager {
+	m := &Manager{counter: counter}
+	m.apply(cfg)
+	return m
+}
+
 func (m *Manager) apply(cfg Config) {
 	m.cfg = cfg
-	m.anon, m.auth = nil, nil
+	m.anon, m.auth, m.sanon, m.sauth = nil, nil, nil, nil
 	if !cfg.Anonymous.IsZero() {
-		m.anon = NewLimiter(cfg.Anonymous)
+		if m.counter != nil {
+			m.sanon = &shared{limit: cfg.Anonymous, counter: m.counter}
+		} else {
+			m.anon = NewLimiter(cfg.Anonymous)
+		}
 	}
 	if !cfg.Authenticated.IsZero() {
-		m.auth = NewLimiter(cfg.Authenticated)
+		if m.counter != nil {
+			m.sauth = &shared{limit: cfg.Authenticated, counter: m.counter}
+		} else {
+			m.auth = NewLimiter(cfg.Authenticated)
+		}
 	}
 }
+
+// Shared reports whether counters live in Postgres rather than this process.
+func (m *Manager) Shared() bool { return m.counter != nil }
 
 // Reload swaps the configuration when it changed; counters restart on a
 // change (limits are edited rarely, and a fresh window is the least
@@ -293,18 +348,27 @@ func (m *Manager) Config() Config {
 var ErrUnlimited = errors.New("no rate limit configured")
 
 // Take charges one request to the anonymous (per IP) or authenticated (per
-// subject) budget.
-func (m *Manager) Take(anonymous bool, key string, now time.Time) (Decision, error) {
+// subject) budget. Shared counters share one table, so the class is part of
+// the key.
+func (m *Manager) Take(ctx context.Context, anonymous bool, key string, now time.Time) (Decision, error) {
 	m.mu.RLock()
-	l := m.auth
+	l, sh := m.auth, m.sauth
 	if anonymous {
-		l = m.anon
+		l, sh = m.anon, m.sanon
 	}
 	m.mu.RUnlock()
-	if l == nil {
+	switch {
+	case sh != nil:
+		class := "auth"
+		if anonymous {
+			class = "anon"
+		}
+		return sh.take(ctx, class+"|"+key, now)
+	case l != nil:
+		return l.Take(key, now), nil
+	default:
 		return Decision{}, ErrUnlimited
 	}
-	return l.Take(key, now), nil
 }
 
 // ClientIP picks the address a request should be accounted to: the last

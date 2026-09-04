@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"registryd/internal/auth"
@@ -35,7 +36,10 @@ type Server struct {
 	// Optional: pull rate limiting (see ratelimit.go) and traffic accounting
 	// (see traffic.go); nil disables the feature.
 	limiter *ratelimit.Manager
-	traffic *traffic.Counter
+	// Throttle for "the shared counter is unreachable" warnings.
+	limiterLogMu    sync.Mutex
+	limiterLoggedAt time.Time
+	traffic         *traffic.Counter
 	// Rename/transfer redirects (see redirects.go): the cached tables and the
 	// lookups resolution needs (the store, or a fake in tests).
 	redirects  *redirectCache

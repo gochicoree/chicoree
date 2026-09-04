@@ -50,6 +50,13 @@
       "when": 1788505724702,
       "tag": "0006_wave2_discovery_scanning_repotools_credentials_supplychain_staging",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788543181812,
+      "tag": "0007_rate_limit_counters",
+      "breakpoints": true
     }
   ]
 }

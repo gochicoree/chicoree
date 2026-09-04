@@ -1,6 +1,8 @@
 package ratelimit
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -148,27 +150,27 @@ func TestManager(t *testing.T) {
 	cfg, _ := ConfigFromSettings(nil, Settings{Anonymous: "2/1m"})
 	m := NewManager(cfg)
 	now := time.Now()
-	if _, err := m.Take(false, "user:1", now); err != ErrUnlimited {
+	if _, err := m.Take(context.Background(), false, "user:1", now); err != ErrUnlimited {
 		t.Errorf("authenticated should be unlimited, got %v", err)
 	}
-	if d, err := m.Take(true, "1.2.3.4", now); err != nil || !d.Allowed || d.Remaining != 1 {
+	if d, err := m.Take(context.Background(), true, "1.2.3.4", now); err != nil || !d.Allowed || d.Remaining != 1 {
 		t.Errorf("first anonymous take: %+v %v", d, err)
 	}
 	if changed := m.Reload(cfg); changed {
 		t.Error("reloading the same config reported a change")
 	}
 	// Same config object semantics: the budget survived the no-op reload.
-	if d, _ := m.Take(true, "1.2.3.4", now); !d.Allowed || d.Remaining != 0 {
+	if d, _ := m.Take(context.Background(), true, "1.2.3.4", now); !d.Allowed || d.Remaining != 0 {
 		t.Errorf("second anonymous take: %+v", d)
 	}
 	next, _ := ConfigFromSettings(nil, Settings{Anonymous: "5/1h", Authenticated: "1/1h"})
 	if changed := m.Reload(next); !changed {
 		t.Error("changed config not detected")
 	}
-	if d, _ := m.Take(true, "1.2.3.4", now); !d.Allowed || d.Remaining != 4 {
+	if d, _ := m.Take(context.Background(), true, "1.2.3.4", now); !d.Allowed || d.Remaining != 4 {
 		t.Errorf("after reload the counter should restart: %+v", d)
 	}
-	if d, err := m.Take(false, "user:1", now); err != nil || !d.Allowed || d.Remaining != 0 {
+	if d, err := m.Take(context.Background(), false, "user:1", now); err != nil || !d.Allowed || d.Remaining != 0 {
 		t.Errorf("authenticated after reload: %+v %v", d, err)
 	}
 }
@@ -194,5 +196,102 @@ func TestClientIP(t *testing.T) {
 		if got := ClientIP(c.remote, c.xff, trusted); got != c.want {
 			t.Errorf("ClientIP(%q, %q) = %q, want %q", c.remote, c.xff, got, c.want)
 		}
+	}
+}
+
+// fakeCounter is a shared counter kept in a map: one budget, like Postgres.
+type fakeCounter struct {
+	counts map[string]int64
+	starts map[string]time.Time
+	err    error
+	calls  int
+}
+
+func newFakeCounter() *fakeCounter {
+	return &fakeCounter{counts: map[string]int64{}, starts: map[string]time.Time{}}
+}
+
+func (f *fakeCounter) TakeRateLimit(_ context.Context, key string, windowStart time.Time) (int64, error) {
+	f.calls++
+	if f.err != nil {
+		return 0, f.err
+	}
+	if start, ok := f.starts[key]; !ok || start.Before(windowStart) {
+		f.starts[key] = windowStart
+		f.counts[key] = 0
+	}
+	f.counts[key]++
+	return f.counts[key], nil
+}
+
+func TestSharedManagerCountsOneBudget(t *testing.T) {
+	counter := newFakeCounter()
+	cfg := Config{Anonymous: Limit{Count: 3, Window: time.Minute}}
+	// Two managers stand in for two replicas sharing the counter.
+	a := NewSharedManager(cfg, counter)
+	b := NewSharedManager(cfg, counter)
+	if !a.Shared() {
+		t.Fatal("expected shared counters")
+	}
+	now := time.Date(2026, 1, 2, 3, 4, 30, 0, time.UTC)
+	for i, m := range []*Manager{a, b, a} {
+		d, err := m.Take(context.Background(), true, "ip:203.0.113.7", now)
+		if err != nil || !d.Allowed {
+			t.Fatalf("request %d: allowed=%v err=%v", i+1, d.Allowed, err)
+		}
+		if want := int64(2 - i); d.Remaining != want {
+			t.Fatalf("request %d: remaining %d, want %d", i+1, d.Remaining, want)
+		}
+	}
+	d, err := b.Take(context.Background(), true, "ip:203.0.113.7", now)
+	if err != nil {
+		t.Fatalf("fourth request: %v", err)
+	}
+	if d.Allowed {
+		t.Fatal("fourth request across replicas should be refused")
+	}
+	if d.Remaining != 0 {
+		t.Fatalf("remaining %d, want 0", d.Remaining)
+	}
+	// Windows are aligned, so both replicas agree when the budget resets.
+	if want := now.Truncate(time.Minute).Add(time.Minute); !d.Reset.Equal(want) {
+		t.Fatalf("reset %v, want %v", d.Reset, want)
+	}
+	next, err := a.Take(context.Background(), true, "ip:203.0.113.7", now.Add(time.Minute))
+	if err != nil || !next.Allowed {
+		t.Fatalf("next window: allowed=%v err=%v", next.Allowed, err)
+	}
+}
+
+func TestSharedManagerSeparatesClasses(t *testing.T) {
+	counter := newFakeCounter()
+	cfg := Config{Anonymous: Limit{Count: 1, Window: time.Minute}, Authenticated: Limit{Count: 1, Window: time.Minute}}
+	m := NewSharedManager(cfg, counter)
+	now := time.Now()
+	if d, _ := m.Take(context.Background(), true, "same", now); !d.Allowed {
+		t.Fatal("anonymous request refused")
+	}
+	// The same key in the other class must draw from its own budget.
+	if d, _ := m.Take(context.Background(), false, "same", now); !d.Allowed {
+		t.Fatal("authenticated request drew from the anonymous budget")
+	}
+}
+
+func TestSharedManagerReportsCounterErrors(t *testing.T) {
+	counter := newFakeCounter()
+	counter.err = errors.New("connection refused")
+	m := NewSharedManager(Config{Anonymous: Limit{Count: 1, Window: time.Minute}}, counter)
+	if _, err := m.Take(context.Background(), true, "ip:1.2.3.4", time.Now()); err == nil {
+		t.Fatal("expected the counter error to reach the caller (it fails open there)")
+	}
+}
+
+func TestManagerWithoutCounterStaysInProcess(t *testing.T) {
+	m := NewManager(Config{Anonymous: Limit{Count: 1, Window: time.Minute}})
+	if m.Shared() {
+		t.Fatal("NewManager must not report shared counters")
+	}
+	if d, err := m.Take(context.Background(), true, "ip:1.2.3.4", time.Now()); err != nil || !d.Allowed {
+		t.Fatalf("allowed=%v err=%v", d.Allowed, err)
 	}
 }
