@@ -64,10 +64,13 @@ export interface RepoListItem {
   proxy: boolean;
   /** Proxy caches: the most recent upstream check of any tag in the repository. */
   lastCheckedAt: Date | null;
+  /** Users who starred the repository. */
+  starCount: number;
 }
 
-const repoListSelect = sql`
+export const repoListSelect = sql`
   r.id, r.name, r.description, r.visibility, r.pull_count, r.updated_at, o.slug AS org_slug,
+  (SELECT count(*)::int FROM repository_stars s WHERE s.repository_id = r.id) AS star_count,
   (SELECT count(*)::int FROM tags t WHERE t.repository_id = r.id) AS tag_count,
   COALESCE((SELECT sum(b.size)::bigint FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
     WHERE rb.repository_id = r.id), 0) AS size_bytes,
@@ -75,7 +78,7 @@ const repoListSelect = sql`
   EXISTS (SELECT 1 FROM organization_proxies p WHERE p.organization_id = r.organization_id) AS is_proxy,
   (SELECT max(t.proxy_checked_at) FROM tags t WHERE t.repository_id = r.id) AS last_checked_at`;
 
-function mapRepoRow(r: Record<string, unknown>): RepoListItem {
+export function mapRepoRow(r: Record<string, unknown>): RepoListItem {
   return {
     id: r.id as string,
     name: r.name as string,
@@ -89,6 +92,7 @@ function mapRepoRow(r: Record<string, unknown>): RepoListItem {
     orgSlug: r.org_slug as string,
     proxy: !!r.is_proxy,
     lastCheckedAt: r.last_checked_at ? new Date(r.last_checked_at as string) : null,
+    starCount: Number(r.star_count ?? 0),
   };
 }
 

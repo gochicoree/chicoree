@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass, Menu, Settings, X } from "lucide-react";
+import { Compass, Menu, Search, Settings, X } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
 import { Sidebar, type NavBranding, type NavOrg } from "./sidebar";
 
@@ -71,6 +71,9 @@ export function MobileNav({
           <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} size="sm" />
         </Link>
         <div className="ml-auto flex items-center">
+          <Link href="/search" aria-label="Search" className={iconLink}>
+            <Search className="size-5" />
+          </Link>
           <Link href="/explore" aria-label="Explore" className={iconLink}>
             <Compass className="size-5" />
           </Link>

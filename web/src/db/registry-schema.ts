@@ -38,6 +38,8 @@ export const repositories = pgTable(
     blockPullsAt: text("block_pulls_at", { enum: ["off", "critical", "high", "medium", "low"] }),
     /** Override for counting unrated findings; null = inherit. */
     blockUnrated: boolean("block_unrated"),
+    /** Markdown shown on the repository page (Settings → General), at most README_MAX_BYTES. */
+    readme: text("readme"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -330,6 +332,10 @@ export const userSettings = pgTable("user_settings", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   defaultVisibility: text("default_visibility", { enum: ["public", "private"] }),
+  /** The dashboard onboarding checklist was closed by the user. */
+  onboardingDismissedAt: timestamp("onboarding_dismissed_at", { withTimezone: true }),
+  /** The /admin setup checklist was closed by this administrator. */
+  adminChecklistDismissedAt: timestamp("admin_checklist_dismissed_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -638,4 +644,37 @@ export const retentionPolicies = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [unique("retention_policies_scope_uq").on(t.organizationId, t.repositoryId).nullsNotDistinct()],
+);
+
+// --- Discovery: stars and recently viewed repositories (web app only) ---
+
+/** A user starred a repository; the count shows in listings, the list on the dashboard. */
+export const repositoryStars = pgTable(
+  "repository_stars",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.repositoryId] }), index("repository_stars_repo_idx").on(t.repositoryId)],
+);
+
+/** Repository page views per user, upserted at most once a minute; feeds "Recently viewed". */
+export const repositoryVisits = pgTable(
+  "repository_visits",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    lastVisitedAt: timestamp("last_visited_at", { withTimezone: true }).notNull().defaultNow(),
+    visits: integer("visits").notNull().default(1),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.repositoryId] }), index("repository_visits_user_idx").on(t.userId, t.lastVisitedAt)],
 );

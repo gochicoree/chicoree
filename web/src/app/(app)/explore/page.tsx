@@ -1,25 +1,56 @@
 import type { Metadata } from "next";
-import { listPublicRepos } from "@/lib/data";
+import { getSession } from "@/lib/session";
+import { listVisibleOrganizations, searchRepositories, type RepoSort } from "@/lib/search";
+import { normalizeQuery } from "@/lib/search-shared";
+import { viewerFromSession } from "@/lib/viewer";
 import { PageHeader } from "@/components/page-header";
 import { RepoTable } from "@/components/repo-table";
+import { ExploreFilters } from "./explore-filters";
 
 export const metadata: Metadata = { title: "Explore" };
 
-export default async function ExplorePage() {
-  const repos = await listPublicRepos(100);
+type Params = Record<string, string | string[] | undefined>;
+const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+
+export default async function ExplorePage({ searchParams }: { searchParams: Promise<Params> }) {
+  const params = await searchParams;
+  const q = normalizeQuery(one(params.q));
+  const org = one(params.org).trim();
+  const visibilityParam = one(params.visibility);
+  const visibility = visibilityParam === "public" || visibilityParam === "private" ? visibilityParam : undefined;
+  const sortParam = one(params.sort);
+  const sort: RepoSort = sortParam === "updated" || sortParam === "name" ? sortParam : "pulls";
+
+  const session = await getSession();
+  const viewer = viewerFromSession(session);
+  const [repos, orgs] = await Promise.all([
+    searchRepositories(viewer, { q, orgSlug: org || undefined, visibility, sort, limit: 200 }),
+    listVisibleOrganizations(viewer),
+  ]);
+  const filtered = !!(q || org || visibility);
+
   return (
     <>
       <PageHeader
-        eyebrow="Public"
+        eyebrow="Browse"
         title="Explore images"
-        description="Every public repository on this registry, most pulled first."
+        description={
+          viewer.kind === "user"
+            ? "Every public repository on this registry, plus the private ones you have access to."
+            : "Every public repository on this registry."
+        }
       />
+      <ExploreFilters value={{ q, org, visibility: visibility ?? "all", sort }} orgs={orgs} showVisibility={viewer.kind === "user"} />
       {repos.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-sm text-ink-3">
-          No public repositories yet. Make a repository public in its settings and it will appear here.
+        <p className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-sm text-ink-3" data-explore-empty>
+          {filtered
+            ? "No repositories match these filters."
+            : "No public repositories yet. Make a repository public in its settings and it will appear here."}
         </p>
       ) : (
-        <RepoTable repos={repos} showOrg />
+        <div data-explore-results data-sort={sort} data-count={repos.length}>
+          <RepoTable repos={repos} showOrg />
+        </div>
       )}
     </>
   );

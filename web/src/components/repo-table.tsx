@@ -4,6 +4,7 @@ import type { RepoListItem } from "@/lib/data";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { repoHref } from "@/lib/proxy-shared";
+import { StarCount } from "@/components/star-button";
 
 /** Repository listing used on org pages and the explore page. */
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
@@ -45,6 +46,7 @@ export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; s
                           {path}
                         </Link>
                         <VisibilityBadge visibility={repo.visibility} />
+                        <StarCount count={repo.starCount} />
                         {repo.proxy && (
                           <Badge
                             tone="accent"
