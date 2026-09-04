@@ -778,3 +778,22 @@ export const organizationRedirects = pgTable("organization_redirects", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   createdBy: text("created_by"),
 });
+
+// --- Pull rate limits (written by registryd, one budget across replicas) ---
+
+/**
+ * One row per client and fixed window: registryd upserts it on every
+ * manifest request that counts against a limit, so several replicas share
+ * one budget instead of each granting the full one. Windows are aligned to
+ * the wall clock; rows are swept once their window is two windows old. The
+ * key is "<class>|<client>", e.g. "anon|ip:203.0.113.7" or "auth|user:abc".
+ */
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    key: text("key").primaryKey(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: bigint("count", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [index("rate_limit_counters_window_idx").on(t.windowStart)],
+);

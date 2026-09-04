@@ -255,9 +255,14 @@ through an old name get no grant at all.
   database work; keyed `ip:<addr>` for anonymous tokens, else the token
   subject (`user:<id>` / `sa:<id>`). Exempt: tokens carrying
   `registry:catalog:*` (instance admins), and the subjects `user:system`,
-  `mirror:*`, `proxy:*`. Fixed window per key (starts with the first request,
-  expired keys swept once per window), process-local — limits are per
-  replica. The client address is the last `X-Forwarded-For` hop only when the
+  `mirror:*`, `proxy:*`. Fixed window per key, counted in Postgres
+  (`rate_limit_counters`, one row per `<class>|<client>`): the window is
+  aligned to the wall clock so every replica agrees on the boundary without
+  coordinating, and a single `INSERT … ON CONFLICT DO UPDATE … RETURNING
+  count` makes the tally exact across replicas. Rows whose window is two
+  windows old are swept every five minutes. When the counter cannot be
+  reached the request passes (a database outage must not block every pull)
+  and the reason is logged at most once a minute. The client address is the last `X-Forwarded-For` hop only when the
   peer is inside a trusted prefix (IPv4-mapped IPv6 peers unmapped first),
   else the peer. Every limited response carries `RateLimit-Limit`,
   `RateLimit-Policy` (`<count>;w=<seconds>`), `RateLimit-Remaining` and
@@ -838,11 +843,11 @@ by the newest active key in `token_signing_keys`, else the file key; the
   next GC pass, never inline.
 - The registry enforces exactly two-level names (`<org>/<repo>`), except in
   proxy-cache organizations, where the upstream path may be deeper.
-- Pull rate-limit counters, the traffic counter and the `/metrics` counters
-  are process-local: with several registryd replicas each has its own
-  budget, a crash loses at most 10 s of traffic statistics, and Prometheus
-  must scrape every replica. The proxy cache's per-digest singleflight is
-  also per replica.
+- Pull rate-limit counters live in Postgres, so replicas share one budget at
+  the cost of one row upsert per limited request. The traffic counter and the
+  `/metrics` counters are still process-local: a crash loses at most 10 s of
+  traffic statistics, and Prometheus must scrape every replica. The proxy
+  cache's per-digest singleflight is also per replica.
 - Shared upload staging costs one extra backend write and read per uploaded
   (or proxied) blob and, on S3, a `DeleteObject` per chunk after commit; a
   mixed local/shared fleet behaves like local.

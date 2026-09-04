@@ -290,7 +290,7 @@ be shared, and what stays per replica:
 | Blob content | The storage backend (S3, bunny, or a filesystem every replica mounts). |
 | Metadata | Postgres — already shared. |
 | **In-flight uploads** | `STORAGE_STAGING=shared` (below). Without it upload sessions are node-local and the load balancer needs sticky routing on `/v2/*/blobs/uploads/*`. |
-| Pull rate-limit counters | Per replica: three replicas give each client three times the budget (see [Rate limits](#rate-limits)). |
+| Pull rate-limit counters | Postgres (`rate_limit_counters`): every replica draws from the same budget, one row upsert per limited request. |
 | Traffic statistics and registry metrics | Per replica; traffic is flushed to Postgres every 10 s (a crash loses at most 10 s), `/metrics` counters are process-local — scrape every replica. |
 | Proxy-cache downloads | The per-digest singleflight is per replica: two replicas asked for the same missing layer at the same moment both fetch it (the second finds the blob already stored and links it). |
 | Signing keys | Read from Postgres by every replica (re-read every `TOKEN_KEY_RELOAD_INTERVAL`, and immediately on an unknown key id). |
@@ -1213,7 +1213,11 @@ as a pull, blob downloads never do.
 | Trusted proxies | CIDRs whose `X-Forwarded-For` is believed | `10.0.0.0/8` |
 
 Limits are written as `<count>/<window>` with a window in `s`, `m`, `h` or
-`d`; an empty field means unlimited. Changes apply within 30 seconds.
+`d`; an empty field means unlimited. Changes apply within 30 seconds. The
+counters live in Postgres and the window is aligned to the wall clock (an
+hourly limit resets on the hour), so several `registryd` replicas enforce one
+budget rather than one each. If the database is unreachable the registry
+serves the pull instead of refusing it.
 `RATE_LIMIT_ANONYMOUS`, `RATE_LIMIT_AUTHENTICATED` and
 `RATE_LIMIT_TRUSTED_PROXIES` are the defaults while the section has never
 been saved (both the web app and `registryd` read them).

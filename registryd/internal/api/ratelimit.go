@@ -22,9 +22,11 @@ func (s *Server) EnableRateLimiting(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.limiter = ratelimit.NewManager(cfg)
+	// Counters live in Postgres so every replica draws from one budget.
+	s.limiter = ratelimit.NewSharedManager(cfg, s.store)
 	slog.Info("ratelimit: pull limits", "anonymous", orUnlimited(cfg.Anonymous.String()),
-		"authenticated", orUnlimited(cfg.Authenticated.String()), "trustedProxies", len(cfg.TrustedProxies))
+		"authenticated", orUnlimited(cfg.Authenticated.String()), "trustedProxies", len(cfg.TrustedProxies),
+		"counters", "postgres")
 	return nil
 }
 
@@ -91,8 +93,14 @@ func (s *Server) enforcePullLimit(w http.ResponseWriter, r *http.Request, rc *re
 	}
 	anonymous, key := rateLimitKey(r, rc.identity, s.limiter.Config())
 	now := time.Now()
-	d, err := s.limiter.Take(anonymous, key, now)
+	d, err := s.limiter.Take(r.Context(), anonymous, key, now)
 	if errors.Is(err, ratelimit.ErrUnlimited) {
+		return true
+	}
+	if err != nil {
+		// The counter is unreachable: serving the pull beats blocking every
+		// client because of the database. Logged at most once a minute.
+		s.logLimiterFailure(err)
 		return true
 	}
 	setRateLimitHeaders(w.Header(), d, now)
@@ -111,6 +119,17 @@ func (s *Server) enforcePullLimit(w http.ResponseWriter, r *http.Request, rc *re
 	msg += fmt.Sprintf("; retry in %ds", retry)
 	writeError(w, http.StatusTooManyRequests, CodeTooManyRequests, msg)
 	return false
+}
+
+// logLimiterFailure reports a counter error without flooding the log.
+func (s *Server) logLimiterFailure(err error) {
+	s.limiterLogMu.Lock()
+	defer s.limiterLogMu.Unlock()
+	if time.Since(s.limiterLoggedAt) < time.Minute {
+		return
+	}
+	s.limiterLoggedAt = time.Now()
+	slog.Warn("ratelimit: counter unavailable; requests pass unlimited until it recovers", "err", err)
 }
 
 // loadRateLimitConfig resolves the effective configuration: the admin
@@ -150,6 +169,22 @@ func (s *Server) RunRateLimitReload(ctx context.Context, interval time.Duration)
 				"authenticated", orUnlimited(cfg.Authenticated.String()), "trustedProxies", len(cfg.TrustedProxies))
 		}
 	}
+	// Counter rows outlive their window by design (a client that stops
+	// asking leaves its last one behind); sweeping every few minutes keeps
+	// the table the size of the active client set.
+	lastSweep := time.Now()
+	sweep := func() {
+		cfg := s.limiter.Config()
+		window := max(cfg.Anonymous.Window, cfg.Authenticated.Window)
+		if window <= 0 {
+			return
+		}
+		sweepCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if _, err := s.store.SweepRateLimits(sweepCtx, time.Now().Add(-2*window)); err != nil {
+			slog.Warn("ratelimit: sweep failed", "err", err)
+		}
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -158,6 +193,10 @@ func (s *Server) RunRateLimitReload(ctx context.Context, interval time.Duration)
 			return
 		case <-ticker.C:
 			reload()
+			if time.Since(lastSweep) >= 5*time.Minute {
+				lastSweep = time.Now()
+				sweep()
+			}
 		}
 	}
 }
