@@ -5,6 +5,7 @@ import { listAdminOrganizations } from "@/lib/admin-data";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
+import { buttonClasses } from "@/components/ui/button";
 import { AdminNav } from "../admin-nav";
 
 export const metadata: Metadata = { title: "Organizations" };
@@ -26,6 +27,11 @@ export default async function AdminOrganizationsPage() {
           eyebrow="Namespaces"
           title={`Organizations (${orgs.length})`}
           description="Usage against limits. Open an organization to manage members, repositories and limits."
+          action={
+            <Link href="/admin/organizations/move" className={buttonClasses("secondary", "sm")}>
+              Move repositories…
+            </Link>
+          }
         />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
