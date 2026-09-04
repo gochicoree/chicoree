@@ -15,6 +15,7 @@ import { notify } from "./notify";
 import { getScanner } from "./scanners";
 import { findingsOf, reportKind } from "./scanners/normalize";
 import { summarizeFindings, type Finding } from "./scanner-shared";
+import { looksLikeArtifact } from "./signatures-shared";
 
 interface ManifestDescriptor {
   mediaType?: string;
@@ -27,6 +28,18 @@ interface ManifestPayload {
   config?: ManifestDescriptor;
   layers?: ManifestDescriptor[];
   manifests?: ManifestDescriptor[];
+  subject?: ManifestDescriptor;
+}
+
+/**
+ * Signatures, attestations, SBOMs and other attached artifacts carry no
+ * filesystem: scanners choke on them ("bad block at 0"), so they are never
+ * queued. Anything whose layers are all non-image media types counts too.
+ */
+function isArtifactManifest(p: ManifestPayload): boolean {
+  const layerTypes = (p.layers ?? []).map((l) => l.mediaType ?? "");
+  if (looksLikeArtifact({ hasSubject: !!p.subject, tags: [], layerMediaTypes: layerTypes, configMediaType: p.config?.mediaType ?? null })) return true;
+  return layerTypes.length > 0 && layerTypes.every((mt) => mt !== "" && !/image\.(layer|rootfs)/.test(mt));
 }
 
 async function resolveRepository(repositoryPath: string) {
@@ -195,6 +208,11 @@ export async function runScan(repositoryPath: string, digest: string): Promise<v
   if (payload.manifests) return; // index: children are scanned on their own
   const layers = (payload.layers ?? []).filter((l): l is ManifestDescriptor & { digest: string } => !!l.digest);
   if (layers.length === 0) return;
+  if (isArtifactManifest(payload)) {
+    // Drop the failure an older build may have recorded for this artifact.
+    await db.delete(vulnerabilityScans).where(and(eq(vulnerabilityScans.digest, digest), eq(vulnerabilityScans.status, "failed")));
+    return;
+  }
 
   try {
     await setScanState(digest, repo.id, { status: "indexing", error: null, scanner: scanner.name });
