@@ -89,7 +89,7 @@ export function relabelTag(sourceTag: string, relabel: Relabel, sourceRepo: stri
 
 // --- Local registry client (push side) --------------------------------------
 
-class LocalPusher {
+export class LocalPusher {
   constructor(
     private readonly path: string,
     private readonly token: string,

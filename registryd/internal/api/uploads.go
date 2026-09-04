@@ -70,16 +70,36 @@ func (s *Server) handleUploadStart(w http.ResponseWriter, r *http.Request, rc *r
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// splitMountSource resolves a cross-repo mount's ?from= name into an
+// organization and repository. Top-level names belong to the library
+// organization, exactly as routeV2 resolves them (`nginx` == `library/nginx`);
+// deeper paths are not mountable sources.
+func splitMountSource(from string) (org, repo string, ok bool) {
+	if !nameRe.MatchString(from) {
+		return "", "", false
+	}
+	switch strings.Count(from, "/") {
+	case 0:
+		return LibraryOrg, from, true
+	case 1:
+		parts := strings.SplitN(from, "/", 2)
+		return parts[0], parts[1], true
+	default:
+		return "", "", false
+	}
+}
+
 // tryMount links an existing blob from another repository the caller can pull
 // from. Returns true when the mount succeeded (response written).
 func (s *Server) tryMount(w http.ResponseWriter, r *http.Request, rc *reqCtx, digest, from string) bool {
-	if !isDigest(digest) || !nameRe.MatchString(from) || strings.Count(from, "/") != 1 {
+	fromOrg, fromName, ok := splitMountSource(from)
+	if !isDigest(digest) || !ok {
 		return false
 	}
 	if !s.verifier.Disabled() && !rc.identity.Can("repository", from, "pull") {
 		return false
 	}
-	fromRepo, err := s.store.GetRepository(r.Context(), strings.Split(from, "/")[0], strings.Split(from, "/")[1])
+	fromRepo, err := s.store.GetRepository(r.Context(), fromOrg, fromName)
 	if err != nil {
 		return false
 	}
