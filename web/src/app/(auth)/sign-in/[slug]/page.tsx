@@ -25,6 +25,7 @@ export default async function HiddenSignInPage({ params }: { params: Promise<{ s
         oidcName: s.oidc.name,
         ldap: s.ldap.enabled && !!s.ldap.url,
         ldapName: s.ldap.name,
+        email: !!s.smtp.host,
       }}
       signUp={{ mode: s.access.signUpMode, invitationId: "" }}
       local={{ mode: "hidden", slug }}
