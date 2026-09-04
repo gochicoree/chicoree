@@ -27,7 +27,7 @@ export async function runJobAction(
   }
   const run = await runJob(name, params, `user:${session.user.id}`);
   await recordAudit({ action: "job.run", targetType: "job", targetId: name, targetLabel: name, details: { params, status: run.status, runId: run.id } });
-  revalidatePath("/admin/jobs");
+  revalidatePath("/admin/jobs", "layout");
   revalidatePath("/admin");
   return run.status === "succeeded"
     ? { runId: run.id, status: run.status, result: run.result }

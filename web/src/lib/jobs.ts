@@ -1,7 +1,7 @@
 // Background jobs: maintenance tasks an admin can run from the Jobs page or
 // trigger from automation through POST /api/jobs/<name>. Every run is
 // recorded in job_runs.
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { jobRuns, manifests, organization, repositories, tags, vulnerabilityScans } from "@/db/schema";
 import { triggerGarbageCollection } from "./registry-client";
@@ -18,6 +18,8 @@ import { runTokenExpiryReminders } from "./token-expiry";
 export interface JobDefinition {
   name: string;
   title: string;
+  /** Short label for the job's tab on the admin Jobs page. */
+  tab: string;
   description: string;
   /** Documented query/body parameters for the API and the admin form. */
   params: { name: string; description: string; default: string }[];
@@ -35,6 +37,7 @@ function durationToMs(value: string | undefined, fallbackMs: number): number {
 export const JOBS: Record<string, JobDefinition> = {
   gc: {
     name: "gc",
+    tab: "GC",
     title: "Garbage collection",
     description:
       "Reclaims blob content no manifest references anymore and sweeps stale upload sessions on the registry.",
@@ -48,6 +51,7 @@ export const JOBS: Record<string, JobDefinition> = {
 
   "scan-stale": {
     name: "scan-stale",
+    tab: "Re-scan",
     title: "Re-scan stale images",
     description:
       "Re-scans tagged images with the configured scanner (Administration → Scanning) whose last scan is older than the given age, that were never scanned, or whose last scan failed. olderThan=0s re-scans everything.",
@@ -86,6 +90,7 @@ export const JOBS: Record<string, JobDefinition> = {
 
   "prune-untagged": {
     name: "prune-untagged",
+    tab: "Prune untagged",
     title: "Prune untagged manifests",
     description:
       "Deletes manifests that have no tag and are not part of a multi-arch index, older than the given age. Run garbage collection afterwards to reclaim space.",
@@ -105,6 +110,7 @@ export const JOBS: Record<string, JobDefinition> = {
 
 JOBS["mirror-sync"] = {
   name: "mirror-sync",
+  tab: "Mirrors",
   title: "Sync mirrors",
   description: "Runs every enabled repository mirror: fetches matching tags from the source registry and imports anything new or changed.",
   params: [],
@@ -113,6 +119,7 @@ JOBS["mirror-sync"] = {
 
 JOBS["proxy-evict"] = {
   name: "proxy-evict",
+  tab: "Proxy eviction",
   title: "Evict unused proxy-cache tags",
   description:
     "Removes tags in proxy-cache organizations that nobody pulled within the window; they are fetched from the upstream again on the next pull. Run prune-untagged and gc afterwards to reclaim the space.",
@@ -124,6 +131,7 @@ JOBS["proxy-evict"] = {
 };
 JOBS.retention = {
   name: "retention",
+  tab: "Retention",
   title: "Apply retention policies",
   description:
     "Walks every repository with an enabled retention policy (Settings → Policies) and removes the tags and untagged manifests it selects. Dry run by default: reports what would go without deleting anything. Run garbage collection afterwards to reclaim space.",
@@ -143,6 +151,7 @@ JOBS.retention = {
 
 JOBS["scan-normalize"] = {
   name: "scan-normalize",
+  tab: "Scan backfill",
   title: "Normalise legacy scan reports",
   description:
     "One-off backfill after upgrading: turns scan rows that only hold Clair's raw report into normalised findings and fills the scan_findings table behind the CVE search and the security pages. Safe to run repeatedly; does nothing once every row is converted.",
@@ -152,6 +161,7 @@ JOBS["scan-normalize"] = {
 
 JOBS["exceptions-expire"] = {
   name: "exceptions-expire",
+  tab: "Exceptions",
   title: "Apply expired vulnerability exceptions",
   description:
     "Recomputes pull blocks for organizations whose accepted risks (Security → exceptions) have expired, so the findings count against the pull policy again, and drops exceptions expired for more than 30 days. Schedule it hourly or daily.",
@@ -161,6 +171,7 @@ JOBS["exceptions-expire"] = {
 
 JOBS["token-expiry"] = {
   name: "token-expiry",
+  tab: "Token expiry",
   title: "Credential expiry reminders",
   description:
     "Emails the owner of every personal access token, and the managers of every organization whose service account, expires within the window — once per credential. Schedule it daily.",
@@ -210,11 +221,23 @@ export async function runJob(
   }
 }
 
-export async function recentJobRuns(limit = 30) {
+export async function recentJobRuns(limit = 30, job?: string) {
   return db.query.jobRuns.findMany({
+    where: job ? eq(jobRuns.job, job) : undefined,
     orderBy: (t, { desc }) => [desc(t.startedAt)],
     limit,
   });
+}
+
+/** The most recent run of every job that has ever run, keyed by job name. */
+export async function latestRunsByJob(): Promise<Map<string, typeof jobRuns.$inferSelect>> {
+  const rows = await db.selectDistinctOn([jobRuns.job]).from(jobRuns).orderBy(jobRuns.job, desc(jobRuns.startedAt));
+  return new Map(rows.map((r) => [r.job, r]));
+}
+
+/** A job by name, or null for unknown names (the [job] route uses it). */
+export function jobDefinition(name: string): JobDefinition | null {
+  return Object.prototype.hasOwnProperty.call(JOBS, name) ? JOBS[name] : null;
 }
 
 // keep imports referenced for drizzle typing of tables used in raw SQL above
