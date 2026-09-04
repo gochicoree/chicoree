@@ -31,6 +31,7 @@ export type QuotaKind = "storage" | "public repositories" | "private repositorie
 
 export type NotifyInput =
   | { event: "scan.blocked"; repositoryId: string; blocked: { digest: string; reason: string }[] }
+  | { event: "signature.blocked"; repositoryId: string; blocked: { digest: string; reason: string }[] }
   | {
       event: "scan.completed";
       repositoryId: string;
@@ -220,6 +221,52 @@ export async function notify(input: NotifyInput): Promise<void> {
           },
           reason: i.reason,
         }).catch((err) => console.error("scan.blocked webhook failed:", err));
+      }
+      return;
+    }
+
+    case "signature.blocked": {
+      const ctx = await repoContext(input.repositoryId);
+      if (!ctx || input.blocked.length === 0) return;
+      const items = await Promise.all(
+        input.blocked.map(async (b) => ({ ...b, tags: await tagsForDigest(ctx.repo.id, b.digest) })),
+      );
+      const describe = (i: (typeof items)[number]) =>
+        i.tags.length ? i.tags.map((t) => `${ctx.path}:${t}`).join(", ") : `${ctx.path}@${i.digest.slice(0, 19)}`;
+      const first = items[0];
+      const subject =
+        items.length === 1
+          ? `Signature required: ${ctx.path}${first.tags[0] ? `:${first.tags[0]}` : ""}`
+          : `Signature required: ${items.length} images in ${ctx.path}`;
+      const policyUrl = `${ctx.url}/settings/policy`;
+      const message = compose(
+        "Pull blocked by signature policy",
+        subject,
+        [
+          `The signature policy of ${ctx.org.name} now blocks ${items.length === 1 ? "an image" : `${items.length} images`} in ${ctx.path} because no cosign signature from a trusted key exists:`,
+          ...items.map((i) => `  • ${describe(i)}`),
+          "",
+          "docker pull answers 403 for these images until they are signed with a trusted key (cosign sign --key …) or the policy changes.",
+        ],
+        [
+          `The signature policy of <strong>${esc(ctx.org.name)}</strong> now blocks ${items.length === 1 ? "an image" : `${items.length} images`} in ${link(ctx.url, ctx.path)} because no cosign signature from a trusted key exists:`,
+          `<ul>${items.map((i) => `<li>${esc(describe(i))}</li>`).join("")}</ul>`,
+          `<code>docker pull</code> answers 403 for these images until they are signed with a trusted key (<code>cosign sign --key …</code>) or the ${link(policyUrl, "policy")} changes.`,
+        ],
+        { href: `${ctx.url}/tags/${encodeURIComponent(first.tags[0] ?? first.digest)}`, label: "Open the image" },
+      );
+      await send("signature.blocked", await orgManagers(ctx.org.id), message);
+      for (const i of items) {
+        await emitRepositoryEvent(ctx.repo.id, "signature.blocked", {
+          tag: i.tags[0] ?? null,
+          tags: i.tags,
+          image: {
+            digest: i.digest,
+            reference: imageReference(env.registryHost, ctx.org.slug, ctx.repo.name, i.tags[0] ?? i.digest),
+            url: `${ctx.url}/tags/${encodeURIComponent(i.tags[0] ?? i.digest)}`,
+          },
+          reason: i.reason,
+        }).catch((err) => console.error("signature.blocked webhook failed:", err));
       }
       return;
     }

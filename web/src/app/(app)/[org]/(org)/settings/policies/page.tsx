@@ -7,16 +7,20 @@ import { RetentionForm } from "@/components/retention-form";
 import { TagRulesManager } from "@/components/tag-rules-manager";
 import { getRetentionPolicies, toSettings } from "@/lib/retention";
 import { listTagRules } from "@/lib/tag-rules";
+import { listTrustedKeys } from "@/lib/signatures";
+import { SignaturePolicyForm } from "@/components/signature-policy-form";
+import { TrustedKeysManager } from "@/components/trusted-keys-manager";
 import { orgSettingsContext } from "../context";
 
 export default async function OrgPoliciesPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await orgSettingsContext(params);
-  const [settings, rules, retention] = await Promise.all([
+  const [settings, rules, retention, keys] = await Promise.all([
     db.query.organizationSettings.findFirst({
       where: eq(organizationSettings.organizationId, org.id),
     }),
     listTagRules(org.id, null),
     getRetentionPolicies(org.id),
+    listTrustedKeys(org.id, null),
   ]);
   return (
     <div className="space-y-6">
@@ -26,6 +30,19 @@ export default async function OrgPoliciesPage({ params }: { params: Promise<{ or
         organizationId={org.id}
         level={settings?.blockPullsAt ?? null}
         unrated={settings?.blockUnrated ?? false}
+      />
+      <SignaturePolicyForm scope="organization" organizationId={org.id} value={settings?.requireSignature ?? false} keyCount={keys.length} />
+      <TrustedKeysManager
+        scope="organization"
+        organizationId={org.id}
+        keys={keys.map((k) => ({
+          id: k.id,
+          name: k.name,
+          fingerprint: k.fingerprint,
+          keyType: k.keyType,
+          repositoryId: k.repositoryId,
+          createdAt: k.createdAt.toISOString(),
+        }))}
       />
       <TagRulesManager
         scope="organization"

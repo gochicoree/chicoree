@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -367,19 +368,29 @@ func (s *Store) ManifestExists(ctx context.Context, repoID, digest string) (bool
 }
 
 // DeleteManifest removes a manifest (tags and refs cascade via FKs).
-// ManifestBlock reports whether the web app's vulnerability policy forbids
-// pulling a manifest (manifest_blocks is written by the web app only).
-func (s *Store) ManifestBlock(ctx context.Context, repoID, digest string) (string, bool, error) {
-	var reason string
+// ManifestBlockRow is one manifest_blocks row: why a manifest may not be
+// pulled and whether callers with push rights on the repository are exempt
+// (signature-policy blocks: the pusher must read the image to sign it).
+type ManifestBlockRow struct {
+	Reason        string
+	PushersExempt bool
+}
+
+// ManifestBlock reports whether one of the web app's pull policies
+// (vulnerability threshold, required signatures) forbids pulling a manifest
+// (manifest_blocks is written by the web app only).
+func (s *Store) ManifestBlock(ctx context.Context, repoID, digest string) (*ManifestBlockRow, error) {
+	var row ManifestBlockRow
 	err := s.pool.QueryRow(ctx, `
-		SELECT reason FROM manifest_blocks WHERE repository_id = $1 AND digest = $2`, repoID, digest).Scan(&reason)
+		SELECT reason, pushers_exempt FROM manifest_blocks WHERE repository_id = $1 AND digest = $2`, repoID, digest).
+		Scan(&row.Reason, &row.PushersExempt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", false, err
+		return nil, err
 	}
-	return reason, true, nil
+	return &row, nil
 }
 
 func (s *Store) DeleteManifest(ctx context.Context, repoID, digest string) error {
@@ -400,12 +411,16 @@ type Referrer struct {
 	MediaType    string
 	ArtifactType string
 	Size         int64
+	// Annotations of the referring manifest; the spec requires them in the
+	// response and clients (cosign) use them to tell signatures from
+	// attestations without fetching every manifest.
+	Annotations map[string]string
 }
 
 // ListReferrers returns manifests in the repo whose subject is the digest.
 func (s *Store) ListReferrers(ctx context.Context, repoID, subject, artifactType string) ([]Referrer, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT digest, media_type, COALESCE(artifact_type, ''), size
+		SELECT digest, media_type, COALESCE(artifact_type, ''), size, (payload::jsonb)->'annotations'
 		FROM manifests
 		WHERE repository_id = $1 AND subject_digest = $2
 		  AND ($3 = '' OR artifact_type = $3)
@@ -417,12 +432,27 @@ func (s *Store) ListReferrers(ctx context.Context, repoID, subject, artifactType
 	var out []Referrer
 	for rows.Next() {
 		var r Referrer
-		if err := rows.Scan(&r.Digest, &r.MediaType, &r.ArtifactType, &r.Size); err != nil {
+		var annotations []byte
+		if err := rows.Scan(&r.Digest, &r.MediaType, &r.ArtifactType, &r.Size, &annotations); err != nil {
 			return nil, err
 		}
+		r.Annotations = ParseAnnotations(annotations)
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// ParseAnnotations decodes a manifest's annotations object; anything that
+// is not a JSON object of strings yields nil (annotations are optional).
+func ParseAnnotations(raw []byte) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil || len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // --- Tags ---

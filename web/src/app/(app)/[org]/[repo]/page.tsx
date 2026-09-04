@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import { scanningEnabled } from "@/lib/scanners";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
-import { Layers, Link2, ShieldBan } from "lucide-react";
+import { Layers, Link2, ShieldBan, ShieldCheck } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { SeverityChips } from "@/components/severity";
@@ -185,6 +185,11 @@ export default async function RepoPage({
                         <span className="ml-2 rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">
                           multi-arch
                         </span>
+                      )}
+                      {tag.signed && (
+                        <Badge tone="ok" className="ml-2 align-middle" title="Signed: a cosign signature from a trusted key verifies this image">
+                          <ShieldCheck className="size-3" /> signed
+                        </Badge>
                       )}
                       {tag.blocked && (
                         <Badge tone="danger" className="ml-2 align-middle" title={tag.blocked}>

@@ -139,11 +139,15 @@ export interface TagListItem {
   blocked: string | null;
   /** Proxy caches: when the upstream last confirmed this tag. */
   proxyCheckedAt: Date | null;
+  /** A cosign signature from a trusted key verifies this image (manifest_signatures). */
+  signed: boolean;
 }
 
 export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
   const { rows } = await db.execute(sql`
     SELECT t.name, t.manifest_digest, t.updated_at, t.proxy_checked_at, m.media_type, m.size AS manifest_size,
+      EXISTS (SELECT 1 FROM manifest_signatures ms WHERE ms.repository_id = t.repository_id
+        AND ms.manifest_digest = t.manifest_digest AND ms.kind = 'signature' AND ms.status = 'verified') AS signed,
       (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
         WHERE mr.repository_id = t.repository_id AND mr.manifest_digest = t.manifest_digest) AS content_bytes,
       (SELECT count(*)::int FROM manifest_refs mr WHERE mr.repository_id = t.repository_id
@@ -170,6 +174,7 @@ export async function listRepoTags(repoId: string): Promise<TagListItem[]> {
       scanSummary: (r.scan_summary as SeveritySummary) ?? null,
       blocked: (r.blocked as string | null) ?? null,
       proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
+      signed: Boolean(r.signed),
     };
   });
 }

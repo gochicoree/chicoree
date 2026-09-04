@@ -76,15 +76,17 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 	}
 
 	// The web app derives manifest_blocks from scan results and the pull
-	// policy; its own service reads (config caching, moving tags) bypass it.
+	// policies (vulnerability threshold, required signatures); its own
+	// service reads (config caching, moving tags) bypass it. The reason
+	// says which policy applies.
 	if rc.identity.Subject != "user:system" {
-		reason, blocked, err := s.store.ManifestBlock(r.Context(), repo.ID, digest)
+		block, err := s.store.ManifestBlock(r.Context(), repo.ID, digest)
 		if err != nil {
 			writeInternal(w, r, err)
 			return
 		}
-		if blocked {
-			writeError(w, http.StatusForbidden, CodeDenied, "pull blocked by vulnerability policy: "+reason)
+		if blockApplies(block, rc.identity.Can("repository", rc.name, "push")) {
+			writeError(w, http.StatusForbidden, CodeDenied, "pull blocked by policy: "+block.Reason)
 			return
 		}
 	}
@@ -321,4 +323,15 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 		Type: "manifest.delete", Repository: rc.name, Digest: ref, Tags: tagNames, Actor: rc.identity.Subject,
 	})
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// blockApplies decides whether a manifest_blocks row refuses this caller: a
+// signature-policy block (pushers_exempt) still lets callers with push rights
+// read the image — they are the ones who sign it, and cosign must fetch the
+// manifest first — while vulnerability blocks apply to everyone.
+func blockApplies(block *store.ManifestBlockRow, canPush bool) bool {
+	if block == nil {
+		return false
+	}
+	return !(block.PushersExempt && canPush)
 }

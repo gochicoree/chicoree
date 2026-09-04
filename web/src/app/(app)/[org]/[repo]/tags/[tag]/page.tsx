@@ -10,7 +10,7 @@ import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
 import { formatBytes, formatDate, relativeTime } from "@/lib/format";
 import { requestRescan } from "@/app/actions/repositories";
-import { Card, CardBody } from "@/components/ui/card";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { Tabs } from "@/components/ui/tabs";
 import { StrataBar } from "@/components/strata-bar";
@@ -27,11 +27,17 @@ import { manifestDeleteBlocker } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { RuleBadges } from "@/components/tag-rules-manager";
 import { DeleteManifestButton } from "../../tag-actions";
-import { ShieldBan } from "lucide-react";
 import { redirectMovedRepository } from "@/lib/redirects";
 import { layersWithInstructions } from "@/lib/compare-shared";
 import { memberOrgIds, sharedLayerRefs, type SharedLayerInfo } from "@/lib/shared-layers";
 import { SharedLayerBadge } from "@/components/shared-layers";
+import { ShieldBan, ShieldCheck } from "lucide-react";
+import { organizationSettings } from "@/db/schema";
+import { effectiveSignaturePolicy } from "@/lib/pull-policy-shared";
+import { getAttestationView, isSignatureBlockReason } from "@/lib/signatures";
+import { AttestationsPanel } from "@/components/attestations-panel";
+import { Badge } from "@/components/ui/badge";
+import { WRITER_ROLES } from "@/lib/org-roles";
 
 interface Descriptor {
   mediaType?: string;
@@ -171,6 +177,28 @@ export default async function TagDetailPage({
         expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
       }))
     : [];
+  // Signatures, SBOMs and provenance attached to the image (and to the variants of an index).
+  const attestations = await getAttestationView(found.repo, orgSlug, digest, payload);
+  const orgSettingsRow = await db.query.organizationSettings.findFirst({
+    where: eq(organizationSettings.organizationId, found.repo.organizationId),
+  });
+  const signaturesRequired = effectiveSignaturePolicy(orgSettingsRow, found.repo);
+  const signedByTrustedKey = attestations.signatures.some((s) => s.sig?.status === "verified");
+  const canReverify = !!role && WRITER_ROLES.includes(role);
+  const digestReference = imageReference(env.registryHost, orgSlug, repoName, digest);
+  const attestationsPanel = (
+    <AttestationsPanel
+      view={attestations}
+      repositoryId={found.repo.id}
+      digest={digest}
+      digestReference={digestReference}
+      policyHref={`${base}/settings/policy`}
+      canReverify={canReverify}
+      signaturesRequired={signaturesRequired}
+    />
+  );
+  const blockedBySignature = isSignatureBlockReason(blocked);
+  const blockedByScan = !!blocked && /finding/.test(blocked);
 
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],
@@ -201,6 +229,11 @@ export default async function TagDetailPage({
               <span className="text-ink-3">{isDigestRef ? "@" : ":"}</span>
               {isDigestRef ? digest.slice(7, 19) : reference}
             </h1>
+            {signedByTrustedKey && (
+              <Badge tone="ok" title="A cosign signature from a trusted key verifies this image">
+                <ShieldCheck className="size-3" /> signed
+              </Badge>
+            )}
             {flags && (flags.immutable || flags.protected) && (
               <span className="inline-flex gap-1">
                 <RuleBadges
@@ -251,7 +284,15 @@ export default async function TagDetailPage({
         <div className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
           <ShieldBan className="mt-0.5 size-4 shrink-0" />
           <div>
-            <div className="font-medium">Pulls of this image are blocked by the vulnerability policy.</div>
+            <div className="font-medium">
+              {`Pulls of this image are blocked by the ${
+                blockedBySignature && blockedByScan
+                  ? "vulnerability and signature policies"
+                  : blockedBySignature
+                    ? "signature policy"
+                    : "vulnerability policy"
+              }.`}
+            </div>
             <div className="mt-0.5 text-[13px] opacity-90">{blocked}</div>
           </div>
         </div>
@@ -361,6 +402,11 @@ export default async function TagDetailPage({
                 ]
               : []),
             {
+              label: "Attestations",
+              badge: attestations.total || undefined,
+              content: attestationsPanel,
+            },
+            {
               label: "Manifest",
               content: (
                 <pre className="overflow-x-auto rounded-xl border border-line bg-card p-3 font-mono text-xs leading-relaxed text-ink-2 sm:p-4">
@@ -370,6 +416,17 @@ export default async function TagDetailPage({
             },
           ]}
         />
+      )}
+
+      {isIndex && (
+        <Card>
+          <CardHeader
+            eyebrow="Attestations"
+            title="Signatures & SBOMs"
+            description="Attached to the index itself and to each platform variant. A signature on the index covers its variants for the pull policy."
+          />
+          <CardBody>{attestationsPanel}</CardBody>
+        </Card>
       )}
     </div>
   );

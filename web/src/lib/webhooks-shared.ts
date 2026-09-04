@@ -6,6 +6,7 @@ export type WebhookEvent =
   | "delete"
   | "scan.completed"
   | "scan.blocked"
+  | "signature.blocked"
   | "mirror.completed"
   | "mirror.failed"
   | "retention.completed"
@@ -26,6 +27,7 @@ export const WEBHOOK_EVENTS: WebhookEventInfo[] = [
   { value: "delete", label: "Delete", description: "A tag or manifest was deleted" },
   { value: "scan.completed", label: "Scan completed", description: "A vulnerability scan finished" },
   { value: "scan.blocked", label: "Pull blocked", description: "A scan put an image over the pull policy threshold" },
+  { value: "signature.blocked", label: "Signature required", description: "The signature policy blocked an image without a trusted signature" },
   { value: "mirror.completed", label: "Mirror completed", description: "A mirror sync finished" },
   { value: "mirror.failed", label: "Mirror failed", description: "A mirror sync failed" },
   { value: "retention.completed", label: "Retention completed", description: "A retention run deleted (or would delete) tags" },
