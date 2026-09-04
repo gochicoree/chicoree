@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { renameOrganization } from "@/app/actions/repo-tools";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { ORG_SLUG_RE } from "@/lib/repo-names-shared";
@@ -59,7 +59,7 @@ export function OrgRenameForm({
           description="The slug is the image namespace. Pulls of the old namespace are redirected; pushes to it are refused. Web links to the old slug redirect."
         />
         <CardBody className="space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-start gap-3">
             <div className="min-w-64 flex-1 sm:flex-none">
               <Field label="New slug" htmlFor="rename-slug" hint={`Images will be pulled as ${registryHost}/${next || "<slug>"}/<repository>:<tag>`}>
                 <Input
@@ -74,9 +74,11 @@ export function OrgRenameForm({
                 />
               </Field>
             </div>
-            <Button type="button" variant="danger" disabled={!ready || busy} onClick={() => setOpen(true)}>
-              Rename…
-            </Button>
+            <FieldAction>
+              <Button type="button" variant="danger" disabled={!ready || busy} onClick={() => setOpen(true)}>
+                Rename…
+              </Button>
+            </FieldAction>
           </div>
           {next && !valid && <p className="text-sm text-danger">Slugs use lowercase letters, digits and single ._- separators.</p>}
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

@@ -16,7 +16,7 @@ import type { LdapSettings, SettingsSection, SettingsSource, SmtpSettings } from
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, FieldAction, Input, Textarea } from "@/components/ui/field";
 import { CommandLine } from "@/components/ui/copy";
 import { useToast } from "@/components/ui/toast";
 
@@ -147,15 +147,17 @@ export function SmtpForm({ smtp, hasPassword, source }: { smtp: SmtpSettings; ha
             </Button>
             <Feedback state={state} />
           </div>
-          <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4 sm:col-span-2">
+          <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4 sm:col-span-2">
             <div className="min-w-56 flex-1">
               <Field label="Send a test email to" htmlFor="smtp-test-to">
                 <Input id="smtp-test-to" name="testTo" type="email" placeholder="you@example.com" />
               </Field>
             </div>
-            <Button type="button" variant="secondary" onClick={() => run(sendTest)} disabled={testing}>
-              <Mail className="size-4" /> {testing ? "Sending…" : "Send test"}
-            </Button>
+            <FieldAction>
+              <Button type="button" variant="secondary" onClick={() => run(sendTest)} disabled={testing}>
+                <Mail className="size-4" /> {testing ? "Sending…" : "Send test"}
+              </Button>
+            </FieldAction>
             <Feedback state={test} />
           </div>
         </form>
@@ -337,15 +339,17 @@ export function LdapForm({ ldap, hasBindPassword, source }: { ldap: LdapSettings
             </Button>
             <Feedback state={state} />
           </div>
-          <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4 sm:col-span-2">
+          <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4 sm:col-span-2">
             <div className="min-w-56 flex-1">
               <Field label="Test with a username" htmlFor="ldap-test-username">
                 <Input id="ldap-test-username" name="testUsername" placeholder="jdoe" />
               </Field>
             </div>
-            <Button type="button" variant="secondary" onClick={() => run(runTest)} disabled={testing}>
-              <Plug className="size-4" /> {testing ? "Testing…" : "Test connection"}
-            </Button>
+            <FieldAction>
+              <Button type="button" variant="secondary" onClick={() => run(runTest)} disabled={testing}>
+                <Plug className="size-4" /> {testing ? "Testing…" : "Test connection"}
+              </Button>
+            </FieldAction>
             <Feedback state={test} />
           </div>
         </form>

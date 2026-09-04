@@ -5,6 +5,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { AUDIT_ACTION_GROUPS, AUDIT_EXPORT_MAX, type AuditFilter } from "@/lib/audit-shared";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * GET form for the audit pages: text search, action group, organization,
@@ -55,11 +56,11 @@ export function AuditFilters({
           )}
           <div className="min-w-0">
             <Label htmlFor="audit-from">From</Label>
-            <Input id="audit-from" name="from" type="date" defaultValue={filter.from} className="font-mono" />
+            <DatePicker id="audit-from" name="from" defaultValue={filter.from} placeholder="Any time" />
           </div>
           <div className="min-w-0">
             <Label htmlFor="audit-to">To</Label>
-            <Input id="audit-to" name="to" type="date" defaultValue={filter.to} className="font-mono" />
+            <DatePicker id="audit-to" name="to" defaultValue={filter.to} placeholder="Now" align="end" />
           </div>
           <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-5">
             <Button type="submit" size="md">

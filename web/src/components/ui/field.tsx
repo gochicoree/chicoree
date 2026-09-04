@@ -21,6 +21,23 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return <textarea className={clsx(inputClasses, "min-h-20", className)} {...props} />;
 }
 
+/**
+ * Wraps a button that sits beside Fields in a top-aligned row
+ * (`flex items-start`): it reserves the label's height, so the control lines
+ * up with the inputs no matter which field carries a hint or a textarea.
+ * Rows aligned with `items-end` break as soon as one field has a footnote.
+ */
+export function FieldAction({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={clsx("flex flex-col", className)}>
+      <span aria-hidden className="mb-1.5 block select-none text-[13px] font-medium opacity-0 max-sm:hidden">
+        &nbsp;
+      </span>
+      {children}
+    </div>
+  );
+}
+
 export function Field({
   label,
   htmlFor,

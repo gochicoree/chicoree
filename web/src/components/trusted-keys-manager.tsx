@@ -157,12 +157,14 @@ export function TrustedKeysManager({
         </p>
       )}
       <CardBody>
-        <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-[minmax(10rem,1fr)_2fr_auto] sm:items-end">
+        <form ref={formRef} action={action} className="flex flex-col gap-3">
           <input type="hidden" name="organizationId" value={organizationId} />
           {repositoryId && <input type="hidden" name="repositoryId" value={repositoryId} />}
-          <Field label="Name" htmlFor={`key-name-${scope}`}>
-            <Input id={`key-name-${scope}`} name="name" required placeholder="release" maxLength={80} />
-          </Field>
+          <div className="sm:max-w-xs">
+            <Field label="Name" htmlFor={`key-name-${scope}`} hint="How the key shows up next to verified signatures.">
+              <Input id={`key-name-${scope}`} name="name" required placeholder="release" maxLength={80} />
+            </Field>
+          </div>
           <Field label="Public key (PEM)" htmlFor={`key-pem-${scope}`}>
             <Textarea
               id={`key-pem-${scope}`}
@@ -173,10 +175,12 @@ export function TrustedKeysManager({
               placeholder={"-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----"}
             />
           </Field>
-          <Button type="submit" variant="secondary" disabled={pending} className="sm:mb-px">
-            <Plus className="size-4" /> {pending ? "Adding…" : "Add key"}
-          </Button>
-          {state?.error && <p className="text-sm text-danger sm:col-span-3">{state.error}</p>}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" variant="secondary" disabled={pending}>
+              <Plus className="size-4" /> {pending ? "Adding…" : "Add key"}
+            </Button>
+            {state?.error && <p className="text-sm text-danger">{state.error}</p>}
+          </div>
         </form>
       </CardBody>
       {scope === "repository" && inherited.length > 0 && (

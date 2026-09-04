@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
@@ -73,7 +74,7 @@ export function ExpiryFields({
       </Field>
       {choice === CUSTOM && (
         <Field label="Expiry date" htmlFor={`${idPrefix}-expires-on`} hint={max ? `No later than ${max}` : undefined}>
-          <Input id={`${idPrefix}-expires-on`} name="expiresOn" type="date" required min={min} max={max} className="font-mono" />
+          <DatePicker id={`${idPrefix}-expires-on`} name="expiresOn" min={min} max={max} clearable={false} placeholder="Choose the last valid day" />
         </Field>
       )}
     </>

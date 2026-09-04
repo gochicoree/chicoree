@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { setOrgSignaturePolicy, setRepoSignaturePolicy, type SignaturePolicyResult } from "@/app/actions/signature-policy";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FieldAction } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -40,20 +40,22 @@ export function SignaturePolicyForm(
         }
       />
       <CardBody>
-        <form action={action} className="flex flex-wrap items-end gap-3">
+        <form action={action} className="flex flex-wrap items-start gap-3">
           {props.scope === "organization" ? (
             <>
               <input type="hidden" name="organizationId" value={props.organizationId} />
-              <label className="flex items-center gap-2 pb-2.5 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  name="requireSignature"
-                  checked={checked}
-                  onChange={(e) => setChecked(e.target.checked)}
-                  className="size-4 accent-[var(--action)]"
-                />
-                Require a cosign signature from a trusted key
-              </label>
+              <FieldAction>
+                <label className="flex items-center gap-2 py-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    name="requireSignature"
+                    checked={checked}
+                    onChange={(e) => setChecked(e.target.checked)}
+                    className="size-4 accent-[var(--action)]"
+                  />
+                  Require a cosign signature from a trusted key
+                </label>
+              </FieldAction>
             </>
           ) : (
             <>
@@ -79,9 +81,11 @@ export function SignaturePolicyForm(
               </div>
             </>
           )}
-          <Button type="submit" disabled={pending}>
-            Save policy
-          </Button>
+          <FieldAction>
+            <Button type="submit" disabled={pending}>
+              Save policy
+            </Button>
+          </FieldAction>
           {state?.error && <span className="text-sm text-danger">{state.error}</span>}
           {state?.saved && props.scope === "repository" && typeof state.blocked === "number" && (
             <span className="text-sm text-ink-2">
