@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { renameRepository, transferRepository } from "@/app/actions/repo-tools";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -79,7 +79,7 @@ export function RepoRenameForm({
           }
         />
         <CardBody className="space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-start gap-3">
             <div className="min-w-64 flex-1 sm:flex-none">
               <Field label="New name" htmlFor="rename-name" hint={`Images will be pulled as ${pullRef(registryHost, orgSlug, next || "<name>")}:<tag>`}>
                 <Input
@@ -95,9 +95,11 @@ export function RepoRenameForm({
                 />
               </Field>
             </div>
-            <Button type="button" variant="secondary" disabled={proxy || !ready || busy} onClick={() => setOpen(true)}>
-              Rename…
-            </Button>
+            <FieldAction>
+              <Button type="button" variant="secondary" disabled={proxy || !ready || busy} onClick={() => setOpen(true)}>
+                Rename…
+              </Button>
+            </FieldAction>
           </div>
           {problem && next !== "" && <p className="text-sm text-danger">{problem}</p>}
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
@@ -195,7 +197,7 @@ export function RepoTransferForm({
           {targets.length === 0 && !proxy ? (
             <p className="text-sm text-ink-2">You don't manage another organization that can receive this repository.</p>
           ) : (
-            <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-64 flex-1 sm:flex-none">
                 <Field label="Target organization" htmlFor="transfer-target">
                   <Select
@@ -211,9 +213,11 @@ export function RepoTransferForm({
                   />
                 </Field>
               </div>
-              <Button type="button" variant="secondary" disabled={proxy || !target || busy} onClick={() => setOpen(true)}>
-                Transfer…
-              </Button>
+              <FieldAction>
+                <Button type="button" variant="secondary" disabled={proxy || !target || busy} onClick={() => setOpen(true)}>
+                  Transfer…
+                </Button>
+              </FieldAction>
             </div>
           )}
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

@@ -4,7 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { deleteRepository, updateRepository, type ActionResult } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, FieldAction, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
@@ -96,16 +96,18 @@ export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; n
         description="Removes every tag, manifest and pull statistic. Layer content shared with other repositories is kept; unique content is reclaimed by garbage collection."
       />
       <CardBody>
-        <form action={deleteRepository} className="flex flex-wrap items-end gap-3">
+        <form action={deleteRepository} className="flex flex-wrap items-start gap-3">
           <input type="hidden" name="repositoryId" value={repositoryId} />
           <div className="min-w-64">
             <Field label={`Type "${name}" to confirm`} htmlFor="confirmName">
               <Input id="confirmName" name="confirmName" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
             </Field>
           </div>
-          <Button type="submit" variant="danger" disabled={confirm !== name}>
-            Delete repository permanently
-          </Button>
+          <FieldAction>
+            <Button type="submit" variant="danger" disabled={confirm !== name}>
+              Delete repository permanently
+            </Button>
+          </FieldAction>
         </form>
       </CardBody>
     </Card>

@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { setOrgDefaultVisibility, setUserDefaultVisibility, type SettingsResult } from "@/app/actions/settings";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FieldAction } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -47,16 +47,18 @@ export function DefaultVisibilityForm({
         }
       />
       <CardBody>
-        <form action={action} className="flex flex-wrap items-end gap-3">
+        <form action={action} className="flex flex-wrap items-start gap-3">
           {organizationId && <input type="hidden" name="organizationId" value={organizationId} />}
           <div className="w-full sm:w-72">
             <Field label="New repositories are" htmlFor="defaultVisibility">
               <Select id="defaultVisibility" name="defaultVisibility" options={options} defaultValue={value ?? ""} />
             </Field>
           </div>
-          <Button type="submit" disabled={pending}>
-            Save
-          </Button>
+          <FieldAction>
+            <Button type="submit" disabled={pending}>
+              Save
+            </Button>
+          </FieldAction>
           {state?.error && <span className="text-sm text-danger">{state.error}</span>}
         </form>
       </CardBody>

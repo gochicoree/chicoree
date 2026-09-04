@@ -7,7 +7,7 @@ import { ShieldCheck, ShieldOff } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { CommandLine } from "@/components/ui/copy";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -136,7 +136,7 @@ export function TwoFactorManager({ enabled }: { enabled: boolean }) {
             )}
           </div>
         ) : (
-          <form onSubmit={enabled ? disable : enable} className="flex flex-wrap items-end gap-2">
+          <form onSubmit={enabled ? disable : enable} className="flex flex-wrap items-start gap-2">
             <div className="min-w-48 flex-1">
               <Field label="Confirm with your password" htmlFor="tf-password">
                 <Input
@@ -149,9 +149,11 @@ export function TwoFactorManager({ enabled }: { enabled: boolean }) {
                 />
               </Field>
             </div>
-            <Button type="submit" variant={enabled ? "danger" : "primary"} disabled={busy}>
-              {enabled ? "Disable" : "Enable two-factor"}
-            </Button>
+            <FieldAction>
+              <Button type="submit" variant={enabled ? "danger" : "primary"} disabled={busy}>
+                {enabled ? "Disable" : "Enable two-factor"}
+              </Button>
+            </FieldAction>
           </form>
         )}
       </CardBody>

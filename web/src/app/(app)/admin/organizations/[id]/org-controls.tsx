@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { adminDeleteOrganization, adminSetMemberRole } from "@/app/actions/admin-orgs";
 import { ORG_ROLE_NAMES } from "@/lib/org-roles";
-import { Input, Field } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CardBody } from "@/components/ui/card";
@@ -41,7 +41,7 @@ export function DeleteOrganization({ organizationId, slug }: { organizationId: s
   const [confirm, setConfirm] = useState("");
   return (
     <CardBody>
-      <form action={adminDeleteOrganization} className="flex flex-wrap items-end gap-3">
+      <form action={adminDeleteOrganization} className="flex flex-wrap items-start gap-3">
         <input type="hidden" name="organizationId" value={organizationId} />
         <div className="min-w-64">
           <Field label={`Type "${slug}" to confirm`} htmlFor="confirmSlug">
@@ -54,9 +54,11 @@ export function DeleteOrganization({ organizationId, slug }: { organizationId: s
             />
           </Field>
         </div>
-        <Button type="submit" variant="danger" disabled={confirm !== slug}>
-          Delete organization permanently
-        </Button>
+        <FieldAction>
+          <Button type="submit" variant="danger" disabled={confirm !== slug}>
+            Delete organization permanently
+          </Button>
+        </FieldAction>
       </form>
     </CardBody>
   );

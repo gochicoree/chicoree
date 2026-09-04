@@ -7,7 +7,7 @@ import { addTagRule, removeTagRule, type TagRuleResult } from "@/app/actions/tag
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 
@@ -179,7 +179,7 @@ export function TagRulesManager({
         </p>
       )}
       <CardBody>
-        <form ref={formRef} action={action} className="flex flex-wrap items-end gap-3">
+        <form ref={formRef} action={action} className="flex flex-wrap items-start gap-3">
           <input type="hidden" name="organizationId" value={organizationId} />
           {repositoryId && <input type="hidden" name="repositoryId" value={repositoryId} />}
           <div className="min-w-40 flex-1">
@@ -187,17 +187,23 @@ export function TagRulesManager({
               <Input id={`rule-pattern-${scope}`} name="pattern" required placeholder="v*" className="font-mono" maxLength={128} />
             </Field>
           </div>
-          <label className="flex items-center gap-2 pb-2.5 text-sm text-ink-2">
-            <input type="checkbox" name="immutable" className="size-4 accent-[var(--action)]" defaultChecked />
-            Immutable
-          </label>
-          <label className="flex items-center gap-2 pb-2.5 text-sm text-ink-2">
-            <input type="checkbox" name="protected" className="size-4 accent-[var(--action)]" />
-            Protected
-          </label>
-          <Button type="submit" variant="secondary" disabled={pending}>
-            <Plus className="size-4" /> {pending ? "Adding…" : "Add rule"}
-          </Button>
+          <FieldAction>
+            <label className="flex items-center gap-2 py-2 text-sm text-ink-2">
+              <input type="checkbox" name="immutable" className="size-4 accent-[var(--action)]" defaultChecked />
+              Immutable
+            </label>
+          </FieldAction>
+          <FieldAction>
+            <label className="flex items-center gap-2 py-2 text-sm text-ink-2">
+              <input type="checkbox" name="protected" className="size-4 accent-[var(--action)]" />
+              Protected
+            </label>
+          </FieldAction>
+          <FieldAction>
+            <Button type="submit" variant="secondary" disabled={pending}>
+              <Plus className="size-4" /> {pending ? "Adding…" : "Add rule"}
+            </Button>
+          </FieldAction>
           {state?.error && <p className="basis-full text-sm text-danger">{state.error}</p>}
         </form>
       </CardBody>
