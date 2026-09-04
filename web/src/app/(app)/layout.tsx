@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/session";
-import { listUserOrgs } from "@/lib/data";
+import { listNavOrgs } from "@/lib/data";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { ImpersonationBanner } from "@/components/shell/impersonation-banner";
@@ -14,12 +14,13 @@ import { announcementDismissible, announcementHash } from "@/lib/branding-shared
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   if (session.user.role === "admin") await ensureLibraryOrg(session.user.id);
-  const [orgs, settings, branding] = await Promise.all([listUserOrgs(session.user.id), getInstanceSettings(), getBranding()]);
+  const [nav0rgs, settings, branding] = await Promise.all([listNavOrgs(session.user.id), getInstanceSettings(), getBranding()]);
   const impersonating = !!session.session.impersonatedBy;
   const announcement = branding.announcement;
 
   const nav = {
-    orgs: orgs.map((o) => ({ slug: o.slug, name: o.name })),
+    orgs: nav0rgs.orgs.map((o) => ({ slug: o.slug, name: o.name })),
+    orgCount: nav0rgs.total,
     user: { name: session.user.name, email: session.user.email },
     isAdmin: session.user.role === "admin",
     branding: { name: branding.instanceName, logoDataUrl: branding.logoDataUrl || undefined },

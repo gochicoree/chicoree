@@ -13,12 +13,14 @@ import { Sidebar, type NavBranding, type NavOrg } from "./sidebar";
  */
 export function MobileNav({
   orgs,
+  orgCount,
   user,
   isAdmin,
   branding,
   canCreateOrgs,
 }: {
   orgs: NavOrg[];
+  orgCount?: number;
   user: { name: string; email: string };
   isAdmin: boolean;
   branding?: NavBranding;
@@ -107,7 +109,7 @@ export function MobileNav({
             >
               <X className="size-5" />
             </button>
-            <Sidebar orgs={orgs} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} />
+            <Sidebar orgs={orgs} orgCount={orgCount} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} />
           </div>
         </div>
       )}
