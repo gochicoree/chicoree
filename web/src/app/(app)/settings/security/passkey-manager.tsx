@@ -77,7 +77,7 @@ export function PasskeyManager({
         </form>
         {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         {!fresh && !error && (
-          <p className="text-xs text-ink-3">You signed in more than a day ago; adding a passkey asks for a fresh sign-in first.</p>
+          <p className="text-xs text-ink-3">Sign in again to add a passkey.</p>
         )}
 
         {passkeys.length === 0 ? (

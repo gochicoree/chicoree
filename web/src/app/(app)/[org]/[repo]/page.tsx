@@ -275,7 +275,7 @@ export default async function RepoPage({
           <CardHeader
             eyebrow="Untagged"
             title={`Untagged manifests (${untagged.state.total.toLocaleString("en-US")})`}
-            description="Images no tag points at: left behind by deleted or re-pointed tags, platform variants of a multi-arch index, or artifacts attached to another image. Retention policies and the prune job clean them up; layer data is reclaimed by garbage collection."
+            description="Images no tag points at: old versions of re-pointed tags, platform variants of a multi-arch image, or attached artifacts."
           />
           {untagged.state.total === 0 ? (
             <CardBody>

@@ -42,7 +42,7 @@ export function NewRepositoryForm({
           <Field
             label="Visibility"
             htmlFor="visibility"
-            hint="Public repositories can be pulled by anyone, even without an account."
+            hint="Public repositories can be pulled by anyone."
           >
             <Select
               id="visibility"

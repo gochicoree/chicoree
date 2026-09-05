@@ -9,11 +9,11 @@ export const PROXY_PRESETS: { value: ProxyPreset; label: string; url: string; hi
     value: "dockerhub",
     label: "Docker Hub",
     url: "https://registry-1.docker.io",
-    hint: "Anonymous pulls are rate-limited (100 per 6 h per IP); add a Docker Hub account or access token.",
+    hint: "Add a Docker Hub account to avoid its anonymous pull limit.",
   },
-  { value: "ghcr", label: "GitHub Container Registry", url: "https://ghcr.io", hint: "Public images need no credentials; private ones a personal access token with read:packages." },
+  { value: "ghcr", label: "GitHub Container Registry", url: "https://ghcr.io", hint: "Private images need a token with read:packages." },
   { value: "quay", label: "Quay.io", url: "https://quay.io", hint: "Use a robot account for private repositories." },
-  { value: "custom", label: "Other OCI registry", url: "", hint: "Any registry that speaks the distribution API, including another Chicorée instance." },
+  { value: "custom", label: "Other OCI registry", url: "", hint: "Any OCI-compatible registry." },
 ];
 
 export function presetFor(url: string): ProxyPreset {

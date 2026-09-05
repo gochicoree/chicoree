@@ -62,7 +62,7 @@ function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string })
           action(fd);
         }}
         title={`Rotate “${sa.name}”?`}
-        description="A new secret replaces the current one immediately; name, permission, repositories and lifetime stay the same. Update the secret in every pipeline that uses it."
+        description="The account keeps its settings and gets a new secret. The old one stops working right away."
         confirmLabel={pending ? "Rotating…" : "Rotate secret"}
         tone="accent"
         busy={pending}
@@ -104,7 +104,7 @@ export function ServiceAccountsManager({
         <CardHeader
           eyebrow="CI credentials"
           title="Create a service account"
-          description="Non-human credentials for pipelines. The secret is shown once — store it in your CI secret store."
+          description="Credentials for CI and other machines."
         />
         <CardBody>
           <form action={action} className="grid gap-4 sm:grid-cols-2">

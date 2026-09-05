@@ -123,7 +123,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
         <Field
           label="Signing secret"
           htmlFor="wh-signing"
-          hint={`Adds X-Chicoree-Signature: sha256=<hmac of the body>.${hook?.hasSigningSecret ? " Stored — leave blank to keep, enter - to clear." : ""}`}
+          hint={`Signs each delivery in the X-Chicoree-Signature header.${hook?.hasSigningSecret ? " Stored — leave blank to keep, enter - to clear." : ""}`}
         >
           <Input id="wh-signing" name="signingSecret" type="password" autoComplete="new-password" className="font-mono" />
         </Field>
@@ -208,8 +208,8 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
         title={`Webhooks (${hooks.length}/${max})`}
         description={
           org
-            ? "Called for events in every repository of this organization — pushes, deletions, scan results, mirrors, retention and quota warnings — with a JSON body describing what happened."
-            : "Called for events in this repository — pushes, deletions, scan results, mirrors and retention — with everything about the image, tag and actor in a JSON body."
+            ? "Called with a JSON body when something happens in any repository of this organization."
+            : "Called with a JSON body when something happens in this repository."
         }
         action={
           <Button size="sm" variant="secondary" disabled={hooks.length >= max} onClick={() => setEditing("new")}>
@@ -285,7 +285,7 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={editing === "new" ? "Add webhook" : "Edit webhook"}
-        description="Secrets are encrypted at rest and never shown again."
+        description="Secrets are never shown again."
         size="xl"
       >
         {editing !== null && <WebhookForm scope={scope} hook={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />}

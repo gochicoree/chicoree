@@ -167,8 +167,8 @@ export function TagRulesManager({
         title="Immutable and protected tags"
         description={
           scope === "organization"
-            ? "Patterns apply to every repository in the organization. Immutable tags cannot be re-pointed at a different image once pushed (pushing the same image again is fine); protected tags cannot be deleted, nor can the image they name. * matches anything, ? one character."
-            : "Rules for this repository, on top of the organization-wide ones. Immutable tags cannot be re-pointed at a different image once pushed; protected tags cannot be deleted, nor can the image they name. * matches anything, ? one character."
+            ? "Immutable tags cannot be overwritten; protected tags cannot be deleted. Applies to every repository in the organization."
+            : "Immutable tags cannot be overwritten; protected tags cannot be deleted. In addition to the organization's rules."
         }
       />
       {rules.length > 0 ? (
@@ -177,7 +177,8 @@ export function TagRulesManager({
         </div>
       ) : (
         <p className="border-b border-line px-4 py-3 text-sm text-ink-3 sm:px-5">
-          No rules yet. Common choices: <code className="font-mono">v*</code> immutable, <code className="font-mono">latest</code> protected.
+          No rules yet. For example: <code className="font-mono">v*</code> immutable, <code className="font-mono">latest</code> protected. <code className="font-mono">*</code> matches
+          anything, <code className="font-mono">?</code> one character.
         </p>
       )}
       <CardBody>

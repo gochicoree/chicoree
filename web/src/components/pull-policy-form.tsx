@@ -60,8 +60,8 @@ export function PullPolicyForm(
         title="Block vulnerable images"
         description={
           props.scope === "organization"
-            ? "Images whose last scan reports findings at or above the threshold cannot be pulled from any repository in this organization. Repositories may override it. Unscanned images are never blocked."
-            : "Overrides the organization's threshold for this repository. Images whose last scan reports findings at or above the threshold cannot be pulled."
+            ? "Refuse pulls of images with findings at or above the threshold. Repositories can override this."
+            : "Overrides the organization's threshold. Images with findings at or above it cannot be pulled."
         }
       />
       <CardBody>

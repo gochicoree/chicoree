@@ -144,7 +144,7 @@ export default async function DashboardPage({
         <CardHeader
           eyebrow="Quick start"
           title="Push your first image"
-          description="Sign in with a personal access token, then tag and push."
+          description="Log in with an access token, then tag and push."
         />
         <CardBody className="space-y-2">
           <CommandLine command={`docker login ${env.registryHost}`} />

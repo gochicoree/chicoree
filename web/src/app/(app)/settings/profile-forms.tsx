@@ -78,7 +78,7 @@ export function ProfileDetailsForm({
             htmlFor="email"
             hint={
               !emailVerified && !emailConfigured
-                ? "This address is unverified and the registry has no mail server; an administrator can verify it for you."
+                ? "Ask an administrator to verify this address."
                 : undefined
             }
           >
@@ -131,7 +131,7 @@ export function PasswordForm() {
       <CardHeader
         eyebrow="Password"
         title="Change password"
-        description="Docker logins use access tokens, so changing this never breaks CI."
+        description="Access tokens are not affected."
       />
       <CardBody>
         <form onSubmit={changePassword} className="grid gap-4 sm:grid-cols-2">
@@ -197,7 +197,7 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
       <CardHeader
         eyebrow="Sessions"
         title="Active sessions"
-        description="Every browser and device signed in to your account, with its address and last activity."
+        description="Browsers and devices signed in to your account."
         action={
           <Button type="button" variant="secondary" size="sm" disabled={busy || others === 0} onClick={revokeOthers} data-revoke-others>
             Sign out everywhere else{others > 0 ? ` (${others})` : ""}

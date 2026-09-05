@@ -136,7 +136,7 @@ function RotateButton({ token, registryHost, email }: { token: TokenRow; registr
           action(fd);
         }}
         title={`Rotate “${token.name}”?`}
-        description="A replacement with the same scope, restriction and lifetime is created and the current secret stops working immediately. Update every docker login and CI job that uses it."
+        description="You get a new secret with the same settings. The old one stops working right away."
         confirmLabel={pending ? "Rotating…" : "Rotate token"}
         tone="accent"
         busy={pending}
@@ -183,7 +183,7 @@ export function TokenManager({
         <CardHeader
           eyebrow="Docker login"
           title="Create an access token"
-          description="Tokens are how you docker login — they respect your organization roles and work with two-factor auth. Limit a token to one organization, or a few repositories, when a machine only needs that much."
+          description="Use a token as the password for docker login. Optionally limit it to one organization or a few repositories."
         />
         <CardBody>
           <form action={action} className="grid gap-4 sm:grid-cols-3">
@@ -212,7 +212,7 @@ export function TokenManager({
               <div className="sm:col-span-3">
                 <div className="mb-1.5 text-[13px] font-medium text-ink">Repositories in {selectedOrg.name}</div>
                 {selectedOrg.repositories.length === 0 ? (
-                  <p className="text-xs text-ink-3">No repositories yet — the token reaches every repository of the organization.</p>
+                  <p className="text-xs text-ink-3">No repositories yet — the token covers the whole organization.</p>
                 ) : (
                   <>
                     <div className="grid gap-1.5 sm:grid-cols-3" data-repo-list>
@@ -223,7 +223,7 @@ export function TokenManager({
                         </label>
                       ))}
                     </div>
-                    <p className="mt-1.5 text-xs text-ink-2">Leave every box empty for all repositories of the organization. A token limited to repositories cannot create new ones on push.</p>
+                    <p className="mt-1.5 text-xs text-ink-2">Select none for the whole organization. A limited token cannot create repositories.</p>
                   </>
                 )}
               </div>

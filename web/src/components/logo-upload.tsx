@@ -123,8 +123,7 @@ export function LogoUploadCard({
             )}
           </div>
           <p className="text-xs text-ink-2">
-            At most {LOGO_MAX_KB} KB. Served from its own address and cached by the browser, so listings stay small. SVGs
-            must not contain scripts.
+            At most {LOGO_MAX_KB} KB. SVGs must not contain scripts.
           </p>
           {error && <p className="text-sm text-danger">{error}</p>}
           {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}

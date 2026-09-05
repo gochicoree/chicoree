@@ -42,7 +42,7 @@ export function ReadmeEditor({ repositoryId, readme }: { repositoryId: string; r
       <CardHeader
         eyebrow="Documentation"
         title="README"
-        description="Markdown shown on the repository page: usage, tags, configuration. Links open with nofollow; images must be served over https."
+        description="Markdown shown on the repository page."
       />
       <CardBody>
         <form action={action} className="space-y-3">

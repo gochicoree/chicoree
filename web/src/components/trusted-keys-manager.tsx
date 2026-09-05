@@ -56,7 +56,7 @@ function RemoveKeyButton({ item }: { item: TrustedKeyItem }) {
         tone="danger"
         confirmLabel={busy ? "Removing…" : "Remove key"}
         title={`Remove key ${item.name}?`}
-        description="Signatures made with this key stop verifying. Where signatures are required, images that carry no other trusted signature can no longer be pulled."
+        description="Signatures made with this key no longer count as verified. Images that require a signature may stop being pullable."
       />
     </>
   );
@@ -144,8 +144,8 @@ export function TrustedKeysManager({
         title="Trusted signing keys"
         description={
           scope === "organization"
-            ? "Public keys whose cosign signatures count as verified in every repository of the organization, on top of members' personal keys (see above). Paste the PEM of a cosign.pub (ECDSA P-256/P-384, Ed25519 or RSA). Signatures are re-checked whenever a key is added or removed."
-            : "Keys trusted for this repository only, on top of the organization-wide ones. Paste the PEM of a cosign.pub (ECDSA P-256/P-384, Ed25519 or RSA)."
+            ? "cosign public keys whose signatures count as verified in every repository of this organization."
+            : "cosign public keys trusted for this repository, in addition to the organization's."
         }
       />
       {keys.length > 0 ? (
@@ -163,7 +163,7 @@ export function TrustedKeysManager({
           <input type="hidden" name="organizationId" value={organizationId} />
           {repositoryId && <input type="hidden" name="repositoryId" value={repositoryId} />}
           <div className="sm:max-w-xs">
-            <Field label="Name" htmlFor={`key-name-${scope}`} hint="How the key shows up next to verified signatures.">
+            <Field label="Name" htmlFor={`key-name-${scope}`} hint="e.g. release, ci">
               <Input id={`key-name-${scope}`} name="name" required placeholder="release" maxLength={80} />
             </Field>
           </div>

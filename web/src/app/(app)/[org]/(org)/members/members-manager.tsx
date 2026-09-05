@@ -100,7 +100,7 @@ export function MembersManager({
           <CardHeader
             eyebrow="Access"
             title="Invite a member"
-            description="Viewers browse and pull private images. Members also push and create repositories. Admins manage members, service accounts and settings."
+            description="Viewers pull. Members also push. Admins also manage the organization."
           />
           <CardBody>
             <form onSubmit={invite} className="flex flex-wrap items-center gap-2">

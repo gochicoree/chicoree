@@ -42,8 +42,8 @@ export function DefaultVisibilityForm({
         title="Default visibility for new repositories"
         description={
           scope === "organization"
-            ? "Applies to repositories created by pushing to a new name in this organization. If the matching repository limit is exhausted, the push is denied."
-            : "Applies when you push to a new name in an organization that has no default of its own."
+            ? "For repositories created by pushing to a new name."
+            : "For repositories you create by pushing, unless the organization has its own default."
         }
       />
       <CardBody>

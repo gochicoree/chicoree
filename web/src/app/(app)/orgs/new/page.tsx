@@ -20,7 +20,7 @@ export default async function NewOrganizationPage() {
       <PageHeader
         eyebrow="Organizations"
         title="Create an organization"
-        description="An organization is a namespace for images: registry/<slug>/<repository>."
+        description="Images are named <slug>/<repository>."
       />
       {allowed ? (
         <NewOrganizationForm />

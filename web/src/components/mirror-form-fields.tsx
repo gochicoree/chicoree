@@ -31,7 +31,7 @@ export function MirrorFormFields({
         <Field
           label="Source repository"
           htmlFor="source"
-          hint="docker.io/library/nginx, ghcr.io/org/app, or any registry host/path. Plain names (nginx) mean Docker Hub."
+          hint="e.g. nginx, ghcr.io/org/app, registry.example.com/team/app"
         >
           <Input id="source" name="source" required defaultValue={source} className="font-mono" placeholder="docker.io/library/nginx" />
         </Field>
@@ -59,7 +59,7 @@ export function MirrorFormFields({
       <Field
         label={mode === "list" ? "Tags" : "Pattern"}
         htmlFor="pattern"
-        hint={mode === "all" ? "Not needed for all tags" : mode === "glob" ? "* matches anything, ? one character; several patterns separated by spaces" : undefined}
+        hint={mode === "all" ? "Not needed for all tags" : mode === "glob" ? "e.g. v* 1.2?" : undefined}
       >
         <Input id="pattern" name="pattern" defaultValue={selector?.pattern} disabled={mode === "all"} className="font-mono" />
       </Field>

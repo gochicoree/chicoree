@@ -40,8 +40,8 @@ export function SignaturePolicyForm(
         title="Require signatures"
         description={
           props.scope === "organization"
-            ? "When on, docker pull is refused for every image in this organization that carries no cosign signature verified by a trusted key (see Trusted signing keys below). Signatures, attestations and SBOMs attached to images are never blocked. Repositories may override it."
-            : "Overrides the organization's setting for this repository. When on, pulls of images without a cosign signature from a trusted key are refused."
+            ? "Refuse pulls of images without a verified signature. Repositories can override this."
+            : "Overrides the organization's setting. When on, images without a verified signature cannot be pulled."
         }
       />
       <CardBody>
