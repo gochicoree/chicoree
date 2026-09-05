@@ -92,6 +92,13 @@
       "when": 1788625854875,
       "tag": "0012_user_show_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788638361118,
+      "tag": "0013_ci_identities_api_stats",
+      "breakpoints": true
     }
   ]
 }

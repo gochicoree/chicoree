@@ -148,10 +148,25 @@ curl -u "me:$TOKEN" ${o.appUrl}${API_BASE}/me
 | --- | --- | --- |
 | Personal access token \`chc_pat_…\` | *Settings → Access tokens* | Acts as its user. A **read-only** token can only read; a **read & write** token can also change things. A token **limited to an organization** or to a **repository list** sees and changes nothing outside it, and cannot search or create repositories. |
 | Service account \`chc_sa_…\` | *Organization → Service accounts* | Reads its organization's repositories (or its repository list) plus public ones. With the \`admin\` permission it can delete tags and images there. It cannot manage repositories, star, or read members and the audit log. |
+| CI credential \`chc_ci_…\` | \`POST /api/v1/auth/exchange\` with the workflow's OIDC token | The same rights as a service account with the trusted identity's permission and repository list, for the lifetime of the job (at most an hour). |
 | Browser session | Being signed in | The same rights as in the web app — handy for trying calls in the browser. |
 | None | — | Public repositories, tags, images and scan results. |
 
 Expired tokens, banned accounts and unknown secrets answer \`401\`; a valid credential without the right answers \`403\` with the reason. Every use of a token updates its *last used* time and address (*Settings → Access tokens*).
+
+### Keyless CI authentication
+
+A CI job does not need a stored secret. An organization trusts the workflow's identity once (*Organization → Service accounts → CI identities*, or the \`/orgs/{org}/ci-identities\` endpoints): the issuer of its OIDC tokens and the subject they carry, exact or with \`*\` wildcards, plus a permission and an optional repository list. The job then exchanges the token it gets from its CI system for a registry credential:
+
+~~~sh
+# GitHub Actions (permissions: id-token: write); the audience is this registry's URL
+OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
+  "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${o.appUrl}" | jq -r .value)
+curl -sS -H "Content-Type: application/json" -d "{\"token\": \"$OIDC\"}" ${o.appUrl}${API_BASE}/auth/exchange
+# → { "token": "chc_ci_…", "expiresAt": "…", "dockerLogin": { "registry": "${o.registryHost}", "username": "ci", "password": "chc_ci_…" } }
+~~~
+
+The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is \`${o.appUrl}\` or \`${o.registryHost}\`, and matches the subject; GitHub subjects look like \`repo:owner/repo:ref:refs/heads/main\`, GitLab's like \`project_path:group/project:ref_type:branch:ref:main\`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The \`.github/actions/login\` action in the repository does all of this and runs \`docker login\`.
 
 Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from \`API_ENABLED\`): every endpoint, the index and the OpenAPI document then answer \`403\` with code \`api_disabled\`. docker login and the jobs API are not affected.
 

@@ -4,6 +4,8 @@ import { createHash, randomBytes, timingSafeEqual } from "crypto";
 // type at the token endpoint; only a sha256 hash is stored server-side.
 export const PAT_PREFIX = "chc_pat_";
 export const SA_PREFIX = "chc_sa_";
+/** Short-lived credentials minted for CI workflows from an OIDC token (lib/ci-auth.ts). */
+export const CI_PREFIX = "chc_ci_";
 
 export function generateSecret(prefix: string): { secret: string; hash: string; display: string } {
   const secret = prefix + randomBytes(30).toString("base64url");

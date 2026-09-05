@@ -31,6 +31,7 @@ export const API_CHANGELOG: ApiChange[] = [
       "Members and invitations: change roles, remove members, list, create and cancel invitations.",
       "Webhooks: list, create, read, update, delete and test, for organizations and repositories.",
       "Repository policies: read the effective pull and signature policy, change the overrides.",
+      "Keyless CI authentication: POST /auth/exchange trades a workflow's OIDC token (GitHub Actions, GitLab, any trusted issuer) for a short-lived chc_ci_ credential that works for the API and docker login; organizations manage the trusted identities under /orgs/{org}/ci-identities and in Organization → Service accounts. A login GitHub Action (.github/actions/login) wraps the exchange.",
     ],
   },
   {
