@@ -1098,8 +1098,8 @@ The management API lives in `web/src/app/api/v1/**/route.ts` on top of
   `access.apiEnabled` from the instance settings (env default
   `API_ENABLED`, switch on *Administration → Auth providers → Access*) and
   answers `403 api_disabled` while the API is off; the app layout, the
-  docs page and the tokens page read the same flag to hide the API entry
-  points.
+  docs page (a 404 while off) and the tokens page read the same flag to
+  hide the API entry points.
 - `queries.ts` / `serialize.ts` — the few reads the UI libraries do not
   offer (organization lists filtered by caller, the image document with
   config, layers, variants, scan, signature and block) and the row → JSON

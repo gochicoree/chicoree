@@ -31,8 +31,8 @@ export function NavTabs({
     <nav
       className={clsx(
         pills
-          ? "flex max-w-full gap-1 overflow-x-auto rounded-lg border border-line bg-card-2 p-1 scrollbar-none sm:inline-flex"
-          : "-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0",
+          ? "flex max-w-full gap-1 overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-card-2 p-1 scrollbar-none sm:inline-flex"
+          : "-mx-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0",
         className,
       )}
     >

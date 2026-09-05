@@ -12,7 +12,7 @@ import { API_BASE, API_NOTICE, API_REVISION } from "@/lib/api/version";
 import { getBranding } from "@/lib/branding";
 import { env } from "@/lib/env";
 import { getInstanceSettings } from "@/lib/instance-settings";
-import { getSession } from "@/lib/session";
+import { notFound } from "next/navigation";
 import { ApiBrowser } from "./api-browser";
 import "@/components/readme/readme.css";
 
@@ -24,31 +24,9 @@ export const metadata: Metadata = { title: "REST API" };
  * are rendered from lib/api/*, so they cannot drift from the handlers.
  */
 export default async function ApiDocsPage() {
-  const [branding, settings, session] = await Promise.all([getBranding(), getInstanceSettings(), getSession()]);
-  if (!settings.access.apiEnabled) {
-    const admin = session?.user.role === "admin";
-    return (
-      <>
-        <PageHeader eyebrow="Documentation" title="REST API" />
-        <Card>
-          <CardBody className="space-y-2 text-sm text-ink-2">
-            <p>The REST API is switched off on this registry. Every endpoint answers 403 until an administrator turns it on again.</p>
-            {admin ? (
-              <p>
-                Turn it on under{" "}
-                <Link href="/admin/auth/access" className="text-action underline underline-offset-2 hover:text-action-hover">
-                  Administration → Auth providers → Access
-                </Link>
-                .
-              </p>
-            ) : (
-              <p>docker login and access tokens keep working as before.</p>
-            )}
-          </CardBody>
-        </Card>
-      </>
-    );
-  }
+  const [branding, settings] = await Promise.all([getBranding(), getInstanceSettings()]);
+  // With the API switched off the documentation is not there either (the switch is under Administration → Access).
+  if (!settings.access.apiEnabled) notFound();
   const appUrl = env.appUrl.replace(/\/$/, "");
   const guide = renderApiDocs(
     apiDocsMarkdown({ appUrl, registryHost: env.registryHost, instanceName: branding.instanceName, inApp: true, endpoints: false }),

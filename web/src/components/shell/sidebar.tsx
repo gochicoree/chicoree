@@ -79,7 +79,7 @@ export function Sidebar({
   branding?: NavBranding;
   /** Sign-up controls can restrict organization creation to administrators. */
   canCreateOrgs?: boolean;
-  /** The REST API entry (hidden for users while an administrator has the API switched off). */
+  /** The REST API entry (hidden while the API is switched off). */
   showApi?: boolean;
 }) {
   const pathname = usePathname();
