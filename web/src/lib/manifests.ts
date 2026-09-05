@@ -10,6 +10,7 @@ import { registryErrorMessage } from "./registry-client";
 import { signRegistryToken } from "./registry-jwt";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 import { effectiveTagRules, protectedReason } from "./tag-rules";
+import { predicateLabel, predicateSubkind, type ArtifactSubkind } from "./signatures-shared";
 
 export interface UntaggedManifest {
   digest: string;
@@ -26,6 +27,10 @@ export interface UntaggedManifest {
   pushedBy: string | null;
   /** Referenced by a multi-arch index that still exists. */
   isChild: boolean;
+  /** Tags of the indexes that reference it (empty when none of them is tagged). */
+  parentTags: string[];
+  /** A BuildKit attestation entry (provenance / SBOM stored inside an index, platform unknown/unknown). */
+  isAttestation: boolean;
   /** Attached to another manifest that still exists (its `subject`). */
   isReferrer: boolean;
   subjectDigest: string | null;
@@ -39,6 +44,9 @@ const untaggedSelect = sql`
   (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
     WHERE mr.repository_id = m.repository_id AND mr.manifest_digest = m.digest) AS content_bytes,
   EXISTS (SELECT 1 FROM manifest_refs mr WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest) AS is_child,
+  (SELECT string_agg(DISTINCT t.name, ',') FROM manifest_refs mr
+    JOIN tags t ON t.repository_id = mr.repository_id AND t.manifest_digest = mr.manifest_digest
+    WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest) AS parent_tags,
   (m.subject_digest IS NOT NULL AND EXISTS (SELECT 1 FROM manifests s
     WHERE s.repository_id = m.repository_id AND s.digest = m.subject_digest)) AS is_referrer,
   (SELECT count(*)::int FROM manifests r WHERE r.repository_id = m.repository_id AND r.subject_digest = m.digest) AS referrer_count`;
@@ -49,6 +57,7 @@ const untaggedWhere = (repoId: string) => sql`m.repository_id = ${repoId}
 function mapUntagged(rows: Record<string, unknown>[]): UntaggedManifest[] {
   return rows.map((r) => {
     const mediaType = r.media_type as string;
+    const platform = describePlatform(r.os as string | null, r.arch as string | null, r.variant as string | null);
     return {
       digest: r.digest as string,
       mediaType,
@@ -56,10 +65,12 @@ function mapUntagged(rows: Record<string, unknown>[]): UntaggedManifest[] {
       isIndex: /index|list/.test(mediaType),
       size: Number(r.size),
       contentBytes: r.content_bytes != null ? Number(r.content_bytes) : null,
-      platform: describePlatform(r.os as string | null, r.arch as string | null, r.variant as string | null),
+      platform,
       pushedAt: new Date(r.created_at as string),
       pushedBy: (r.pushed_by as string | null) ?? null,
       isChild: Boolean(r.is_child),
+      parentTags: r.parent_tags ? String(r.parent_tags).split(",").filter(Boolean).sort() : [],
+      isAttestation: Boolean(r.is_child) && isAttestationPlatform(platform),
       isReferrer: Boolean(r.is_referrer),
       subjectDigest: (r.subject_digest as string | null) ?? null,
       referrerCount: Number(r.referrer_count),
@@ -109,6 +120,142 @@ export function describePlatform(os: string | null, arch: string | null, variant
   return `${os ?? "?"}/${arch ?? "?"}${variant ? `/${variant}` : ""}`;
 }
 
+/**
+ * BuildKit stores provenance and SBOM attestations as extra entries of the
+ * image index with the platform "unknown/unknown" (and the annotation
+ * vnd.docker.reference.type = attestation-manifest). They are not images.
+ */
+export function isAttestationPlatform(platform: string | null | undefined): boolean {
+  return platform === "unknown/unknown";
+}
+
+/** How the untagged list and the delete button explain an index child. */
+export function describeIndexChild(m: { isAttestation: boolean; parentTags: string[]; platform: string | null }): string {
+  const holder =
+    m.parentTags.length > 0
+      ? `the multi-arch index tagged ${m.parentTags.map((t) => `"${t}"`).join(", ")}`
+      : "a multi-arch index that still exists";
+  if (m.isAttestation) {
+    return `Not an image: a BuildKit attestation entry (provenance / SBOM) that ${holder} carries. It cannot be deleted on its own — delete the tag or the index, then prune untagged manifests. Build with --provenance=false --sbom=false to stop producing these.`;
+  }
+  return `The ${m.platform ?? "platform"} variant of ${holder}. It cannot be deleted on its own — delete the index or its tags instead.`;
+}
+
+export interface AttestationContent {
+  /** Layer blob holding the in-toto statement. */
+  digest: string;
+  size: number;
+  predicateType: string | null;
+  subkind: ArtifactSubkind;
+  /** "SLSA provenance", "SPDX SBOM", … */
+  label: string;
+}
+
+/**
+ * What a BuildKit attestation entry holds: one in-toto statement per layer,
+ * labelled by its predicate type annotation.
+ */
+export function attestationContents(payload: { layers?: { digest?: string; size?: number; mediaType?: string; annotations?: Record<string, string> }[] }): AttestationContent[] {
+  return (payload.layers ?? [])
+    .filter((l) => l.digest && /in-toto/.test(l.mediaType ?? ""))
+    .map((l) => {
+      const predicateType = l.annotations?.["in-toto.io/predicate-type"] ?? null;
+      const subkind = predicateSubkind(predicateType);
+      return { digest: l.digest!, size: l.size ?? 0, predicateType, subkind, label: predicateLabel(predicateType, subkind) };
+    });
+}
+
+export interface BuildkitAttestation {
+  /** The attestation entry (unknown/unknown manifest) in the index. */
+  digest: string;
+  contents: AttestationContent[];
+}
+
+/**
+ * BuildKit attestation entries that describe this image: siblings in the
+ * same index whose vnd.docker.reference.digest names it, with what each
+ * holds. Shown on the image page so provenance and SBOMs stored this way
+ * are not invisible.
+ */
+export async function buildkitAttestationsFor(repoId: string, digest: string): Promise<BuildkitAttestation[]> {
+  const { rows } = await db.execute(sql`
+    SELECT m.payload FROM manifest_refs mr
+    JOIN manifests m ON m.repository_id = mr.repository_id AND m.digest = mr.manifest_digest
+    WHERE mr.repository_id = ${repoId} AND mr.ref_digest = ${digest}`);
+  const entries = new Set<string>();
+  for (const r of rows) {
+    try {
+      const parsed = JSON.parse(String(r.payload)) as { manifests?: { digest?: string; annotations?: Record<string, string> }[] };
+      for (const c of parsed.manifests ?? []) {
+        if (c.digest && c.annotations?.["vnd.docker.reference.type"] === "attestation-manifest" && c.annotations["vnd.docker.reference.digest"] === digest) {
+          entries.add(c.digest);
+        }
+      }
+    } catch {
+      // not an index we can read
+    }
+  }
+  const out: BuildkitAttestation[] = [];
+  for (const d of entries) {
+    const row = await db.query.manifests.findFirst({ where: and(eq(manifests.repositoryId, repoId), eq(manifests.digest, d)), columns: { payload: true } });
+    if (!row) continue;
+    try {
+      out.push({ digest: d, contents: attestationContents(JSON.parse(row.payload)) });
+    } catch {
+      out.push({ digest: d, contents: [] });
+    }
+  }
+  return out;
+}
+
+export interface IndexMembership {
+  parentDigest: string;
+  parentTags: string[];
+  /** Platform the index entry declares for this manifest. */
+  platform: string | null;
+  /** BuildKit attestation entry: the variant it describes, when the annotation says. */
+  attestation: { referenceDigest: string | null } | null;
+}
+
+/**
+ * The indexes in the repository that list this manifest as a child, with
+ * what each entry says about it (platform, attestation annotations) and
+ * the tags that point at the index — everything the manifest page needs
+ * to explain why the manifest exists and why it cannot go on its own.
+ */
+export async function indexMemberships(repoId: string, digest: string): Promise<IndexMembership[]> {
+  const { rows } = await db.execute(sql`
+    SELECT m.digest, m.payload,
+      (SELECT string_agg(t.name, ',' ORDER BY t.name) FROM tags t WHERE t.repository_id = m.repository_id AND t.manifest_digest = m.digest) AS tags
+    FROM manifest_refs mr
+    JOIN manifests m ON m.repository_id = mr.repository_id AND m.digest = mr.manifest_digest
+    WHERE mr.repository_id = ${repoId} AND mr.ref_digest = ${digest}
+    ORDER BY m.created_at DESC`);
+  const out: IndexMembership[] = [];
+  for (const r of rows) {
+    let entry: { platform?: { os?: string; architecture?: string; variant?: string }; annotations?: Record<string, string> } | undefined;
+    try {
+      const parsed = JSON.parse(String(r.payload)) as { manifests?: { digest?: string; platform?: { os?: string; architecture?: string; variant?: string }; annotations?: Record<string, string> }[] };
+      entry = (parsed.manifests ?? []).find((c) => c.digest === digest);
+    } catch {
+      // an index we cannot parse still blocks deletion; describe it without details
+    }
+    const platform = entry?.platform ? describePlatform(entry.platform.os ?? null, entry.platform.architecture ?? null, entry.platform.variant ?? null) : null;
+    const type = entry?.annotations?.["vnd.docker.reference.type"];
+    const attestation =
+      type === "attestation-manifest" || isAttestationPlatform(platform)
+        ? { referenceDigest: entry?.annotations?.["vnd.docker.reference.digest"] ?? null }
+        : null;
+    out.push({
+      parentDigest: String(r.digest),
+      parentTags: r.tags ? String(r.tags).split(",").filter(Boolean) : [],
+      platform,
+      attestation,
+    });
+  }
+  return out;
+}
+
 /** Short label for a manifest media type ("OCI image", "Docker index", or the artifact type). */
 export function describeMediaType(mediaType: string, artifactType?: string | null): string {
   if (artifactType) return artifactType;
@@ -150,13 +297,18 @@ export async function manifestDeleteBlocker(
   digest: string,
 ): Promise<{ reason: string; tags: string[] } | { reason: null; tags: string[] }> {
   const [parents, tags, rules] = await Promise.all([
-    indexParents(repo.id, digest),
+    indexMemberships(repo.id, digest),
     tagsForDigest(repo.id, digest),
     effectiveTagRules(repo.organizationId, repo.id),
   ]);
   if (parents.length > 0) {
+    const first = parents[0];
     return {
-      reason: `This image is a platform variant of a multi-arch index (${parents.map((p) => p.slice(7, 19)).join(", ")}) that still exists; delete the index instead.`,
+      reason: describeIndexChild({
+        isAttestation: !!first.attestation,
+        parentTags: [...new Set(parents.flatMap((p) => p.parentTags))],
+        platform: first.platform,
+      }),
       tags,
     };
   }

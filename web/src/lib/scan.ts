@@ -23,7 +23,7 @@ interface ManifestDescriptor {
   size?: number;
 }
 
-interface ManifestPayload {
+export interface ManifestPayload {
   mediaType?: string;
   config?: ManifestDescriptor;
   layers?: ManifestDescriptor[];
@@ -36,7 +36,7 @@ interface ManifestPayload {
  * filesystem: scanners choke on them ("bad block at 0"), so they are never
  * queued. Anything whose layers are all non-image media types counts too.
  */
-function isArtifactManifest(p: ManifestPayload): boolean {
+export function isArtifactManifest(p: ManifestPayload): boolean {
   const layerTypes = (p.layers ?? []).map((l) => l.mediaType ?? "");
   if (looksLikeArtifact({ hasSubject: !!p.subject, tags: [], layerMediaTypes: layerTypes, configMediaType: p.config?.mediaType ?? null })) return true;
   return layerTypes.length > 0 && layerTypes.every((mt) => mt !== "" && !/image\.(layer|rootfs)/.test(mt));

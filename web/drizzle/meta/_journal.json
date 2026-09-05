@@ -78,6 +78,13 @@
       "when": 1788619974692,
       "tag": "0010_outbox_login_throttle_chat_webhooks_keyless_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788624547285,
+      "tag": "0011_verify_existing_admins",
+      "breakpoints": true
     }
   ]
 }
