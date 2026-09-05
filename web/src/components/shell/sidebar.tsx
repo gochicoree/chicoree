@@ -69,6 +69,7 @@ export function Sidebar({
   isAdmin,
   branding,
   canCreateOrgs = true,
+  showApi = true,
 }: {
   orgs: NavOrg[];
   /** How many organizations the user is in; more than `orgs` means the list is capped. */
@@ -78,6 +79,8 @@ export function Sidebar({
   branding?: NavBranding;
   /** Sign-up controls can restrict organization creation to administrators. */
   canCreateOrgs?: boolean;
+  /** The REST API entry (hidden for users while an administrator has the API switched off). */
+  showApi?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -105,9 +108,11 @@ export function Sidebar({
           <NavLink href="/explore" active={pathname === "/explore"}>
             <Compass className="size-4" /> Explore
           </NavLink>
-          <NavLink href="/docs/api" active={pathname.startsWith("/docs/api")}>
-            <Braces className="size-4" /> API
-          </NavLink>
+          {showApi && (
+            <NavLink href="/docs/api" active={pathname.startsWith("/docs/api")}>
+              <Braces className="size-4" /> API
+            </NavLink>
+          )}
         </div>
 
         <div>

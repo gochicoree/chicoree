@@ -18,6 +18,7 @@ export function MobileNav({
   isAdmin,
   branding,
   canCreateOrgs,
+  showApi,
 }: {
   orgs: NavOrg[];
   orgCount?: number;
@@ -25,6 +26,7 @@ export function MobileNav({
   isAdmin: boolean;
   branding?: NavBranding;
   canCreateOrgs?: boolean;
+  showApi?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -109,7 +111,7 @@ export function MobileNav({
             >
               <X className="size-5" />
             </button>
-            <Sidebar orgs={orgs} orgCount={orgCount} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} />
+            <Sidebar orgs={orgs} orgCount={orgCount} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} showApi={showApi} />
           </div>
         </div>
       )}

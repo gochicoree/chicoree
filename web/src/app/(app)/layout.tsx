@@ -31,6 +31,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     isAdmin: session.user.role === "admin",
     branding: { name: branding.instanceName, logoDataUrl: branding.logoDataUrl || undefined },
     canCreateOrgs: canCreateOrganization(settings.access, session.user.role),
+    // The API entry stays for administrators when the API is off, so they find the switch.
+    showApi: settings.access.apiEnabled || session.user.role === "admin",
   };
 
   return (

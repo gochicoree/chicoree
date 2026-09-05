@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-05.1` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-05.2` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -26,6 +26,8 @@ curl -u "me:$TOKEN" https://registry.example.com/api/v1/me
 
 Expired tokens, banned accounts and unknown secrets answer `401`; a valid credential without the right answers `403` with the reason. Every use of a token updates its *last used* time and address (*Settings → Access tokens*).
 
+Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from `API_ENABLED`): every endpoint, the index and the OpenAPI document then answer `403` with code `api_disabled`. docker login and the jobs API are not affected.
+
 ## Conventions
 
 - Responses are JSON (`application/json`, UTF-8). Timestamps are ISO 8601 in UTC (`2026-09-05T08:41:12.000Z`), sizes are bytes, digests are `sha256:<64 hex>`. Absent values are `null`, not omitted.
@@ -34,7 +36,7 @@ Expired tokens, banned accounts and unknown secrets answer `401`; a valid creden
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.1`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.2`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 
@@ -52,6 +54,7 @@ Expired tokens, banned accounts and unknown secrets answer `401`; a valid creden
 | `not_found` | 404 | The organization, repository, tag or image does not exist — or is not visible to the caller. |
 | `conflict` | 409 | The registry's state refuses the change: a name is taken, a tag is protected, an index member cannot go alone, a scan is already running. |
 | `unprocessable` | 422 | The body is well-formed but a value is not acceptable (name rules, quotas, missing fields). |
+| `api_disabled` | 403 | An administrator switched the API off (*Administration → Auth providers → Access*, or `API_ENABLED=false`); every endpoint answers this until it is on again. |
 | `internal` | 500 | Something failed on the server; the details are in the web app's log. |
 
 Some errors add a `details` object (the offending `field`, or `queued: false` when a scan was not started).
@@ -1290,6 +1293,10 @@ curl -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-05.2
+
+- Administrators can switch the API off (Administration → Auth providers → Access, default from API_ENABLED); every endpoint then answers 403 with the new error code api_disabled.
 
 ### 2026-09-05.1
 

@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import type { PageState } from "@/lib/paginate-shared";
 import { API_REVISION, API_VERSION } from "./version";
 
-export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "unprocessable" | "internal";
+export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "unprocessable" | "api_disabled" | "internal";
 
 const STATUS: Record<ApiErrorCode, number> = {
   bad_request: 400,
@@ -15,8 +15,13 @@ const STATUS: Record<ApiErrorCode, number> = {
   not_found: 404,
   conflict: 409,
   unprocessable: 422,
+  api_disabled: 403,
   internal: 500,
 };
+
+/** What every endpoint answers while an administrator has the API switched off. */
+export const apiDisabled = () =>
+  new ApiError("api_disabled", "The REST API is switched off on this registry (Administration → Auth providers → Access).");
 
 export class ApiError extends Error {
   constructor(

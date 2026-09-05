@@ -164,8 +164,8 @@ export function TokenManager({
   policy,
 }: {
   registryHost: string;
-  /** Absolute base of the REST API, for the example call shown with a new secret. */
-  apiUrl: string;
+  /** Absolute base of the REST API, for the example call shown with a new secret; null while the API is switched off. */
+  apiUrl: string | null;
   email: string;
   tokens: TokenRow[];
   orgs: TokenOrg[];
@@ -251,8 +251,12 @@ export function TokenManager({
               <SecretPanel title={`Token “${state.name}” — copy it now, it won't be shown again.`} secret={state.secret}>
                 <p className="text-xs text-accent-ink/80">Sign in to the registry with it:</p>
                 <CommandLine command={`docker login ${registryHost} -u ${email}`} />
-                <p className="text-xs text-accent-ink/80">Or call the REST API:</p>
-                <CommandLine command={`curl -H "Authorization: Bearer <token>" ${apiUrl}/me`} />
+                {apiUrl && (
+                  <>
+                    <p className="text-xs text-accent-ink/80">Or call the REST API:</p>
+                    <CommandLine command={`curl -H "Authorization: Bearer <token>" ${apiUrl}/me`} />
+                  </>
+                )}
               </SecretPanel>
             </div>
           )}

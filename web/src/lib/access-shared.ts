@@ -23,6 +23,8 @@ export interface AccessSettings {
   localSignIn: LocalSignInMode;
   /** Last path segment of the hidden sign-in page: /sign-in/<localSignInPath>. */
   localSignInPath: string;
+  /** The REST API under /api/v1; off = every endpoint answers 403 api_disabled (docker login and the jobs API are unaffected). */
+  apiEnabled: boolean;
 }
 
 /** Header the sign-up form sends so an invitee is matched to their invitation. */
@@ -36,6 +38,7 @@ export const DEFAULT_ACCESS: AccessSettings = {
   requireTokenExpiry: false,
   localSignIn: "everyone",
   localSignInPath: "local",
+  apiEnabled: true,
 };
 
 export const LOCAL_SIGNIN_MODES: { value: LocalSignInMode; label: string; description: string }[] = [

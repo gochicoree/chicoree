@@ -152,7 +152,7 @@ export function openApiDocument(o: { appUrl: string; instanceName?: string }) {
           required: ["error", "code"],
           properties: {
             error: { type: "string", description: "Human-readable message." },
-            code: { type: "string", enum: ["bad_request", "unauthorized", "forbidden", "not_found", "conflict", "unprocessable", "internal"] },
+            code: { type: "string", enum: ["bad_request", "unauthorized", "forbidden", "not_found", "conflict", "unprocessable", "api_disabled", "internal"] },
             details: { type: "object", description: "Optional extra context (the offending field, queued: false, …)." },
           },
         },

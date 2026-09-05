@@ -257,6 +257,11 @@ export const env = {
   get localSignInPath() {
     return process.env.LOCAL_SIGNIN_PATH ?? "local";
   },
+  /** The REST API (/api/v1); API_ENABLED=false switches it off (Administration → Auth providers → Access overrides). */
+  get apiEnabled() {
+    const v = (process.env.API_ENABLED ?? "").trim().toLowerCase();
+    return !(v === "false" || v === "0" || v === "off" || v === "no");
+  },
 
   // Branding defaults (Administration → Branding overrides them).
   get instanceName() {

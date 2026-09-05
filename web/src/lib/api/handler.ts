@@ -2,8 +2,9 @@
 // the dynamic route parameters, and turns thrown ApiErrors into JSON error
 // responses (anything else becomes a logged 500).
 import type { NextRequest, NextResponse } from "next/server";
+import { getInstanceSettings } from "@/lib/instance-settings";
 import { authenticate, type ApiCaller } from "./auth";
-import { ApiError, errorResponse } from "./respond";
+import { ApiError, apiDisabled, errorResponse } from "./respond";
 
 export interface ApiContext<P> {
   caller: ApiCaller;
@@ -18,6 +19,8 @@ export function route<P extends Record<string, string> = Record<string, never>>(
 ) {
   return async (req: NextRequest, ctx: RouteContext<P>): Promise<NextResponse | Response> => {
     try {
+      // The switch is read on every request, so flipping it takes effect at once.
+      if (!(await getInstanceSettings()).access.apiEnabled) throw apiDisabled();
       const [caller, params] = await Promise.all([authenticate(req), ctx.params]);
       return await fn(req, { caller, params, url: req.nextUrl });
     } catch (err) {

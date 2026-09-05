@@ -104,6 +104,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Vulnerability scanning | *Administration → Scanning*; `SCANNER=off\|clair\|trivy`, `CLAIR_URL`, `TRIVY_SERVER_URL`, `TRIVY_TIMEOUT_SECONDS` as defaults, `TRIVY_BIN` / `TRIVY_CACHE_DIR` (environment only), `COMPOSE_PROFILES=clair\|trivy` for the bundled services — see [Scanner backends](#scanner-backends) |
 | Sign-up controls | *Administration → Auth providers → Access*; `SIGNUP_MODE`, `SIGNUP_ALLOWED_DOMAINS`, `ORG_CREATION` as defaults — see [Sign-up controls](#sign-up-controls) |
 | Access token policy | *Administration → Auth providers → Access*; `TOKEN_MAX_LIFETIME_DAYS`, `TOKEN_REQUIRE_EXPIRY` as defaults — see [Access token policy](#access-token-policy) |
+| REST API | *Administration → Auth providers → Access*; `API_ENABLED=false` as default switches `/api/v1` off — see [REST API](#rest-api) |
 | Token signing keys | *Administration → Signing keys*; `TOKEN_KEY_RELOAD_INTERVAL` (default `60s`) and `TOKEN_KEY_DROP_WINDOW` (default `10m`) on `registryd` — see [Signing-key rotation](#signing-key-rotation) |
 | Upload staging | `STORAGE_STAGING=local\|shared` and `UPLOAD_SESSION_TTL` (default `24h`) on `registryd` — see [Running several registryd replicas](#running-several-registryd-replicas) |
 | Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE` as defaults — see [Branding](#branding) |
@@ -1813,6 +1814,12 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
   Swagger UI, Postman, Insomnia or client generators.
 - **Index**: `GET /api/v1` needs no credentials and returns the version,
   the current revision, the changelog and the endpoint list.
+- **Switching it off**: *Administration → Auth providers → Access → REST
+  API* (default from `API_ENABLED`). While off, every endpoint, the index
+  and the OpenAPI document answer `403` with code `api_disabled`, the API
+  page and its sidebar entry disappear for users (administrators keep the
+  entry so they find the switch), and `docker login` and the jobs API keep
+  working.
 - **Who can do what**: read-only tokens read; read & write tokens also
   change things; a token limited to an organization or a repository list
   sees nothing outside it (and cannot search or create repositories).

@@ -43,6 +43,7 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
     requireTokenExpiry: fd.get("requireTokenExpiry") === "on",
     localSignIn: localSignIn as LocalSignInMode,
     localSignInPath: normalizeLocalSignInPath(str(fd, "localSignInPath") || "local"),
+    apiEnabled: fd.get("apiEnabled") === "on",
   };
   await saveSettingsSection("access", { ...access });
   await recordAudit({ action: "settings.update", targetType: "settings", targetId: "access", targetLabel: "access", details: { ...access } });
@@ -50,6 +51,7 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
   revalidatePath("/sign-in");
   revalidatePath("/sign-up");
   revalidatePath("/settings/tokens");
+  revalidatePath("/docs/api");
   revalidatePath("/", "layout");
   return { saved: true, message: "Access settings saved" };
 }
