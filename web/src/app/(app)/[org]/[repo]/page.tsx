@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, trafficSummary } from "@/lib/data";
+import { countArtifactTags, egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, trafficSummary } from "@/lib/data";
 import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
 import { env } from "@/lib/env";
 import { scanningEnabled } from "@/lib/scanners";
@@ -19,7 +19,8 @@ import { RuleBadges } from "@/components/tag-rules-manager";
 import { imageReference } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
-import { describeIndexChild, describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
+import { countUntaggedArtifacts, describeIndexChild, describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
+import { getBrandingPlain } from "@/lib/branding";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
 import { after } from "next/server";
@@ -53,20 +54,45 @@ export default async function RepoPage({
   if (found.repo.visibility === "private" && !role) notFound();
   const session = await getSession();
 
-  const [tags, overview, series, proxy, egress, traffic, rules, untagged, star, about, storage] = await Promise.all([
-    listRepoTags(found.repo.id, { page: pageParam(query, "tags"), pageSize: PAGE_SIZES.tags }),
+  // Instance-wide switch (Administration → Branding): signature tags, attached
+  // artifacts and BuildKit attestation entries stay out of the lists unless wanted.
+  const hideArtifacts = !(await getBrandingPlain()).showArtifacts;
+  const [tags, overview, series, proxy, egress, traffic, rules, untagged, star, about, storage, hiddenTags, hiddenUntagged] = await Promise.all([
+    listRepoTags(found.repo.id, { page: pageParam(query, "tags"), pageSize: PAGE_SIZES.tags, hideArtifacts }),
     repoTagOverview(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
     role ? egressSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     effectiveTagRules(found.repo.organizationId, found.repo.id),
-    untaggedManifestsPage(found.repo.id, { page: pageParam(query, "untagged"), pageSize: PAGE_SIZES.untagged }),
+    untaggedManifestsPage(found.repo.id, { page: pageParam(query, "untagged"), pageSize: PAGE_SIZES.untagged, hideArtifacts }),
     repoStarState(found.repo.id, session?.user.id ?? null),
     // The About block only matters when there is no README.
     found.repo.readme ? Promise.resolve(null) : imageAbout(found.repo.id),
     repositoryStorage(found.repo.id),
+    hideArtifacts ? countArtifactTags(found.repo.id) : Promise.resolve(0),
+    hideArtifacts ? countUntaggedArtifacts(found.repo.id) : Promise.resolve(0),
   ]);
+  const hiddenNote = (n: number, what: string) =>
+    n > 0 ? (
+      <p className="border-t border-line px-4 py-2 text-xs text-ink-3 sm:px-5">
+        {n} {what}
+        {n === 1 ? " is" : " are"} hidden
+        {session?.user.role === "admin" ? (
+          <>
+            {" "}
+            (
+            <Link href="/admin/branding" className="underline hover:text-ink">
+              show them
+            </Link>
+            )
+          </>
+        ) : (
+          " (an administrator can show them under Administration → Branding)"
+        )}
+        .
+      </p>
+    ) : null;
   const readmeHtml = found.repo.readme ? renderReadme(found.repo.readme) : null;
   // "Recently viewed" on the dashboard; throttled to one write per minute inside.
   if (session) {
@@ -84,7 +110,7 @@ export default async function RepoPage({
   // Which tag rules lock each tag (immutable / protected) — for badges and the delete button.
   const flagsByTag = new Map(tagList.map((t) => [t.name, tagFlags(rules, t.name)]));
   // Digests referenced by other manifests in this repository (index children); those cannot be deleted alone.
-  const showUntagged = untagged.state.total > 0 || canDelete;
+  const showUntagged = untagged.state.total > 0 || hiddenUntagged > 0 || canDelete;
 
   return (
     <div className="space-y-6">
@@ -258,6 +284,7 @@ export default async function RepoPage({
             </table>
           </div>
         )}
+        {hiddenNote(hiddenTags, hiddenTags === 1 ? "signature or SBOM tag" : "signature and SBOM tags")}
         <PaginationFooter
           state={tags.state}
           noun="tags"
@@ -349,6 +376,7 @@ export default async function RepoPage({
               </table>
             </div>
           )}
+          {hiddenNote(hiddenUntagged, hiddenUntagged === 1 ? "attestation entry or attached artifact" : "attestation entries and attached artifacts")}
           <PaginationFooter
             state={untagged.state}
             noun="manifests"

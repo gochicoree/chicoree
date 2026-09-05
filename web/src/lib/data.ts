@@ -329,15 +329,19 @@ export async function repoTagOverview(repoId: string, nameLimit = COMPARE_TAG_LI
 }
 
 /** One page of a repository's tags, newest first, plus how many there are. */
+/** Tags cosign's tag convention creates for signatures, attestations and SBOMs. */
+export const COSIGN_TAG_SQL_PATTERN = "^sha256-[a-f0-9]{64}\\.(sig|att|sbom)$";
+
 export async function listRepoTags(
   repoId: string,
-  opts: { page?: number; pageSize?: number } = {},
+  opts: { page?: number; pageSize?: number; hideArtifacts?: boolean } = {},
 ): Promise<{ rows: TagListItem[]; state: PageState }> {
+  const artifactFilter = opts.hideArtifacts ? sql` AND t.name !~ ${COSIGN_TAG_SQL_PATTERN}` : sql``;
   return paginatedQuery<TagListItem>({
     page: opts.page ?? 1,
     pageSize: opts.pageSize ?? PAGE_SIZES.tags,
     count: async () => {
-      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM tags WHERE repository_id = ${repoId}`);
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM tags t WHERE t.repository_id = ${repoId}${artifactFilter}`);
       return Number(rows[0]?.n ?? 0);
     },
     rows: async (limit, offset) => {
@@ -354,7 +358,7 @@ export async function listRepoTags(
     JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
     LEFT JOIN vulnerability_scans vs ON vs.digest = t.manifest_digest
     LEFT JOIN manifest_blocks mb ON mb.repository_id = t.repository_id AND mb.digest = t.manifest_digest
-    WHERE t.repository_id = ${repoId}
+    WHERE t.repository_id = ${repoId}${artifactFilter}
     ORDER BY t.updated_at DESC
     LIMIT ${limit} OFFSET ${offset}`);
       // Indexes are never scanned themselves; their tag shows the variants'
@@ -384,6 +388,12 @@ export async function listRepoTags(
       });
     },
   });
+}
+
+/** How many artifact tags the list leaves out when hiding artifacts. */
+export async function countArtifactTags(repoId: string): Promise<number> {
+  const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM tags t WHERE t.repository_id = ${repoId} AND t.name ~ ${COSIGN_TAG_SQL_PATTERN}`);
+  return Number(rows[0]?.n ?? 0);
 }
 
 export interface IndexScanRollup {

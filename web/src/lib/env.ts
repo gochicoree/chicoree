@@ -269,6 +269,10 @@ export const env = {
   get instanceTagline() {
     return process.env.INSTANCE_TAGLINE ?? "";
   },
+  /** List signatures, SBOMs and BuildKit attestation entries next to images (default: hidden). */
+  get showArtifacts() {
+    return process.env.SHOW_ARTIFACTS === "true" || process.env.SHOW_ARTIFACTS === "1";
+  },
 
   /** Audit log rows older than this are pruned (opportunistically, on insert). */
   get auditRetentionDays() {
