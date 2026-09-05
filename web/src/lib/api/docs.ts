@@ -26,6 +26,7 @@ const ERROR_CODES: [string, number, string][] = [
   ["not_found", 404, "The organization, repository, tag or image does not exist — or is not visible to the caller."],
   ["conflict", 409, "The registry's state refuses the change: a name is taken, a tag is protected, an index member cannot go alone, a scan is already running."],
   ["unprocessable", 422, "The body is well-formed but a value is not acceptable (name rules, quotas, missing fields)."],
+  ["api_disabled", 403, "An administrator switched the API off (*Administration → Auth providers → Access*, or `API_ENABLED=false`); every endpoint answers this until it is on again."],
   ["internal", 500, "Something failed on the server; the details are in the web app's log."],
 ];
 
@@ -151,6 +152,8 @@ curl -u "me:$TOKEN" ${o.appUrl}${API_BASE}/me
 | None | — | Public repositories, tags, images and scan results. |
 
 Expired tokens, banned accounts and unknown secrets answer \`401\`; a valid credential without the right answers \`403\` with the reason. Every use of a token updates its *last used* time and address (*Settings → Access tokens*).
+
+Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from \`API_ENABLED\`): every endpoint, the index and the OpenAPI document then answer \`403\` with code \`api_disabled\`. docker login and the jobs API are not affected.
 
 ## Conventions
 

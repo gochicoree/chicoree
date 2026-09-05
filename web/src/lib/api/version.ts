@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-05.2",
+    changes: [
+      "Administrators can switch the API off (Administration → Auth providers → Access, default from API_ENABLED); every endpoint then answers 403 with the new error code api_disabled.",
+    ],
+  },
+  {
     revision: "2026-09-05.1",
     changes: [
       "Initial release of the REST API under /api/v1.",

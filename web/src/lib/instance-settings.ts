@@ -169,6 +169,7 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       requireTokenExpiry: env.tokenRequireExpiry,
       localSignIn: env.localSignIn,
       localSignInPath: normalizeLocalSignInPath(env.localSignInPath),
+      apiEnabled: env.apiEnabled,
     },
     branding: {
       ...DEFAULT_BRANDING,
@@ -214,7 +215,8 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
         !!process.env.SIGNUP_ALLOWED_DOMAINS ||
         !!process.env.ORG_CREATION ||
         !!process.env.TOKEN_MAX_LIFETIME_DAYS ||
-        !!process.env.TOKEN_REQUIRE_EXPIRY
+        !!process.env.TOKEN_REQUIRE_EXPIRY ||
+        !!process.env.API_ENABLED
       );
     case "branding":
       return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE || !!process.env.GRAVATAR || !!process.env.SHOW_ARTIFACTS;

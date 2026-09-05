@@ -184,6 +184,17 @@ export function AccessForm({ access, source, appUrl }: { access: AccessSettings;
             </div>
           </fieldset>
 
+          <fieldset>
+            <legend className="mb-2 text-[13px] font-medium text-ink">REST API</legend>
+            <Check
+              key={String(access.apiEnabled)}
+              name="apiEnabled"
+              label="REST API switched on"
+              defaultChecked={access.apiEnabled}
+              hint="Off: every /api/v1 endpoint answers 403 api_disabled, the API page and the OpenAPI document go away for everyone. docker login and the jobs API keep working."
+            />
+          </fieldset>
+
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" disabled={saving}>
               Save access settings
