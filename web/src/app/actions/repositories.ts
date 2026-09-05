@@ -5,10 +5,9 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { manifests, organization, organizationProxies, repositories, tags, vulnerabilityScans } from "@/db/schema";
+import { organization, organizationProxies, repositories, tags } from "@/db/schema";
 import { getOrgRole, requireSession, getSession } from "@/lib/session";
-import { isArtifactManifest, runScan, type ManifestPayload } from "@/lib/scan";
-import { getScanner } from "@/lib/scanners";
+import { queueRescan, type RescanResult } from "@/lib/rescan";
 import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
 import { checkRepoQuota } from "@/lib/quota";
 import { checkQuotaWarnings } from "@/lib/notify";
@@ -16,7 +15,6 @@ import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
 import { recordAudit } from "@/lib/audit";
 import { clearRepositoryRedirects } from "@/lib/redirects";
-import { scanInProgress } from "@/lib/scanner-shared";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -145,12 +143,6 @@ export async function deleteTag(formData: FormData): Promise<void> {
   revalidatePath(`/${org?.slug}/${repo.name}`);
 }
 
-export interface RescanResult {
-  /** True when a scan was queued; false with the reason otherwise. */
-  queued: boolean;
-  message: string;
-}
-
 /**
  * Queue a vulnerability scan for one image. Says why when nothing happens
  * (index, attestation, scan already running, scanning off) so the button
@@ -166,41 +158,9 @@ export async function requestRescan(formData: FormData): Promise<RescanResult> {
   if (!repo) return { queued: false, message: "Repository not found." };
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) return { queued: false, message: "Organization not found." };
-  if (!(await getScanner())) return { queued: false, message: "Scanning is off (Administration → Scanning)." };
-  const manifest = await db.query.manifests.findFirst({
-    where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, digest)),
-    columns: { payload: true },
-  });
-  if (!manifest) return { queued: false, message: "This image does not exist (anymore)." };
-  let payload: ManifestPayload = {};
-  try {
-    payload = JSON.parse(manifest.payload) as ManifestPayload;
-  } catch {
-    // treated as an image
-  }
-  if (Array.isArray(payload.manifests)) return { queued: false, message: "Multi-arch indexes are not scanned; their platform variants are." };
-  if (isArtifactManifest(payload)) {
-    return { queued: false, message: "Not scanned: this manifest carries no filesystem (an attestation, signature or SBOM)." };
-  }
-
-  // Someone can still submit while a scan runs (an old page, a double click);
-  // queueing a second one would duplicate work.
-  const current = await db.query.vulnerabilityScans.findFirst({ where: eq(vulnerabilityScans.digest, digest) });
-  if (scanInProgress(current)) return { queued: false, message: "A scan of this image is already running." };
-
-  const path = `${org.slug}/${repo.name}`;
-  await recordAudit({ action: "scan.request", organizationId: repo.organizationId, targetType: "manifest", targetId: digest, targetLabel: `${path}@${digest.slice(0, 19)}` });
-  // Mark it pending right away so the page shows "scanning" on refresh and a
-  // second request is refused until the scanner reports back.
-  await db
-    .insert(vulnerabilityScans)
-    .values({ digest, repositoryId: repo.id, status: "pending", error: null, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: vulnerabilityScans.digest, set: { repositoryId: repo.id, status: "pending", error: null, updatedAt: new Date() } });
-  after(async () => {
-    await runScan(path, digest).catch((err) => console.error("rescan failed:", err));
-  });
-  revalidatePath(`/${org.slug}/${repo.name}`);
-  return { queued: true, message: "Scan queued; the result appears here when it finishes." };
+  const result = await queueRescan(repo, org.slug, digest);
+  if (result.queued) revalidatePath(`/${org.slug}/${repo.name}`);
+  return result;
 }
 
 export interface DeleteTagResult {

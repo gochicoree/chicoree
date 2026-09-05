@@ -157,12 +157,15 @@ function RotateButton({ token, registryHost, email }: { token: TokenRow; registr
 
 export function TokenManager({
   registryHost,
+  apiUrl,
   email,
   tokens,
   orgs,
   policy,
 }: {
   registryHost: string;
+  /** Absolute base of the REST API, for the example call shown with a new secret. */
+  apiUrl: string;
   email: string;
   tokens: TokenRow[];
   orgs: TokenOrg[];
@@ -183,7 +186,7 @@ export function TokenManager({
         <CardHeader
           eyebrow="Docker login"
           title="Create an access token"
-          description="Use a token as the password for docker login. Optionally limit it to one organization or a few repositories."
+          description="Use a token as the password for docker login or as a bearer token for the REST API. Optionally limit it to one organization or a few repositories."
         />
         <CardBody>
           <form action={action} className="grid gap-4 sm:grid-cols-3">
@@ -248,6 +251,8 @@ export function TokenManager({
               <SecretPanel title={`Token “${state.name}” — copy it now, it won't be shown again.`} secret={state.secret}>
                 <p className="text-xs text-accent-ink/80">Sign in to the registry with it:</p>
                 <CommandLine command={`docker login ${registryHost} -u ${email}`} />
+                <p className="text-xs text-accent-ink/80">Or call the REST API:</p>
+                <CommandLine command={`curl -H "Authorization: Bearer <token>" ${apiUrl}/me`} />
               </SecretPanel>
             </div>
           )}
