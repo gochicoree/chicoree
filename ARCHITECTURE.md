@@ -421,11 +421,12 @@ through an old name get no grant at all.
   `signing_keys_trusted`, `manifest_signatures` and `manifest_artifacts`
   (`db/supply-chain-schema.ts`), `access_tokens` (+ `last_used_ip`,
   `description`, `organization_id`, `repository_ids`), `service_accounts`
-  (+ `last_used_ip`); columns `repositories.readme` / `require_signature`,
-  `organization_settings.require_signature`,
+  (+ `last_used_ip`); columns `repositories.readme` / `require_signature` /
+  `logo`, `organization_settings.require_signature`,
   `user_settings.onboarding_dismissed_at` / `admin_checklist_dismissed_at`.
-  registryd's `INSERT INTO repositories` names its columns, so nullable
-  additions there need no Go change.
+  registryd's `INSERT INTO repositories` names its columns and no query there
+  selects `*`, so nullable additions like `repositories.logo` (see *Pictures*)
+  need no Go change.
 - **Data flow**: server components query Postgres directly (`src/lib/data.ts`);
   mutations are server actions with per-org role checks; better-auth handles
   org/member/invitation/2FA/passkey flows through its own client API.
@@ -879,13 +880,81 @@ through an old name get no grant at all.
   (written in both organizations, under the `image` group added to
   `AUDIT_ACTION_GROUPS` for them). Once an hour after an insert, rows older
   than `AUDIT_RETENTION_DAYS` are deleted. registryd never writes it.
+- **Pictures** (`src/lib/logo-shared.ts`, `logo.ts`,
+  `app/api/logo/[kind]/[id]/route.ts`, `app/actions/logos.ts`,
+  `components/entity-logo.tsx`, `logo-upload.tsx`): an organization, a
+  repository and a user each carry a picture in a column of their own row —
+  better-auth's `organization.logo` and `user.image` plus the new nullable
+  `repositories.logo` (`ALTER TABLE "repositories" ADD COLUMN "logo" text`,
+  the only schema change; registryd neither reads nor writes it) — stored as a
+  normalised `data:<type>;base64,<payload>` URL, the way branding already
+  stores the instance logo. No new table, service, dependency or environment
+  variable, and no image processing: nothing is resized, re-encoded or
+  rasterised, which the 64 KB cap makes unnecessary.
+  **Validation** is one implementation for all four pictures,
+  `validateLogoDataUrl` in `branding-shared.ts`, run in the browser for live
+  feedback and again in the server action, which is the check that counts:
+  `LOGO_MEDIA_TYPES` (`image/png`, `image/svg+xml`, `image/jpeg`,
+  `image/webp`), `LOGO_MAX_BYTES` (64 KB decoded), the real magic bytes of a
+  PNG / JPEG / WebP, and for SVG the presence of `<svg` and the absence of
+  `<script`, `javascript:`, an `on…=` handler, `<foreignobject`, `<iframe`,
+  `<embed`, `<object` and an external `xlink:href` (a `#fragment` or an inline
+  `data:image` reference is allowed). `parseLogoDataUrl` splits the URL into
+  media type, whitespace-stripped base64 and bytes; `logo-shared.ts` re-exports
+  it with the entity-side pieces (`LogoKind`, `LogoRef`, `logoSrc`, `logoRef`,
+  `isLogoKind`) so client components never import a module that touches the
+  database.
+  **Serving**: `GET /api/logo/<kind>/<id>?v=<version>` answers the decoded
+  bytes with the media type from the data URL (`; charset=utf-8` for SVG), a
+  strong `ETag` — `"<md5 of the stored data URL>"`, a cache key rather than a
+  security primitive — `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
+  sandbox`, so an SVG is served inert whatever got past the upload check; an
+  `If-None-Match` carrying `*` or the tag (`W/` accepted) gets `304` with the
+  same headers and no body. `Cache-Control` is
+  `public, max-age=31536000, immutable`, except for a **private repository's**
+  picture, which is `private, …` so a shared proxy cannot hand it to somebody
+  without access. An unknown kind, a missing row, an empty column and a
+  repository the caller may not read all answer the same `404`, so the route
+  leaks nothing: `repository` is open when the repository is public and
+  otherwise needs `getOrgRole` (instance admins included, as everywhere),
+  `organization` and `user` need any session. `?v=` is the first
+  `LOGO_VERSION_LENGTH` (8) hex digits of that same MD5 and is never
+  validated — it exists so that replacing a picture changes the URL and the
+  year-long cache entry is bypassed instead of revalidated.
+  **Listings carry the version, never the bytes**: a 64 KB data URL repeated
+  down a fifty-row table would put megabytes into the HTML, so the queries
+  select `logoVersionSql(col)` = `substr(md5(<column>), 1, 8)` — `RepoListItem`,
+  `OrgWithMeta`, `NavOrgs`, `AdminOrgRow`, `OrgHit`, `SearchHit`,
+  `ActivityItem`, `listMembersWithUsers`, `listAdminUsers` and
+  `getAdminUserDetail().memberships` each gained a nullable `logoVersion`
+  (`logoVersionOf` computes the same in Node where the row is already loaded).
+  `logoRef(kind, id, version)` turns it into the `LogoRef` that `EntityLogo`
+  renders as an `<img>` at exactly `size` pixels, or — when it is null — as a
+  same-sized `inline-flex` box holding the call site's own icon or the default
+  (a `Container` glyph, an initial-letter circle for users), so rows line up
+  whether or not a picture is set and nothing cascades: a repository never
+  borrows its organization's picture. `LogoUploadCard` is the only place a
+  data URL is inlined, and only for the single entity a settings page is
+  about.
+  **Writing**: five server actions in `app/actions/logos.ts` —
+  `saveOrganizationLogo` and `saveRepositoryLogo` (`MANAGER_ROLES` in the
+  owning organization), `saveUserAvatar` (the caller on themselves), and the
+  `requireAdmin` `adminSaveOrganizationLogo` / `adminSaveUserAvatar` — take
+  one `logoDataUrl` field, empty meaning *remove*, validate it, store the
+  normalised whitespace-free form so identical bytes always hash to the same
+  version, `revalidatePath` the pages that show the picture and record an
+  audit row (`org.logo`, `repo.logo`, `user.avatar`, `admin.org.logo`,
+  `admin.user.avatar`) with `{ mediaType, bytes }` or `{ removed: true }`,
+  plus `by: "admin"` for the two admin variants.
 - **Branding** (`src/lib/branding.ts`, `branding-shared.ts`; settings section
-  `branding`, env defaults `INSTANCE_NAME`, `INSTANCE_TAGLINE`): the logo is
-  validated (PNG magic bytes, or SVG without `<script>`, event handlers,
-  `foreignObject` or external references; ≤ 64 KB) and stored as a data URL
-  inside the settings JSON. `getBranding` reads `headers()` before touching
-  the database so the root layout stays buildable, and falls back to defaults
-  on any error; it feeds `generateMetadata`, the `--brand` accent on
+  `branding`, env defaults `INSTANCE_NAME`, `INSTANCE_TAGLINE`): the logo goes
+  through the same `validateLogoDataUrl` as the entity pictures (see
+  *Pictures* above; the branding file input offers PNG and SVG) and is stored
+  as a data URL inside the settings JSON — the one picture that *is* inlined,
+  since it is on every page anyway. `getBranding` reads `headers()` before
+  touching the database so the root layout stays buildable, and falls back to
+  defaults on any error; it feeds `generateMetadata`, the `--brand` accent on
   `<body>`, `components/brand.tsx` (`BrandMark`, `BrandLockup`) and
   `mailLayout`. The announcement bar's dismissal is a FNV-1a hash of level +
   text in `localStorage`; `danger` is never dismissible.
@@ -1003,6 +1072,10 @@ by the newest active key in `token_signing_keys`, else the file key; the
   mixed local/shared fleet behaves like local.
 - Only one web replica runs job schedules at a time (advisory lock); the
   others stand by and take over when its connection drops.
+- Entity pictures live in Postgres as data URLs rather than in blob storage.
+  The 64 KB cap keeps the rows small and listings read only an 8-hex version,
+  but every picture is a database read, and the route's year-long `immutable`
+  caching means a replaced picture is only picked up because its URL changes.
 - Search is `ILIKE`-based and works on a plain database; large instances
   should add the `pg_trgm` indexes by hand.
 - `AUTH_DISABLED=true` on registryd turns every request into an admin — a

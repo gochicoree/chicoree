@@ -503,7 +503,9 @@ the chicory mark), the accent colour, up to six footer links, and an
 announcement banner shown at the top of every page. `info` and `warning`
 banners can be dismissed (remembered per browser until the text changes),
 `danger` banners cannot. `INSTANCE_NAME` and `INSTANCE_TAGLINE` are the
-environment defaults; the page previews changes live.
+environment defaults; the page previews changes live. The logo is checked
+exactly like the pictures of organizations, repositories and people — see
+[Pictures](#pictures).
 
 ## Storage plugins
 
@@ -645,6 +647,51 @@ methods, vulnerability scanning, Prometheus metrics, garbage-collection and
 retention schedules, branding, pull rate limits, a backup reminder and the
 live health probe — each with its current state and a link to the page that
 configures it; it can be dismissed per administrator.
+
+## Pictures
+
+Organizations, repositories and accounts can each carry a picture. It takes the
+place of the generic icon or the initial-letter monogram wherever that entity
+shows up: the sidebar and the navigation drawer on phones, the organization
+list, Explore, search results and the search typeahead, every repository table,
+the dashboard's shortlists and activity feed, the organization and repository
+page headers, the member list, the *pushed by* line on a tag page, and the
+administration screens.
+
+| Picture | Where it is set |
+| --- | --- |
+| Organization | *Organization → Settings → General → Organization picture* (owners and admins) |
+| Repository | *Repository → Settings → General → Repository picture* (owners and admins) |
+| Your avatar | *Settings → Profile → Your avatar* |
+
+Pick a file, check the preview, then **Save picture** (**Save avatar** on an
+account); *Remove picture* followed by a save brings the icon back. Instance
+administrators can set or clear somebody else's from *Administration →
+Organizations → organization* and *Administration → Users → user*, and they
+count as owners everywhere, so a repository's picture is theirs to change
+through the repository's own settings.
+Every change, by an owner or by an administrator, is in the audit log
+(`org.logo`, `repo.logo`, `user.avatar`, `admin.org.logo`, `admin.user.avatar`)
+with the media type and byte count, or as a removal.
+
+Pictures are **PNG, SVG, JPEG or WebP** files of at most **64 KB** — the same
+cap and the same checks as the instance logo under [Branding](#branding), so an
+SVG that carries a `<script>`, an event handler (`onload=…`) or a reference to
+an external file is refused. Nothing is resized or re-encoded: what you upload
+is what is served.
+
+A picture is always optional and nothing is inherited. A repository without one
+shows the repository icon — never its organization's picture — and an account
+without an avatar keeps its monogram, so no entity's picture ever stands in for
+another's.
+
+Organization and account pictures are shown to signed-in users; a repository's
+picture follows the repository, so a public one is visible to anonymous
+visitors and a private one only to members and instance administrators. The
+bytes never travel inside a page: they are served from their own address
+(`/api/logo/<kind>/<id>`), cached by the browser for a year and fetched again
+only when the picture actually changes, so a fifty-row listing still carries no
+image data.
 
 ## Paging through long lists
 
@@ -1361,13 +1408,13 @@ clients can forge.
   credentials expiring soon, and the dismissible *Setup checklist* — see
   [Search and READMEs](#search-and-readmes).
 - **Users** (`/admin/users`): role, ban/unban, limits, memberships, the
-  user's access tokens with a revoke button, *Revoke all sessions*, and
-  **impersonation** — act as the user in a separate session; a banner shows
-  who you are impersonating with a one-click stop.
+  user's avatar, their access tokens with a revoke button, *Revoke all
+  sessions*, and **impersonation** — act as the user in a separate session; a
+  banner shows who you are impersonating with a one-click stop.
 - **Organizations** (`/admin/organizations`): usage vs limits, members and
-  their roles, repositories, proxy-cache configuration, and deletion —
-  without having to be a member. *Move repositories…* moves a whole batch
-  into one organization; see
+  their roles, repositories, the organization's picture, proxy-cache
+  configuration, and deletion — without having to be a member. *Move
+  repositories…* moves a whole batch into one organization; see
   [Renaming and transferring](#renaming-and-transferring).
 - **Jobs** (`/admin/jobs`): run maintenance jobs, schedule them and see
   their history — see [Job schedules](#job-schedules).
@@ -1391,14 +1438,15 @@ clients can forge.
 Every change made through the app is recorded: sign-ins and sign-ups (and
 failed attempts), password / two-factor / passkey changes, organization,
 member and invitation changes, repository visibility, README, rename,
-transfer (single and in bulk) and deletion, image copies and moves,
-organization renames, tag deletion, access tokens and service accounts
-(creation, rotation, revocation), webhooks, mirrors, pull and signature
-policies, trusted signing keys and re-verification, accepted risks, token
-signing keys, admin actions (roles, bans, limits, impersonation, session
-revocation), instance settings and job runs. Each entry carries who (with the
-impersonating admin when applicable), what, the target, the organization, a
-small redacted details object, the client IP and user agent.
+transfer (single and in bulk) and deletion, the pictures of organizations,
+repositories and accounts, image copies and moves, organization renames, tag
+deletion, access tokens and service accounts (creation, rotation, revocation),
+webhooks, mirrors, pull and signature policies, trusted signing keys and
+re-verification, accepted risks, token signing keys, admin actions (roles,
+bans, limits, impersonation, session revocation), instance settings and job
+runs. Each entry carries who (with the impersonating admin when applicable),
+what, the target, the organization, a small redacted details object, the
+client IP and user agent.
 
 - **Instance-wide**: *Administration → Audit* — search over actor / target /
   action, filter by action group, organization and date range, 50 entries per
