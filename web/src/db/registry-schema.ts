@@ -40,6 +40,12 @@ export const repositories = pgTable(
     blockUnrated: boolean("block_unrated"),
     /** Markdown shown on the repository page (Settings → General), at most README_MAX_BYTES. */
     readme: text("readme"),
+    /**
+     * Repository picture as a data: URL (PNG/SVG/JPEG/WebP, at most
+     * LOGO_MAX_BYTES). Served by /api/logo/repository/<id>, never inlined into
+     * a listing. registryd does not read it.
+     */
+    logo: text("logo"),
     /** Signature policy override: null = inherit the organization's; true/false = require a verified cosign signature or not. */
     requireSignature: boolean("require_signature"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

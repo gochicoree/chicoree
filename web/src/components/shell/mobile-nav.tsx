@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Compass, Menu, Search, Settings, X } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
-import { Sidebar, type NavBranding, type NavOrg } from "./sidebar";
+import { Sidebar, type NavBranding, type NavOrg, type NavUser } from "./sidebar";
 
 /**
  * Small-screen shell: a slim sticky header with a menu button, and the full
@@ -21,7 +21,7 @@ export function MobileNav({
 }: {
   orgs: NavOrg[];
   orgCount?: number;
-  user: { name: string; email: string };
+  user: NavUser;
   isAdmin: boolean;
   branding?: NavBranding;
   canCreateOrgs?: boolean;

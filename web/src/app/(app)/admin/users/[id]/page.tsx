@@ -10,6 +10,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UsageMeter } from "@/components/admin/usage-meter";
 import { ExpiryBadge } from "@/app/(app)/settings/tokens/token-manager";
+import { LogoUploadCard } from "@/components/logo-upload";
+import { adminSaveUserAvatar } from "@/app/actions/logos";
 import { UserControls } from "./user-controls";
 import { AccountControls } from "./account-controls";
 
@@ -54,6 +56,19 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
           createdAt: user.createdAt.toISOString(),
           isSelf: user.id === session.user.id,
         }}
+      />
+
+      <LogoUploadCard
+        action={adminSaveUserAvatar}
+        kind="user"
+        name={user.name}
+        fields={{ userId: user.id }}
+        initial={user.image}
+        eyebrow="Identity"
+        title="Avatar"
+        description="Set or clear this account's avatar; the user can also change it themselves under Settings → Profile."
+        submitLabel="Save avatar"
+        removeLabel="Remove avatar"
       />
 
       <div>

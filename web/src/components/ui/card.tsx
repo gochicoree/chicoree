@@ -14,18 +14,24 @@ export function CardHeader({
   title,
   description,
   action,
+  icon,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
   action?: ReactNode;
+  /** Optional mark to the left of the title (an entity picture, say). */
+  icon?: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5 sm:py-4">
-      <div className="min-w-0">
-        {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
-        <h2 className="break-words font-display text-base font-semibold">{title}</h2>
-        {description && <p className="mt-0.5 text-sm text-ink-2">{description}</p>}
+      <div className="flex min-w-0 items-start gap-3">
+        {icon}
+        <div className="min-w-0">
+          {eyebrow && <div className="eyebrow mb-1">{eyebrow}</div>}
+          <h2 className="break-words font-display text-base font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 text-sm text-ink-2">{description}</p>}
+        </div>
       </div>
       {action}
     </div>

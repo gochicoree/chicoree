@@ -11,6 +11,8 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ASSIGNABLE_ROLES, type OrgRole } from "@/lib/org-roles";
 import { useToast } from "@/components/ui/toast";
+import { EntityLogo } from "@/components/entity-logo";
+import type { LogoRef } from "@/lib/logo-shared";
 
 interface MemberRow {
   id: string;
@@ -18,6 +20,8 @@ interface MemberRow {
   userId: string;
   name: string;
   email: string;
+  /** The member's avatar, when they have one. */
+  logo?: LogoRef | null;
 }
 
 interface InvitationRow {
@@ -134,9 +138,7 @@ export function MembersManager({
               key={m.id}
               className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5"
             >
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-card-2 font-display text-sm font-semibold text-ink-2">
-                {m.name.slice(0, 1).toUpperCase()}
-              </div>
+              <EntityLogo kind="user" name={m.name} logo={m.logo} size={32} />
               <div className="min-w-0 flex-1 basis-40">
                 <div className="truncate text-sm font-medium">
                   {m.name}

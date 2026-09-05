@@ -10,6 +10,8 @@ import { getBranding } from "@/lib/branding";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { canCreateOrganization } from "@/lib/signup-policy";
 import { announcementDismissible, announcementHash } from "@/lib/branding-shared";
+import { logoVersionOf } from "@/lib/logo";
+import { logoRef } from "@/lib/logo-shared";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -19,9 +21,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const announcement = branding.announcement;
 
   const nav = {
-    orgs: nav0rgs.orgs.map((o) => ({ slug: o.slug, name: o.name })),
+    orgs: nav0rgs.orgs.map((o) => ({ slug: o.slug, name: o.name, logo: logoRef("organization", o.id, o.logoVersion) })),
     orgCount: nav0rgs.total,
-    user: { name: session.user.name, email: session.user.email },
+    user: {
+      name: session.user.name,
+      email: session.user.email,
+      logo: logoRef("user", session.user.id, logoVersionOf(session.user.image)),
+    },
     isAdmin: session.user.role === "admin",
     branding: { name: branding.instanceName, logoDataUrl: branding.logoDataUrl || undefined },
     canCreateOrgs: canCreateOrganization(settings.access, session.user.role),

@@ -5,6 +5,8 @@ import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { repoHref } from "@/lib/proxy-shared";
 import { StarCount } from "@/components/star-button";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 
 /** Repository listing used on org pages and the explore page. */
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
@@ -35,11 +37,19 @@ export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; s
               <tr key={repo.id} className="border-b border-line last:border-0 hover:bg-card-2">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
-                    {repo.proxy ? (
-                      <Globe className="size-4 shrink-0 text-accent" />
-                    ) : (
-                      <Container className="size-4 shrink-0 text-ink-3" />
-                    )}
+                    <EntityLogo
+                      kind="repository"
+                      name={repo.name}
+                      logo={logoRef("repository", repo.id, repo.logoVersion)}
+                      size={20}
+                      fallback={
+                        repo.proxy ? (
+                          <Globe className="size-4 text-accent" />
+                        ) : (
+                          <Container className="size-4 text-ink-3" />
+                        )
+                      }
+                    />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <Link href={href} className="min-w-0 truncate font-medium text-ink hover:underline">

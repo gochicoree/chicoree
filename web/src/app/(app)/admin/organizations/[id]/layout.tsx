@@ -9,6 +9,9 @@ import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { NavTabs } from "@/components/ui/nav-tabs";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoVersionOf } from "@/lib/logo";
+import { logoRef } from "@/lib/logo-shared";
 import { AdminNav } from "../../admin-nav";
 
 export default async function AdminOrganizationLayout({
@@ -35,6 +38,14 @@ export default async function AdminOrganizationLayout({
         <Card>
           <CardHeader
             eyebrow="Organization"
+            icon={
+              <EntityLogo
+                kind="organization"
+                name={org.name}
+                logo={logoRef("organization", org.id, logoVersionOf(org.logo))}
+                size={36}
+              />
+            }
             title={org.name}
             description={`${org.slug}/ · created ${formatDate(org.createdAt)}`}
             action={

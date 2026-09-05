@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Container, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { listUserOrgsPage } from "@/lib/data";
 import { getInstanceSettings } from "@/lib/instance-settings";
@@ -12,6 +12,8 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 import { OrgFilter } from "./org-filter";
 
 export const metadata: Metadata = { title: "Organizations" };
@@ -76,7 +78,7 @@ export default async function OrganizationsPage({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <Container className="size-4 shrink-0 text-ink-3" />
+                    <EntityLogo kind="organization" name={org.name} logo={logoRef("organization", org.id, org.logoVersion)} size={20} />
                     <span className="truncate font-medium text-ink">{org.name}</span>
                   </div>
                   <Badge tone={org.role === "owner" || org.role === "admin" ? "accent" : "neutral"}>{org.role}</Badge>

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, Container, Globe } from "lucide-react";
 import { VisibilityBadge } from "@/components/ui/badge";
+import { EntityLogo } from "@/components/entity-logo";
+import type { LogoRef } from "@/lib/logo-shared";
 
 export interface ShortlistItem {
   id: string;
@@ -14,6 +16,8 @@ export interface ShortlistItem {
   proxy: boolean;
   /** Right-aligned hint: "starred 2d ago", "viewed 5m ago". */
   meta: string;
+  /** The repository's picture, when it has one. */
+  logo?: LogoRef | null;
 }
 
 /**
@@ -48,7 +52,15 @@ export function RepoShortlist({
         {shown.map((item) => (
           <li key={item.id}>
             <Link href={item.href} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] hover:bg-card-2">
-              {item.proxy ? <Globe className="size-3.5 shrink-0 text-accent" aria-hidden /> : <Container className="size-3.5 shrink-0 text-ink-3" aria-hidden />}
+              <EntityLogo
+                kind="repository"
+                name={item.path}
+                logo={item.logo}
+                size={18}
+                fallback={
+                  item.proxy ? <Globe className="size-3.5 text-accent" /> : <Container className="size-3.5 text-ink-3" />
+                }
+              />
               <span className="min-w-0 flex-1 truncate font-medium text-ink">{item.path}</span>
               <VisibilityBadge visibility={item.visibility} />
               <span className="hidden shrink-0 text-xs text-ink-3 sm:block">{item.meta}</span>

@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accessTokens, passkey, session, user as userTable } from "@/db/schema";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
+import { logoVersionSql } from "./logo";
 import { getOrgLimits, getOrgUsage, getUserLimits, getUserUsage } from "./quota";
 
 export interface AdminOrgRow {
@@ -17,6 +18,8 @@ export interface AdminOrgRow {
   maxStorageBytes: number | null;
   maxPublicRepos: number | null;
   maxPrivateRepos: number | null;
+  /** Cache-busting version of the organization picture; null when it has none. */
+  logoVersion: string | null;
 }
 
 /** One page of the instance's organizations by name, plus how many there are. */
@@ -32,7 +35,7 @@ export async function listAdminOrganizations(
     },
     rows: async (limit, offset) => {
       const { rows } = await db.execute(sql`
-    SELECT o.id, o.name, o.slug, o.created_at,
+    SELECT o.id, o.name, o.slug, o.created_at, ${logoVersionSql("o.logo")} AS logo_version,
       (SELECT count(*)::int FROM member m WHERE m.organization_id = o.id) AS member_count,
       (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id AND r.visibility = 'public') AS public_repos,
       (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id AND r.visibility = 'private') AS private_repos,
@@ -58,6 +61,7 @@ export async function listAdminOrganizations(
         maxStorageBytes: r.max_storage_bytes == null ? null : Number(r.max_storage_bytes),
         maxPublicRepos: r.max_public_repos == null ? null : Number(r.max_public_repos),
         maxPrivateRepos: r.max_private_repos == null ? null : Number(r.max_private_repos),
+        logoVersion: (r.logo_version as string | null) ?? null,
       }));
     },
   });
@@ -73,7 +77,7 @@ export async function getAdminUserDetail(userId: string) {
     db.$count(passkey, eq(passkey.userId, userId)),
     db.$count(session, eq(session.userId, userId)),
     db.execute(sql`
-      SELECT o.id, o.name, o.slug, m.role,
+      SELECT o.id, o.name, o.slug, m.role, ${logoVersionSql("o.logo")} AS logo_version,
         (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id) AS repo_count
       FROM member m JOIN organization o ON o.id = m.organization_id
       WHERE m.user_id = ${userId}
@@ -90,18 +94,21 @@ export async function getAdminUserDetail(userId: string) {
       slug: r.slug as string,
       role: r.role as string,
       repoCount: Number(r.repo_count),
+      logoVersion: (r.logo_version as string | null) ?? null,
     })),
   };
 }
 
 export async function getAdminOrgDetail(orgId: string) {
-  const { rows } = await db.execute(sql`SELECT id, name, slug, created_at FROM organization WHERE id = ${orgId}`);
+  const { rows } = await db.execute(sql`SELECT id, name, slug, created_at, logo FROM organization WHERE id = ${orgId}`);
   if (rows.length === 0) return null;
   const org = {
     id: rows[0].id as string,
     name: rows[0].name as string,
     slug: rows[0].slug as string,
     createdAt: new Date(rows[0].created_at as string),
+    /** Data URL of the picture; the admin form previews it, listings never load it. */
+    logo: (rows[0].logo as string | null) ?? null,
   };
   const [usage, limits] = await Promise.all([getOrgUsage(orgId), getOrgLimits(orgId)]);
   return { org, usage, limits };

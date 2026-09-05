@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { PaginationFooter } from "@/components/ui/pagination";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 import { AdminNav } from "../admin-nav";
 
 export const metadata: Metadata = { title: "Organizations" };
@@ -58,10 +60,15 @@ export default async function AdminOrganizationsPage({
                 return (
                   <tr key={o.id} className="border-b border-line last:border-0 hover:bg-card-2">
                     <td className="px-4 py-3 sm:px-5">
-                      <Link href={`/admin/organizations/${o.id}`} className="text-sm font-medium hover:underline">
-                        {o.name}
-                      </Link>
-                      <div className="font-mono text-xs text-ink-2">{o.slug}/</div>
+                      <div className="flex items-center gap-2.5">
+                        <EntityLogo kind="organization" name={o.name} logo={logoRef("organization", o.id, o.logoVersion)} size={24} />
+                        <div className="min-w-0">
+                          <Link href={`/admin/organizations/${o.id}`} className="text-sm font-medium hover:underline">
+                            {o.name}
+                          </Link>
+                          <div className="font-mono text-xs text-ink-2">{o.slug}/</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 md:table-cell">{o.memberCount}</td>
                     <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 sm:table-cell">

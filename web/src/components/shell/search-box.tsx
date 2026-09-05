@@ -13,6 +13,7 @@ import {
   type SearchHit,
   type SearchHitKind,
 } from "@/lib/search-shared";
+import { EntityLogo } from "@/components/entity-logo";
 
 const ICONS: Record<SearchHitKind, typeof Search> = {
   repository: Container,
@@ -244,7 +245,14 @@ export function SearchBox({
                   i === active ? "bg-card-2" : "hover:bg-card-2",
                 )}
               >
-                <Icon className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />
+                <EntityLogo
+                kind={hit.kind === "organization" ? "organization" : "repository"}
+                name={hit.label}
+                logo={hit.kind === "organization" || hit.kind === "repository" ? hit.logo : null}
+                size={16}
+                className="mt-0.5"
+                fallback={<Icon className="size-3.5 text-ink-3" />}
+              />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-ink">{hit.label}</span>
                   {hit.detail && <span className="block truncate text-xs text-ink-2">{hit.detail}</span>}

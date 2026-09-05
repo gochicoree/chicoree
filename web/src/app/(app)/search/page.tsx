@@ -14,6 +14,8 @@ import { pageParam } from "@/lib/paginate-shared";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { SearchBox } from "@/components/shell/search-box";
 import { StarCount } from "@/components/star-button";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 
 export const metadata: Metadata = { title: "Search" };
 
@@ -87,7 +89,13 @@ export default async function SearchPage({
               {results.repositories.rows.map((r) => (
                 <li key={r.id} className="border-b border-line px-4 py-3 last:border-0 hover:bg-card-2 sm:px-5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Container className="size-4 shrink-0 text-ink-3" aria-hidden />
+                    <EntityLogo
+                      kind="repository"
+                      name={r.name}
+                      logo={logoRef("repository", r.id, r.logoVersion)}
+                      size={20}
+                      fallback={<Container className="size-4 text-ink-3" />}
+                    />
                     <Link href={repoHref(r.orgSlug ?? "", r.name)} className="min-w-0 break-all text-sm font-medium text-ink hover:underline">
                       <span className="text-ink-2">{r.orgSlug}/</span>
                       {r.name}
@@ -136,7 +144,13 @@ export default async function SearchPage({
             <ul data-search-group="organizations">
               {results.organizations.rows.map((o) => (
                 <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
-                  <Building2 className="size-4 shrink-0 text-ink-3" aria-hidden />
+                  <EntityLogo
+                    kind="organization"
+                    name={o.name}
+                    logo={logoRef("organization", o.id, o.logoVersion)}
+                    size={20}
+                    fallback={<Building2 className="size-4 text-ink-3" />}
+                  />
                   <Link href={`/${o.slug}`} className="font-medium text-ink hover:underline">
                     {o.name}
                   </Link>
