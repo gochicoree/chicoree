@@ -12,15 +12,25 @@ import {
   Plus,
   Settings,
   ShieldCheck,
-  Container,
 } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
+import { EntityLogo } from "@/components/entity-logo";
+import type { LogoRef } from "@/lib/logo-shared";
 import { authClient } from "@/lib/auth-client";
 import { SearchBox } from "./search-box";
 
 export interface NavOrg {
   slug: string;
   name: string;
+  /** The organization's picture, when it has one. */
+  logo?: LogoRef | null;
+}
+
+/** The signed-in user shown in the sidebar footer. */
+export interface NavUser {
+  name: string;
+  email: string;
+  logo?: LogoRef | null;
 }
 
 /** Instance identity shown in the shell (Administration → Branding). */
@@ -62,7 +72,7 @@ export function Sidebar({
   orgs: NavOrg[];
   /** How many organizations the user is in; more than `orgs` means the list is capped. */
   orgCount?: number;
-  user: { name: string; email: string };
+  user: NavUser;
   isAdmin: boolean;
   branding?: NavBranding;
   /** Sign-up controls can restrict organization creation to administrators. */
@@ -118,7 +128,7 @@ export function Sidebar({
                 href={`/${org.slug}`}
                 active={pathname === `/${org.slug}` || pathname.startsWith(`/${org.slug}/`)}
               >
-                <Container className="size-4" />
+                <EntityLogo kind="organization" name={org.name} logo={org.logo} size={16} />
                 <span className="truncate">{org.name}</span>
               </NavLink>
             ))}
@@ -167,9 +177,17 @@ export function Sidebar({
 
       <div className="border-t border-line p-3">
         <div className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-action font-display text-sm font-semibold text-action-ink">
-            {user.name.slice(0, 1).toUpperCase()}
-          </div>
+          <EntityLogo
+            kind="user"
+            name={user.name}
+            logo={user.logo}
+            size={32}
+            fallback={
+              <span className="flex size-full items-center justify-center rounded-full bg-action font-display text-sm font-semibold text-action-ink">
+                {user.name.slice(0, 1).toUpperCase()}
+              </span>
+            }
+          />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium">{user.name}</div>
             <div className="truncate text-xs text-ink-3">{user.email}</div>

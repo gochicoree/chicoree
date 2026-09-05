@@ -20,7 +20,7 @@ export interface Announcement {
 export interface BrandingSettings {
   instanceName: string;
   tagline: string;
-  /** PNG or SVG as a data: URL (≤ LOGO_MAX_BYTES), or "" for the built-in mark. */
+  /** An image as a data: URL (≤ LOGO_MAX_BYTES, one of LOGO_MEDIA_TYPES), or "" for the built-in mark. */
   logoDataUrl: string;
   /** #rrggbb, or "" for the default. Applied as the --brand token. */
   accentColor: string;
@@ -37,7 +37,23 @@ export const DEFAULT_BRANDING: BrandingSettings = {
   announcement: { enabled: false, level: "info", text: "", dismissible: true },
 };
 
+/**
+ * Picture size cap, shared by the instance logo and the organization,
+ * repository and user pictures (see lib/logo-shared.ts).
+ */
 export const LOGO_MAX_BYTES = 64 * 1024;
+
+/** Everything an uploaded picture may be. Rasters are stored as-is; SVGs are checked for scripting. */
+export const LOGO_MEDIA_TYPES = ["image/png", "image/svg+xml", "image/jpeg", "image/webp"] as const;
+
+export type LogoMediaType = (typeof LOGO_MEDIA_TYPES)[number];
+
+/** `accept` attribute for the file inputs. */
+export const LOGO_ACCEPT = LOGO_MEDIA_TYPES.join(",");
+
+/** Human-readable format list for upload buttons and error messages. */
+export const LOGO_FORMATS_LABEL = "PNG, SVG, JPEG or WebP";
+
 export const ANNOUNCEMENT_MAX_CHARS = 500;
 export const FOOTER_LINKS_MAX = 6;
 export const INSTANCE_NAME_MAX = 60;
@@ -69,26 +85,76 @@ export function announcementDismissible(a: Announcement): boolean {
   return a.level !== "danger" && a.dismissible;
 }
 
+export interface ParsedLogo {
+  mediaType: LogoMediaType;
+  /** Whitespace-stripped payload, exactly as it should be stored. */
+  base64: string;
+  bytes: Uint8Array;
+}
+
+/** Split a `data:` URL into its media type and bytes; null when it is not a format we accept. */
+export function parseLogoDataUrl(dataUrl: string): ParsedLogo | null {
+  const m = /^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=\s]*)$/i.exec(dataUrl ?? "");
+  if (!m) return null;
+  const mediaType = m[1].toLowerCase() as LogoMediaType;
+  if (!(LOGO_MEDIA_TYPES as readonly string[]).includes(mediaType)) return null;
+  const base64 = m[2].replace(/\s+/g, "");
+  if (!base64) return null;
+  let bytes: Uint8Array;
+  try {
+    bytes = decodeBase64(base64);
+  } catch {
+    return null;
+  }
+  return { mediaType, base64, bytes };
+}
+
+function startsWith(bytes: Uint8Array, magic: number[], at = 0): boolean {
+  if (bytes.length < at + magic.length) return false;
+  return magic.every((b, i) => bytes[at + i] === b);
+}
+
 /**
- * Validate an uploaded logo data URL: PNG or SVG, size cap, and no scripting
- * inside SVGs (the image is inlined in every page).
+ * Validate an uploaded picture given as a data URL: one of LOGO_MEDIA_TYPES,
+ * inside the size cap, with bytes that really are that format, and — for SVGs
+ * — free of scripts, event handlers and external references (an SVG is either
+ * inlined in the page or served straight back to the browser).
+ *
+ * One implementation for all four uses: the instance logo and the
+ * organization, repository and user pictures. It runs on the client for live
+ * feedback and again on the server, which is the check that counts.
  */
 export function validateLogoDataUrl(dataUrl: string): { ok: true } | { ok: false; error: string } {
-  const m = /^data:(image\/png|image\/svg\+xml);base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl);
-  if (!m) return { ok: false, error: "The logo must be a PNG or SVG file." };
-  const b64 = m[2].replace(/\s+/g, "");
-  const bytes = Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
-  if (bytes > LOGO_MAX_BYTES) return { ok: false, error: `The logo must be ${LOGO_MAX_BYTES / 1024} KB or smaller.` };
-  if (bytes <= 0) return { ok: false, error: "The logo file is empty." };
-  const decoded = decodeBase64(b64);
-  if (m[1] === "image/png") {
-    const magic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-    if (decoded.length < 8 || magic.some((b, i) => decoded[i] !== b)) return { ok: false, error: "That file is not a PNG image." };
-  } else {
-    const text = new TextDecoder().decode(decoded).toLowerCase();
-    if (!text.includes("<svg")) return { ok: false, error: "That file is not an SVG image." };
-    if (/<script|javascript:|on[a-z]+\s*=|<foreignobject|<iframe|<embed|<object|xlink:href\s*=\s*["']?\s*(?!#|data:image)/.test(text)) {
-      return { ok: false, error: "SVG logos must not contain scripts, event handlers or external references." };
+  const parsed = parseLogoDataUrl(dataUrl);
+  if (!parsed) return { ok: false, error: `The picture must be a ${LOGO_FORMATS_LABEL} file.` };
+  const { mediaType, bytes: decoded } = parsed;
+  if (decoded.length > LOGO_MAX_BYTES) return { ok: false, error: `The picture must be ${LOGO_MAX_BYTES / 1024} KB or smaller.` };
+  if (decoded.length === 0) return { ok: false, error: "The picture file is empty." };
+  switch (mediaType) {
+    case "image/png":
+      if (!startsWith(decoded, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+        return { ok: false, error: "That file is not a PNG image." };
+      }
+      break;
+    case "image/jpeg":
+      if (!startsWith(decoded, [0xff, 0xd8, 0xff])) return { ok: false, error: "That file is not a JPEG image." };
+      break;
+    case "image/webp":
+      // "RIFF" ....size.... "WEBP"
+      if (!startsWith(decoded, [0x52, 0x49, 0x46, 0x46]) || !startsWith(decoded, [0x57, 0x45, 0x42, 0x50], 8)) {
+        return { ok: false, error: "That file is not a WebP image." };
+      }
+      break;
+    case "image/svg+xml": {
+      const text = new TextDecoder().decode(decoded).toLowerCase();
+      if (!text.includes("<svg")) return { ok: false, error: "That file is not an SVG image." };
+      // The optional quote lives inside the lookahead: outside it, backtracking
+      // would let a quoted `#fragment` / inline `data:image` reference match
+      // the "external reference" branch and be rejected.
+      if (/<script|javascript:|on[a-z]+\s*=|<foreignobject|<iframe|<embed|<object|xlink:href\s*=\s*(?!["']?\s*(?:#|data:image))/.test(text)) {
+        return { ok: false, error: "SVG pictures must not contain scripts, event handlers or external references." };
+      }
+      break;
     }
   }
   return { ok: true };

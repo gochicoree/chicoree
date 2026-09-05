@@ -1,5 +1,6 @@
 // Search: pure helpers and types shared by the API route, the results page
 // and the header search box (no database imports here).
+import type { LogoRef } from "./logo-shared";
 
 export type SearchHitKind = "repository" | "tag" | "digest" | "organization";
 
@@ -13,6 +14,8 @@ export interface SearchHit {
   detail?: string;
   /** Right-aligned hint (visibility, pulls, relative time). */
   meta?: string;
+  /** Picture of the repository or organization behind the hit, when it has one. */
+  logo?: LogoRef | null;
 }
 
 export const SEARCH_MAX_QUERY = 120;

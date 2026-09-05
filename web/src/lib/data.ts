@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
+import { logoVersionSql } from "./logo";
 
 export interface OrgWithMeta {
   id: string;
@@ -21,11 +22,13 @@ export interface OrgWithMeta {
   role: string;
   repoCount: number;
   storageBytes: number;
+  /** Cache-busting version of the organization picture; null when it has none. */
+  logoVersion: string | null;
 }
 
 /** The few organizations the navigation shows, and how many there are in total. */
 export interface NavOrgs {
-  orgs: { id: string; name: string; slug: string }[];
+  orgs: { id: string; name: string; slug: string; logoVersion: string | null }[];
   total: number;
 }
 
@@ -37,7 +40,7 @@ export interface NavOrgs {
  */
 export async function listNavOrgs(userId: string, limit = 8): Promise<NavOrgs> {
   const { rows } = await db.execute(sql`
-    SELECT o.id, o.name, o.slug,
+    SELECT o.id, o.name, o.slug, ${logoVersionSql("o.logo")} AS logo_version,
       (SELECT max(v.last_visited_at)
          FROM repository_visits v
          JOIN repositories r ON r.id = v.repository_id
@@ -50,14 +53,19 @@ export async function listNavOrgs(userId: string, limit = 8): Promise<NavOrgs> {
     ORDER BY last_seen DESC NULLS LAST, joined_at DESC, o.name
     LIMIT ${limit}`);
   return {
-    orgs: rows.map((r) => ({ id: r.id as string, name: r.name as string, slug: r.slug as string })),
+    orgs: rows.map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      slug: r.slug as string,
+      logoVersion: (r.logo_version as string | null) ?? null,
+    })),
     total: rows.length > 0 ? Number(rows[0].total) : 0,
   };
 }
 
 export async function listUserOrgs(userId: string): Promise<OrgWithMeta[]> {
   const { rows } = await db.execute(sql`
-    SELECT o.id, o.name, o.slug, m.role,
+    SELECT o.id, o.name, o.slug, m.role, ${logoVersionSql("o.logo")} AS logo_version,
       (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id) AS repo_count,
       COALESCE((
         SELECT sum(size)::bigint FROM (
@@ -79,6 +87,7 @@ export async function listUserOrgs(userId: string): Promise<OrgWithMeta[]> {
     role: r.role as string,
     repoCount: Number(r.repo_count),
     storageBytes: Number(r.storage_bytes),
+    logoVersion: (r.logo_version as string | null) ?? null,
   }));
 }
 
@@ -109,7 +118,7 @@ export async function listUserOrgsPage(opts: {
     },
     rows: async (limit, offset) => {
       const { rows } = await db.execute(sql`
-        SELECT o.id, o.name, o.slug, m.role,
+        SELECT o.id, o.name, o.slug, m.role, ${logoVersionSql("o.logo")} AS logo_version,
           (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id) AS repo_count,
           COALESCE((
             SELECT sum(size)::bigint FROM (
@@ -132,6 +141,7 @@ export async function listUserOrgsPage(opts: {
         role: r.role as string,
         repoCount: Number(r.repo_count),
         storageBytes: Number(r.storage_bytes),
+        logoVersion: (r.logo_version as string | null) ?? null,
       }));
     },
   });
@@ -154,10 +164,13 @@ export interface RepoListItem {
   lastCheckedAt: Date | null;
   /** Users who starred the repository. */
   starCount: number;
+  /** Cache-busting version of the repository picture; null when it has none. */
+  logoVersion: string | null;
 }
 
 export const repoListSelect = sql`
   r.id, r.name, r.description, r.visibility, r.pull_count, r.updated_at, o.slug AS org_slug,
+  ${logoVersionSql("r.logo")} AS logo_version,
   (SELECT count(*)::int FROM repository_stars s WHERE s.repository_id = r.id) AS star_count,
   (SELECT count(*)::int FROM tags t WHERE t.repository_id = r.id) AS tag_count,
   COALESCE((SELECT sum(b.size)::bigint FROM repository_blobs rb JOIN blobs b ON b.digest = rb.blob_digest
@@ -181,6 +194,7 @@ export function mapRepoRow(r: Record<string, unknown>): RepoListItem {
     proxy: !!r.is_proxy,
     lastCheckedAt: r.last_checked_at ? new Date(r.last_checked_at as string) : null,
     starCount: Number(r.star_count ?? 0),
+    logoVersion: (r.logo_version as string | null) ?? null,
   };
 }
 
@@ -472,6 +486,9 @@ export interface ActivityItem {
   type: string;
   actorType: string;
   actorName: string | null;
+  /** The acting user, when the actor is one (never "system"); lets the feed show their avatar. */
+  actorUserId: string | null;
+  actorLogoVersion: string | null;
   repoPath: string;
   tag: string | null;
   digest: string | null;
@@ -508,6 +525,10 @@ export async function recentActivity(opts: {
       const { rows } = await db.execute(sql`
     SELECT e.id, e.type, e.actor_type, e.tag, e.manifest_digest, e.created_at,
       o.slug || '/' || r.name AS repo_path,
+      CASE WHEN e.actor_type = 'user' AND e.actor_id <> 'system'
+        THEN (SELECT u.id FROM "user" u WHERE u.id = e.actor_id) END AS actor_user_id,
+      CASE WHEN e.actor_type = 'user' AND e.actor_id <> 'system'
+        THEN (SELECT ${logoVersionSql("u.image")} FROM "user" u WHERE u.id = e.actor_id) END AS actor_logo_version,
       CASE e.actor_type
         WHEN 'user' THEN CASE WHEN e.actor_id = 'system' THEN 'system'
           ELSE COALESCE((SELECT u.name FROM "user" u WHERE u.id = e.actor_id), 'deleted user') END
@@ -525,6 +546,8 @@ export async function recentActivity(opts: {
         type: r.type as string,
         actorType: r.actor_type as string,
         actorName: r.actor_name as string | null,
+        actorUserId: (r.actor_user_id as string | null) ?? null,
+        actorLogoVersion: (r.actor_logo_version as string | null) ?? null,
         repoPath: r.repo_path as string,
         tag: r.tag as string | null,
         digest: r.manifest_digest as string | null,
@@ -567,6 +590,7 @@ export async function listMembersWithUsers(orgId: string) {
       userId: userTable.id,
       userName: userTable.name,
       userEmail: userTable.email,
+      userLogoVersion: sql<string | null>`${logoVersionSql("\"user\".image")}`,
     })
     .from(member)
     .innerJoin(userTable, eq(userTable.id, member.userId))
@@ -590,6 +614,7 @@ export async function listAdminUsers(opts: { page?: number; pageSize?: number } 
           banned: userTable.banned,
           createdAt: userTable.createdAt,
           emailVerified: userTable.emailVerified,
+          logoVersion: sql<string | null>`${logoVersionSql("\"user\".image")}`,
         })
         .from(userTable)
         .orderBy(desc(userTable.createdAt))

@@ -6,6 +6,8 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { mapRepoRow, repoListSelect, type RepoListItem } from "./data";
+import { logoVersionSql } from "./logo";
+import { logoRef } from "./logo-shared";
 import { formatCount, relativeTime, shortDigest } from "./format";
 import { repoHref } from "./proxy-shared";
 import { PAGE_SIZES, paginate, paginatedQuery, type PageState } from "./paginate-shared";
@@ -39,6 +41,8 @@ export interface OrgHit {
   /** Repositories the viewer can see in it. */
   repoCount: number;
   member: boolean;
+  /** Cache-busting version of the organization picture; null when it has none. */
+  logoVersion: string | null;
 }
 
 /** One group of the results page: the rows shown plus their page state. */
@@ -308,6 +312,7 @@ function mapOrgHit(r: Record<string, unknown>): OrgHit {
     name: r.name as string,
     repoCount: Number(r.repo_count),
     member: Boolean(r.is_member),
+    logoVersion: (r.logo_version as string | null) ?? null,
   };
 }
 
@@ -315,7 +320,7 @@ export async function searchOrganizations(viewer: Viewer, rawQuery: string, limi
   const q = normalizeQuery(rawQuery);
   if (!q) return [];
   const { rows } = await db.execute(sql`
-    SELECT o.id, o.slug, o.name,
+    SELECT o.id, o.slug, o.name, ${logoVersionSql("o.logo")} AS logo_version,
       (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id AND ${visibleRepositoriesFilter(viewer)}) AS repo_count,
       (${memberOfOrganizationFilter(viewer)}) AS is_member
     FROM organization o
@@ -344,7 +349,7 @@ export async function searchOrganizationsPage(
     },
     rows: async (limit, offset) => {
       const { rows } = await db.execute(sql`
-        SELECT o.id, o.slug, o.name,
+        SELECT o.id, o.slug, o.name, ${logoVersionSql("o.logo")} AS logo_version,
           (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id AND ${visibleRepositoriesFilter(viewer)}) AS repo_count,
           (${memberOfOrganizationFilter(viewer)}) AS is_member
         FROM organization o
@@ -410,6 +415,7 @@ export async function quickSearch(viewer: Viewer, rawQuery: string, limit = 8): 
       href: repoHref(r.orgSlug ?? "", r.name),
       detail: r.description || undefined,
       meta: `${r.visibility} · ${formatCount(r.pullCount)} pulls`,
+      logo: logoRef("repository", r.id, r.logoVersion),
     })),
     ...organizations.map<SearchHit>((o) => ({
       kind: "organization",
@@ -417,6 +423,7 @@ export async function quickSearch(viewer: Viewer, rawQuery: string, limit = 8): 
       href: `/${o.slug}`,
       detail: o.slug,
       meta: `${o.repoCount} repositor${o.repoCount === 1 ? "y" : "ies"}`,
+      logo: logoRef("organization", o.id, o.logoVersion),
     })),
     ...tags.map<SearchHit>((t) => ({
       kind: "tag",

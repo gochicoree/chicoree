@@ -10,6 +10,8 @@ import { adminDeleteRepository } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
 import { VisibilityBadge } from "@/components/ui/badge";
 import { repoHref } from "@/lib/proxy-shared";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 
 export default async function AdminOrganizationRepositories({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,6 +28,7 @@ export default async function AdminOrganizationRepositories({ params }: { params
         <div>
           {repos.map((r) => (
             <div key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 sm:px-5">
+              <EntityLogo kind="repository" name={r.name} logo={logoRef("repository", r.id, r.logoVersion)} size={20} />
               <Link href={repoHref(org.slug, r.name)} className="break-all font-medium hover:underline">
                 {r.name}
               </Link>

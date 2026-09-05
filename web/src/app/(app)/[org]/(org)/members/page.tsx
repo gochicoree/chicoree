@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { invitation } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
 import { listMembersWithUsers } from "@/lib/data";
+import { logoRef } from "@/lib/logo-shared";
 import { MembersManager } from "./members-manager";
 
 export default async function MembersPage({ params }: { params: Promise<{ org: string }> }) {
@@ -29,6 +30,7 @@ export default async function MembersPage({ params }: { params: Promise<{ org: s
         userId: m.userId,
         name: m.userName,
         email: m.userEmail,
+        logo: logoRef("user", m.userId, m.userLogoVersion),
       }))}
       invitations={invitations
         .filter((i) => i.status === "pending")

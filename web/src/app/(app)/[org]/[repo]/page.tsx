@@ -31,6 +31,9 @@ import { StarButton } from "@/components/star-button";
 import { redirectMovedRepository } from "@/lib/redirects";
 import { repositoryStorage } from "@/lib/shared-layers";
 import { CompareBar } from "./compare/compare-bar";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoVersionOf } from "@/lib/logo";
+import { logoRef } from "@/lib/logo-shared";
 
 export default async function RepoPage({
   params,
@@ -89,6 +92,12 @@ export default async function RepoPage({
         <div className="min-w-0">
           <div className="eyebrow mb-1">Repository</div>
           <div className="flex flex-wrap items-center gap-2.5">
+            <EntityLogo
+              kind="repository"
+              name={repoName}
+              logo={logoRef("repository", found.repo.id, logoVersionOf(found.repo.logo))}
+              size={28}
+            />
             <h1 className="break-all font-display text-xl font-bold tracking-tight">
               <Link href={`/${orgSlug}`} className="text-ink-2 hover:text-ink">
                 {orgSlug}

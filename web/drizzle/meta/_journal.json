@@ -57,6 +57,13 @@
       "when": 1788543181812,
       "tag": "0007_rate_limit_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788601456961,
+      "tag": "0008_repository_logo",
+      "breakpoints": true
     }
   ]
 }

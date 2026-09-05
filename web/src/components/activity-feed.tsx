@@ -3,6 +3,8 @@ import { ArrowUpFromLine, Trash2 } from "lucide-react";
 import type { ActivityItem } from "@/lib/data";
 import { relativeTime, shortDigest } from "@/lib/format";
 import { repoHref } from "@/lib/proxy-shared";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 
 function activityHref(repoPath: string): string {
   const slash = repoPath.indexOf("/");
@@ -30,7 +32,20 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
             {item.type === "push" ? <ArrowUpFromLine className="size-3.5" /> : <Trash2 className="size-3.5" />}
           </span>
           <div className="min-w-0 flex-1 text-[13px] leading-snug [overflow-wrap:anywhere]">
-            <span className="text-ink-2">{item.actorName ?? (item.actorType === "proxy" ? "proxy cache" : item.actorType === "mirror" ? "mirror" : "someone")}</span>{" "}
+            {/* Avatar and name are one inline group so a narrow column never breaks between them. */}
+            {item.actorUserId ? (
+              <span className="inline-flex items-center gap-1 align-[-4px] text-ink-2">
+                <EntityLogo
+                  kind="user"
+                  name={item.actorName ?? ""}
+                  logo={logoRef("user", item.actorUserId, item.actorLogoVersion)}
+                  size={16}
+                />
+                {item.actorName}
+              </span>
+            ) : (
+              <span className="text-ink-2">{item.actorName ?? (item.actorType === "proxy" ? "proxy cache" : item.actorType === "mirror" ? "mirror" : "someone")}</span>
+            )}{" "}
             <span className="text-ink-2">{item.type === "push" ? (item.actorType === "proxy" ? "cached" : "pushed") : "deleted"}</span>{" "}
             <Link href={activityHref(item.repoPath)} className="font-medium text-ink hover:underline">
               {item.repoPath}

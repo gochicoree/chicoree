@@ -7,6 +7,9 @@ import { isLibrary } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { displayHost } from "@/lib/proxy-shared";
 import { redirectMovedOrganization } from "@/lib/redirects";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoVersionOf } from "@/lib/logo";
+import { logoRef } from "@/lib/logo-shared";
 
 export default async function OrgLayout({
   children,
@@ -32,9 +35,17 @@ export default async function OrgLayout({
     <>
       <div className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-action text-action-ink">
-            <Container className="size-5" />
-          </div>
+          <EntityLogo
+            kind="organization"
+            name={org.name}
+            logo={logoRef("organization", org.id, logoVersionOf(org.logo))}
+            size={40}
+            fallback={
+              <span className="flex size-full items-center justify-center rounded-xl bg-action text-action-ink">
+                <Container className="size-5" />
+              </span>
+            }
+          />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="break-words font-display text-xl font-bold tracking-tight">{org.name}</h1>

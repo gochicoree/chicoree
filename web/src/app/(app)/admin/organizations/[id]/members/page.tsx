@@ -7,6 +7,8 @@ import { organization } from "@/db/schema";
 import { listMembersWithUsers } from "@/lib/data";
 import { adminRemoveMember } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 import { MemberRoleSelect } from "../org-controls";
 
 export default async function AdminOrganizationMembers({ params }: { params: Promise<{ id: string }> }) {
@@ -21,6 +23,7 @@ export default async function AdminOrganizationMembers({ params }: { params: Pro
       <div>
         {members.map((m) => (
           <div key={m.id} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5">
+            <EntityLogo kind="user" name={m.userName} logo={logoRef("user", m.userId, m.userLogoVersion)} size={32} />
             <div className="min-w-0 flex-1">
               <Link href={`/admin/users/${m.userId}`} className="text-sm font-medium hover:underline">
                 {m.userName}

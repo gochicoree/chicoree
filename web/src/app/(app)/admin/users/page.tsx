@@ -9,6 +9,8 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaginationFooter } from "@/components/ui/pagination";
 import { AdminNav } from "../admin-nav";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoRef } from "@/lib/logo-shared";
 import { CreateUserForm } from "./create-user-form";
 
 export const metadata: Metadata = { title: "Users" };
@@ -49,11 +51,16 @@ export default async function AdminUsersPage({
               {users.rows.map((u) => (
                 <tr key={u.id} className="border-b border-line last:border-0 hover:bg-card-2">
                   <td className="px-4 py-3 sm:px-5">
-                    <Link href={`/admin/users/${u.id}`} className="text-sm font-medium hover:underline">
-                      {u.name}
-                    </Link>
-                    {u.id === session.user.id && <span className="ml-1.5 text-xs text-ink-3">(you)</span>}
-                    <div className="break-all text-xs text-ink-2">{u.email}</div>
+                    <div className="flex items-center gap-2.5">
+                      <EntityLogo kind="user" name={u.name} logo={logoRef("user", u.id, u.logoVersion)} size={28} />
+                      <div className="min-w-0">
+                        <Link href={`/admin/users/${u.id}`} className="text-sm font-medium hover:underline">
+                          {u.name}
+                        </Link>
+                        {u.id === session.user.id && <span className="ml-1.5 text-xs text-ink-3">(you)</span>}
+                        <div className="break-all text-xs text-ink-2">{u.email}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <Badge tone={u.role === "admin" ? "accent" : "neutral"}>{u.role ?? "user"}</Badge>

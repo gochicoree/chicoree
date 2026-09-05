@@ -9,6 +9,9 @@ import { getManifestWithScan, getRepoByPath, listUserOrgs } from "@/lib/data";
 import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
 import { formatBytes, formatDate, relativeTime } from "@/lib/format";
+import { EntityLogo } from "@/components/entity-logo";
+import { logoVersionOf } from "@/lib/logo";
+import { logoRef, type LogoRef } from "@/lib/logo-shared";
 import { requestRescan } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
@@ -56,20 +59,28 @@ interface ImageConfig {
   history?: { created_by?: string; empty_layer?: boolean; created?: string }[];
 }
 
-async function resolveActor(pushedBy: string | null): Promise<string | null> {
+interface PushActor {
+  label: string;
+  /** The pusher's avatar, when a real user pushed and has one. */
+  logo: LogoRef | null;
+  /** True for a signed-in user (not "system", a service account or a cache). */
+  isUser: boolean;
+}
+
+async function resolveActor(pushedBy: string | null): Promise<PushActor | null> {
   if (!pushedBy) return null;
   const [kind, id] = pushedBy.split(":");
   if (kind === "user" && id) {
-    if (id === "system") return "system";
+    if (id === "system") return { label: "system", logo: null, isUser: false };
     const u = await db.query.user.findFirst({ where: eq(userTable.id, id) });
-    return u?.name ?? null;
+    return u ? { label: u.name, logo: logoRef("user", u.id, logoVersionOf(u.image)), isUser: true } : null;
   }
   if (kind === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });
-    return sa ? `${sa.name} (service account)` : null;
+    return sa ? { label: `${sa.name} (service account)`, logo: null, isUser: false } : null;
   }
-  if (kind === "proxy") return "the proxy cache";
-  if (kind === "mirror") return "a mirror";
+  if (kind === "proxy") return { label: "the proxy cache", logo: null, isUser: false };
+  if (kind === "mirror") return { label: "a mirror", logo: null, isUser: false };
   return null;
 }
 
@@ -242,7 +253,19 @@ export default async function TagDetailPage({
     ...(!isIndex
       ? ([["Total size", formatBytes(totalSize)]] as [string, React.ReactNode][])
       : []),
-    ["Pushed", `${formatDate(manifest.createdAt)}${actor ? ` by ${actor}` : ""}`],
+    [
+      "Pushed",
+      <span key="pushed" className="inline-flex flex-wrap items-center gap-1.5">
+        {formatDate(manifest.createdAt)}
+        {actor && (
+          <>
+            <span className="text-ink-2">by</span>
+            {actor.isUser && <EntityLogo kind="user" name={actor.label} logo={actor.logo} size={18} />}
+            {actor.label}
+          </>
+        )}
+      </span>,
+    ],
   ];
 
   return (

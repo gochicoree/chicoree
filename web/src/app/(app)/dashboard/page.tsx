@@ -18,6 +18,7 @@ import { getInstanceSettings } from "@/lib/instance-settings";
 import { canCreateOrganization } from "@/lib/signup-policy";
 import { userOnboarding } from "@/lib/onboarding";
 import { listRecentlyViewed, listStarredRepos } from "@/lib/stars";
+import { logoRef } from "@/lib/logo-shared";
 import { viewerFromSession } from "@/lib/viewer";
 import { relativeTime } from "@/lib/format";
 import { repoHref } from "@/lib/proxy-shared";
@@ -114,6 +115,7 @@ export default async function DashboardPage({
                 visibility: r.visibility,
                 proxy: r.proxy,
                 meta: `starred ${relativeTime(r.starredAt)}`,
+                logo: logoRef("repository", r.id, r.logoVersion),
               }))}
             />
           </CardBody>
@@ -131,6 +133,7 @@ export default async function DashboardPage({
                 visibility: r.visibility,
                 proxy: r.proxy,
                 meta: `viewed ${relativeTime(r.lastVisitedAt)}`,
+                logo: logoRef("repository", r.id, r.logoVersion),
               }))}
             />
           </CardBody>

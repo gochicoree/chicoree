@@ -12,6 +12,8 @@ import { UsageMeter } from "@/components/admin/usage-meter";
 import { LimitsForm } from "@/components/admin/limits-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { LogoUploadCard } from "@/components/logo-upload";
+import { adminSaveOrganizationLogo } from "@/app/actions/logos";
 
 export default async function AdminOrganizationOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,6 +32,16 @@ export default async function AdminOrganizationOverview({ params }: { params: Pr
         <UsageMeter label="Private repositories" used={usage.privateRepos} limit={limits.maxPrivateRepos} />
         <UsageMeter label="Storage" used={usage.storageBytes} limit={limits.maxStorageBytes} bytes />
       </div>
+      <LogoUploadCard
+        action={adminSaveOrganizationLogo}
+        kind="organization"
+        name={org.name}
+        fields={{ organizationId: org.id }}
+        initial={org.logo}
+        eyebrow="Identity"
+        title="Organization picture"
+        description="Set or clear the picture for this organization; owners can also change it themselves under Settings → General."
+      />
       {proxy && (
         <Card className={proxy.lastError ? "border-danger/30" : undefined}>
           <CardHeader
