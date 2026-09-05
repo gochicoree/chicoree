@@ -693,6 +693,14 @@ bytes never travel inside a page: they are served from their own address
 only when the picture actually changes, so a fifty-row listing still carries no
 image data.
 
+**Gravatar.** *Administration → Branding* can let accounts without an uploaded
+picture fall back to [Gravatar](https://gravatar.com). It is off by default,
+because the viewer's browser then asks gravatar.com for the picture using a
+hash of that person's email address. An address with no Gravatar keeps its
+initials: the registry asks for `d=404` and the page falls back on its own.
+An uploaded avatar always wins. `GRAVATAR=true` is the default for instances
+configured through the environment.
+
 ## Paging through long lists
 
 Long lists are paged, never silently cut off. A server-rendered list carries

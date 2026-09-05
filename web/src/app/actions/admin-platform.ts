@@ -80,6 +80,7 @@ export async function saveBrandingSettings(_prev: SettingsResult | null, fd: For
     accentColor: accentColor.toLowerCase(),
     footerLinks,
     announcement: { enabled, level: level as AnnouncementLevel, text, dismissible: bool(fd, "announcementDismissible") },
+    gravatar: bool(fd, "gravatar"),
   };
   await saveSettingsSection("branding", { ...branding });
   await recordAudit({
@@ -87,7 +88,7 @@ export async function saveBrandingSettings(_prev: SettingsResult | null, fd: For
     targetType: "settings",
     targetId: "branding",
     targetLabel: "branding",
-    details: { instanceName, tagline, accentColor: branding.accentColor, logoBytes: logoDataUrl ? Math.round((logoDataUrl.length - logoDataUrl.indexOf(",") - 1) * 0.75) : 0, footerLinks: footerLinks.length, announcement: enabled ? level : "off" },
+    details: { instanceName, tagline, accentColor: branding.accentColor, logoBytes: logoDataUrl ? Math.round((logoDataUrl.length - logoDataUrl.indexOf(",") - 1) * 0.75) : 0, footerLinks: footerLinks.length, announcement: enabled ? level : "off", gravatar: branding.gravatar },
   });
   revalidatePath("/", "layout");
   return { saved: true, message: "Branding saved" };

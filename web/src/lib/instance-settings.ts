@@ -174,6 +174,7 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       ...DEFAULT_BRANDING,
       instanceName: env.instanceName || DEFAULT_BRANDING.instanceName,
       tagline: env.instanceTagline || DEFAULT_BRANDING.tagline,
+      gravatar: env.gravatarEnabled,
     },
     ratelimit: {
       anonymous: env.rateLimitAnonymous,
@@ -215,7 +216,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
         !!process.env.TOKEN_REQUIRE_EXPIRY
       );
     case "branding":
-      return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE;
+      return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE || !!process.env.GRAVATAR;
     case "ratelimit":
       return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated;
     case "scanner":

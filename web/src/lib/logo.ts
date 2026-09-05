@@ -19,6 +19,46 @@ export function logoVersionOf(dataUrl: string | null | undefined): string | null
   return dataUrl ? logoDigest(dataUrl).slice(0, LOGO_VERSION_LENGTH) : null;
 }
 
+/** Gravatar identifies an address by the SHA-256 of its trimmed lowercase form. */
+export function gravatarHash(email: string): string {
+  return createHash("sha256").update(email.trim().toLowerCase(), "utf8").digest("hex");
+}
+
+/**
+ * Where an account's Gravatar lives. `d=404` means "nothing here" rather than
+ * a generated pattern, so a person without one keeps their initials.
+ */
+export function gravatarUrl(email: string, size = 200): string {
+  return `https://www.gravatar.com/avatar/${gravatarHash(email)}?s=${size}&d=404`;
+}
+
+/**
+ * The version of a user's picture: their upload if they have one, else a
+ * marker derived from the address when the instance falls back to Gravatar
+ * (so the URL changes if they change address), else null for initials.
+ */
+export function userLogoVersion(
+  user: { image?: string | null; email?: string | null },
+  gravatar: boolean,
+): string | null {
+  const own = logoVersionOf(user.image);
+  if (own) return own;
+  if (!gravatar || !user.email) return null;
+  // Must match userLogoVersionSql exactly, or the same person would get two
+  // URLs (and two cache entries) depending on which query rendered them.
+  return `g${createHash("md5").update(user.email.trim().toLowerCase(), "utf8").digest("hex").slice(0, LOGO_VERSION_LENGTH - 1)}`;
+}
+
+/** The same, in SQL, for listings that join the user table. */
+export function userLogoVersionSql(imageColumn: string, emailColumn: string, gravatar: boolean): SQL {
+  const own = `substr(md5(${imageColumn}), 1, ${LOGO_VERSION_LENGTH})`;
+  if (!gravatar) return sql.raw(`CASE WHEN ${imageColumn} IS NOT NULL AND ${imageColumn} <> '' THEN ${own} END`);
+  // The marker only has to change with the address; the route computes the
+  // real Gravatar hash itself.
+  const marker = `'g' || substr(md5(lower(btrim(${emailColumn}))), 1, ${LOGO_VERSION_LENGTH - 1})`;
+  return sql.raw(`CASE WHEN ${imageColumn} IS NOT NULL AND ${imageColumn} <> '' THEN ${own} ELSE ${marker} END`);
+}
+
 /**
  * The same version computed by Postgres, for raw `sql` listings:
  * `logoVersionSql("o.logo")` → `substr(md5(o.logo), 1, 8)` (null when unset).

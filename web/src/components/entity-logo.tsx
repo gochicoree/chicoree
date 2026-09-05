@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { Container } from "lucide-react";
 import { logoSrc, type LogoKind, type LogoRef } from "@/lib/logo-shared";
@@ -37,16 +39,18 @@ export function EntityLogo({
   /** Replaces the default fallback (a proxy repository shows a globe, the org header a filled tile). */
   fallback?: ReactNode;
 }) {
+  const [broken, setBroken] = useState(false);
   const round = (shape ?? (kind === "user" ? "circle" : "square")) === "circle";
   const radius = round ? "rounded-full" : size >= 28 ? "rounded-xl" : "rounded-md";
   const box = { width: size, height: size };
 
-  if (logo) {
+  if (logo && !broken) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- served by /api/logo with its own cache headers
       <img
         src={logoSrc(logo)}
         alt=""
+        onError={() => setBroken(true)}
         width={size}
         height={size}
         style={box}

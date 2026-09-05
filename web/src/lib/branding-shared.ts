@@ -26,6 +26,12 @@ export interface BrandingSettings {
   accentColor: string;
   footerLinks: FooterLink[];
   announcement: Announcement;
+  /**
+   * Fall back to gravatar.com for accounts without an uploaded avatar. Off by
+   * default: it sends a hash of the address to a third party the moment a
+   * page renders that person.
+   */
+  gravatar: boolean;
 }
 
 export const DEFAULT_BRANDING: BrandingSettings = {
@@ -34,6 +40,7 @@ export const DEFAULT_BRANDING: BrandingSettings = {
   logoDataUrl: "",
   accentColor: "",
   footerLinks: [],
+  gravatar: false,
   announcement: { enabled: false, level: "info", text: "", dismissible: true },
 };
 

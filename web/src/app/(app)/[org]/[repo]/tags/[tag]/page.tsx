@@ -10,7 +10,7 @@ import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
 import { formatBytes, formatDate, relativeTime } from "@/lib/format";
 import { EntityLogo } from "@/components/entity-logo";
-import { logoVersionOf } from "@/lib/logo";
+import { logoVersionOf, userLogoVersion } from "@/lib/logo";
 import { logoRef, type LogoRef } from "@/lib/logo-shared";
 import { requestRescan } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -43,6 +43,7 @@ import { AttestationsPanel } from "@/components/attestations-panel";
 import { Badge } from "@/components/ui/badge";
 import { WRITER_ROLES } from "@/lib/org-roles";
 import { scanInProgress } from "@/lib/scanner-shared";
+import { getInstanceSettings } from "@/lib/instance-settings";
 
 interface Descriptor {
   mediaType?: string;
@@ -73,7 +74,8 @@ async function resolveActor(pushedBy: string | null): Promise<PushActor | null> 
   if (kind === "user" && id) {
     if (id === "system") return { label: "system", logo: null, isUser: false };
     const u = await db.query.user.findFirst({ where: eq(userTable.id, id) });
-    return u ? { label: u.name, logo: logoRef("user", u.id, logoVersionOf(u.image)), isUser: true } : null;
+    const gravatar = (await getInstanceSettings()).branding.gravatar;
+    return u ? { label: u.name, logo: logoRef("user", u.id, userLogoVersion(u, gravatar)), isUser: true } : null;
   }
   if (kind === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });
@@ -484,7 +486,7 @@ export default async function TagDetailPage({
             {
               label: "Manifest",
               content: (
-                <pre className="overflow-x-auto rounded-xl border border-line bg-card p-3 font-mono text-xs leading-relaxed text-ink-2 sm:p-4">
+                <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-line bg-card p-3 font-mono text-xs leading-relaxed text-ink-2 sm:p-4">
                   {JSON.stringify(payload, null, 2)}
                 </pre>
               ),

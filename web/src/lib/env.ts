@@ -262,6 +262,10 @@ export const env = {
   get instanceName() {
     return process.env.INSTANCE_NAME ?? "";
   },
+  /** Fall back to gravatar.com for accounts with no uploaded avatar. */
+  get gravatarEnabled() {
+    return process.env.GRAVATAR === "true" || process.env.GRAVATAR === "1";
+  },
   get instanceTagline() {
     return process.env.INSTANCE_TAGLINE ?? "";
   },

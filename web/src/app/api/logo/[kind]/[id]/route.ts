@@ -21,8 +21,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
 import { organization, repositories, user as userTable } from "@/db/schema";
 import { getOrgRole, getSession } from "@/lib/session";
-import { decodeLogo, etagMatches } from "@/lib/logo";
+import { decodeLogo, etagMatches, gravatarUrl } from "@/lib/logo";
 import { isLogoKind } from "@/lib/logo-shared";
+import { getInstanceSettings } from "@/lib/instance-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ kind
     } else {
       const u = await db.query.user.findFirst({ where: eq(userTable.id, id) });
       dataUrl = u?.image ?? null;
+      if (!dataUrl && u?.email && (await getInstanceSettings()).branding.gravatar) {
+        // Nothing uploaded and the instance falls back to Gravatar. d=404 in
+        // the URL means an address without one lands on the initials.
+        return NextResponse.redirect(gravatarUrl(u.email), {
+          status: 307,
+          headers: { "cache-control": "private, max-age=86400" },
+        });
+      }
     }
   }
 
