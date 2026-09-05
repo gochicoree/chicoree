@@ -52,7 +52,7 @@ function StatusLine({ sig }: { sig: SignatureStatusView | null }) {
           ({sig.keyFingerprint.slice(0, 16)})
         </span>
       )}
-      {sig.status === "keyless" && sig.issuer && <span className="text-ink-3"> · issuer {sig.issuer}</span>}
+      {(sig.status === "keyless" || sig.identityName) && sig.issuer && <span className="text-ink-3"> · issuer {sig.issuer}</span>}
       <span className="text-ink-3"> · checked {relativeTime(sig.checkedAt)}</span>
     </span>
   );
@@ -138,7 +138,7 @@ export function AttestationsPanel({
         <p className="text-sm text-ink-2">
           {view.total === 0
             ? "Nothing is attached to this image."
-            : `${view.total} artifact${view.total === 1 ? "" : "s"} attached · ${verified} verified signature${verified === 1 ? "" : "s"} · ${view.trustedKeys} trusted key${view.trustedKeys === 1 ? "" : "s"}${view.memberKeys > 0 ? ` + ${view.memberKeys} member key${view.memberKeys === 1 ? "" : "s"}` : ""} in scope`}
+            : `${view.total} artifact${view.total === 1 ? "" : "s"} attached · ${verified} verified signature${verified === 1 ? "" : "s"} · ${view.trustedKeys} trusted key${view.trustedKeys === 1 ? "" : "s"}${view.memberKeys > 0 ? ` + ${view.memberKeys} member key${view.memberKeys === 1 ? "" : "s"}` : ""}${view.trustedIdentities > 0 ? ` + ${view.trustedIdentities} identit${view.trustedIdentities === 1 ? "y" : "ies"}` : ""} in scope`}
           {signaturesRequired && (
             <span className="text-ink-3"> · signatures are required by the pull policy</span>
           )}
@@ -146,9 +146,9 @@ export function AttestationsPanel({
         {canReverify && view.total > 0 && <ReverifyButton repositoryId={repositoryId} digest={digest} />}
       </div>
 
-      {view.trustedKeys === 0 && view.memberKeys === 0 && signed.some((s) => s.sig) && (
+      {view.trustedKeys === 0 && view.memberKeys === 0 && view.trustedIdentities === 0 && signed.some((s) => s.sig) && (
         <div className="rounded-xl border border-line bg-card-2 px-4 py-3 text-sm text-ink-2">
-          No signing key is in scope for this repository, so signatures show as unverified. Owners and admins can add the signer&apos;s{" "}
+          No signing key or keyless identity is trusted for this repository, so signatures show as unverified. Owners and admins can add the signer&apos;s{" "}
           <code className="font-mono">cosign.pub</code> under{" "}
           <Link href={policyHref} className="underline hover:text-ink">
             Settings → Policies
@@ -165,7 +165,7 @@ export function AttestationsPanel({
         <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
           <p>
             Sign the image or attach an SBOM with cosign or oras and it shows up here.
-            {view.trustedKeys === 0 && view.memberKeys === 0 && " Register your public key under Settings → Signing keys so signatures verify."}
+            {view.trustedKeys === 0 && view.memberKeys === 0 && view.trustedIdentities === 0 && " Register your public key under Settings → Signing keys so signatures verify."}
           </p>
           <CommandLine command={`cosign sign --key cosign.key ${digestReference}`} />
           <CommandLine command={`cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json ${digestReference}`} />
@@ -201,10 +201,12 @@ export function AttestationsPanel({
                     </span>
                   )}
                   {s.signatures > 1 && <span>{s.signatures} signatures</span>}
-                  {s.sig?.status === "keyless" && (
+                  {s.sig && s.sig.chainVerified != null && (
                     <span>
-                      identity {s.sig.identity ?? "unknown"} — Fulcio certificate chain and Rekor log are not verified by this
-                      registry
+                      {s.sig.chainVerified
+                        ? `Sigstore verified: certificate chain, CT log and Rekor entry${s.sig.signedAt ? `, logged ${relativeTime(s.sig.signedAt)}` : ""}`
+                        : "Sigstore chain not verified"}
+                      {s.sig.status === "keyless" && s.sig.chainVerified && " — trust this identity under Settings → Policies to accept it"}
                     </span>
                   )}
                   <a href={`${s.downloadHref}?raw=1`} className="underline hover:text-ink">

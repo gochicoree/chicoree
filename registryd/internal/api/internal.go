@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"registryd/internal/auth"
+	"registryd/internal/storage"
 	"registryd/internal/version"
 )
 
@@ -20,10 +23,53 @@ func (s *Server) internalAuthorized(r *http.Request) bool {
 		subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.WebhookSecret)) == 1
 }
 
-// handleHealthz is the liveness endpoint used by compose/k8s health checks.
+// healthProbeDigest is a digest no blob can have; Stat on it proves the
+// storage backend answers (ErrNotFound is the healthy reply) without
+// touching real content.
+const healthProbeDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+// healthTimeout bounds the whole health check: compose and Kubernetes
+// probes have their own timeouts and a hung dependency must show up as
+// unhealthy, not as a slow 200.
+const healthTimeout = 3 * time.Second
+
+// handleHealthz is the health endpoint used by compose/k8s probes and the
+// web app's health page. It answers 200 only when the database and the
+// storage backend both respond; otherwise 503 with the failing checks, so
+// the orchestrator stops routing to a registry that cannot serve.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
+	defer cancel()
+	checks := map[string]string{}
+	healthy := true
+	if s.store != nil {
+		if err := s.store.Ping(ctx); err != nil {
+			checks["database"] = err.Error()
+			healthy = false
+		} else {
+			checks["database"] = "ok"
+		}
+	}
+	if s.driver != nil {
+		if _, err := s.driver.Stat(ctx, healthProbeDigest); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			checks["storage"] = err.Error()
+			healthy = false
+		} else {
+			checks["storage"] = "ok"
+		}
+	}
+	status := "ok"
+	if !healthy {
+		status = "unhealthy"
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "storage": s.driver.Name()})
+	storageName := ""
+	if s.driver != nil {
+		storageName = s.driver.Name()
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "storage": storageName, "checks": checks})
 }
 
 // internalAuthorized checks the bearer token on the internal surface (GC,

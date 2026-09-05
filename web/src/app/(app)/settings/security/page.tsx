@@ -9,6 +9,9 @@ import { SettingsNav } from "../settings-nav";
 import { PasswordForm, SessionsList } from "../profile-forms";
 import { TwoFactorManager } from "./two-factor-manager";
 import { PasskeyManager } from "./passkey-manager";
+import { DeleteAccount } from "./delete-account";
+import { getInstanceSettings } from "@/lib/instance-settings";
+import { account as accountTable } from "@/db/schema";
 
 export const metadata: Metadata = { title: "Security" };
 
@@ -23,13 +26,15 @@ export default async function SecurityPage() {
   // and throws SESSION_NOT_FRESH otherwise, which took the whole page down
   // for anyone with an older session. Listing is harmless; only adding a
   // passkey still needs the fresh sign-in, and its form says so.
-  const [passkeys, sessions, freshAge] = await Promise.all([
+  const [passkeys, sessions, freshAge, settings, credential] = await Promise.all([
     db.query.passkey.findMany({ where: eq(passkeyTable.userId, session.user.id) }),
     db.query.session.findMany({
       where: and(eq(sessionTable.userId, session.user.id), gt(sessionTable.expiresAt, new Date())),
       orderBy: (t, { desc }) => [desc(t.updatedAt)],
     }),
     auth.$context.then((c) => c.sessionConfig.freshAge ?? DEFAULT_FRESH_AGE_SECONDS).catch(() => DEFAULT_FRESH_AGE_SECONDS),
+    getInstanceSettings(),
+    db.query.account.findFirst({ where: and(eq(accountTable.userId, session.user.id), eq(accountTable.providerId, "credential")) }),
   ]);
   const fresh = freshAge === 0 || Date.now() - new Date(session.session.createdAt).getTime() < freshAge * 1000;
 
@@ -60,6 +65,7 @@ export default async function SecurityPage() {
             expiresAt: s.expiresAt.toISOString(),
           }))}
         />
+        <DeleteAccount byEmail={!!settings.smtp.host} hasPassword={!!credential?.password} fresh={fresh} />
       </div>
     </>
   );

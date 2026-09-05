@@ -15,6 +15,7 @@ export async function GET() {
       checks: {
         database: { ok: h.database.ok, latencyMs: h.database.latencyMs },
         registry: { ok: h.registry.ok, latencyMs: h.registry.latencyMs },
+        events: h.events,
       },
       time: new Date().toISOString(),
     },

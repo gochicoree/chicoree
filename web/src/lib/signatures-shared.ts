@@ -35,6 +35,8 @@ export const ANNOTATION_SIGNATURE = "dev.cosignproject.cosign/signature";
 /** PEM certificate of a keyless (Fulcio) signature. */
 export const ANNOTATION_CERTIFICATE = "dev.sigstore.cosign/certificate";
 export const ANNOTATION_CHAIN = "dev.sigstore.cosign/chain";
+/** Rekor transparency-log entry of a legacy (tag-convention) keyless signature. */
+export const ANNOTATION_REKOR_BUNDLE = "dev.sigstore.cosign/bundle";
 /** Sigstore bundle referrers: "dsse-envelope" | "message-signature". */
 export const ANNOTATION_BUNDLE_CONTENT = "dev.sigstore.bundle.content";
 export const ANNOTATION_BUNDLE_PREDICATE = "dev.sigstore.bundle.predicateType";
@@ -440,6 +442,17 @@ export interface SignatureCheck {
   identity?: string | null;
   /** OIDC issuer from the Fulcio certificate extension. */
   issuer?: string | null;
+  /**
+   * Keyless only: true when the Fulcio chain, the CT log SCT and the Rekor
+   * entry verified against the Sigstore trusted root; false when the check
+   * ran and failed (reason says why); absent when it could not run.
+   */
+  chainVerified?: boolean | null;
+  /** Trusted identity (signing_identities_trusted) that matched a chain-verified signature. */
+  identityId?: string | null;
+  identityName?: string | null;
+  /** When the transparency log recorded the signature. */
+  signedAt?: string | null;
   signedDigest?: string | null;
   signedReference?: string | null;
   predicateType?: string | null;
@@ -466,18 +479,26 @@ export function describeSignatureStatus(check: {
   /** Owner of the personal key that verified it, when it was not an organization / repository key. */
   signer?: string | null;
   identity?: string | null;
+  /** Trusted identity that verified a keyless signature. */
+  identityName?: string | null;
+  /** Keyless: whether the Sigstore chain verified. */
+  chainVerified?: boolean | null;
   reason?: string | null;
 }): string {
   switch (check.status) {
     case "verified":
+      if (check.identityName) return `verified by identity ${check.identityName}${check.identity ? ` (${check.identity})` : ""}`;
       if (check.signer) return `verified by ${check.signer}'s key ${check.keyName ?? "(removed)"}`;
       return `verified by key ${check.keyName ?? "(removed)"}`;
     case "untrusted":
       return check.reason ? `unverified: ${check.reason}` : "unverified: no trusted key";
     case "invalid":
       return check.reason ? `invalid: ${check.reason}` : "invalid";
-    case "keyless":
-      return check.identity ? `keyless (${check.identity}), not verified` : "keyless, not verified";
+    case "keyless": {
+      const who = check.identity ? `keyless (${check.identity})` : "keyless";
+      if (check.chainVerified) return `${who}, verified by Sigstore, identity not trusted here`;
+      return check.reason ? `${who}, not verified: ${check.reason}` : `${who}, not verified`;
+    }
   }
 }
 
@@ -514,7 +535,7 @@ export function predicateLabel(predicateType: string | null | undefined, subkind
 }
 
 /** The signature-policy block reason written to manifest_blocks. */
-export const SIGNATURE_BLOCK_REASON = "no signature from a trusted key (signature policy)";
+export const SIGNATURE_BLOCK_REASON = "no signature from a trusted key or identity (signature policy)";
 
 export function isSignatureBlockReason(reason: string | null | undefined): boolean {
   return !!reason && reason.includes("(signature policy)");

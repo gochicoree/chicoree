@@ -13,7 +13,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
-import { eventsForScope, WEBHOOK_EVENTS, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
+import { eventsForScope, WEBHOOK_EVENTS, WEBHOOK_FORMATS, type WebhookFormat, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
 
 export type { WebhookRow };
 
@@ -33,6 +33,10 @@ function eventLabel(value: string): string {
   return WEBHOOK_EVENTS.find((e) => e.value === value)?.label ?? value;
 }
 
+function formatLabel(value: string): string {
+  return WEBHOOK_FORMATS.find((f) => f.value === value)?.label ?? value;
+}
+
 function ScopeInputs({ scope }: { scope: WebhookScope }) {
   return scope.kind === "repository" ? (
     <input type="hidden" name="repositoryId" value={scope.repositoryId} />
@@ -44,6 +48,8 @@ function ScopeInputs({ scope }: { scope: WebhookScope }) {
 function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: WebhookRow; onDone: () => void }) {
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(saveWebhook, null);
   const [authType, setAuthType] = useState(hook?.authType ?? "none");
+  const [format, setFormat] = useState<string>(hook?.format ?? "json");
+  const chat = format !== "json";
   const { toast } = useToast();
   const events = eventsForScope(scope.kind);
   const selected = new Set(hook?.events ?? ["push"]);
@@ -61,12 +67,33 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
       <Field label="Name" htmlFor="wh-name">
         <Input id="wh-name" name="name" required defaultValue={hook?.name} placeholder="Deploy to staging" />
       </Field>
-      <Field label="Method" htmlFor="wh-method">
-        <Select id="wh-method" name="method" options={METHODS} defaultValue={hook?.method ?? "POST"} />
+      <Field label="Format" htmlFor="wh-format" hint={chat ? "Sent as a POST the service understands" : undefined}>
+        <Select id="wh-format" name="format" options={WEBHOOK_FORMATS} value={format} onChange={(v) => setFormat(v as WebhookFormat)} />
       </Field>
+      {!chat && (
+        <Field label="Method" htmlFor="wh-method">
+          <Select id="wh-method" name="method" options={METHODS} defaultValue={hook?.method ?? "POST"} />
+        </Field>
+      )}
       <div className="sm:col-span-2">
-        <Field label="URL" htmlFor="wh-url">
-          <Input id="wh-url" name="url" type="url" required defaultValue={hook?.url} className="font-mono" placeholder="https://ci.example.com/hooks/registry" />
+        <Field label="URL" htmlFor="wh-url" hint={chat ? "The incoming-webhook URL the chat service gave you" : undefined}>
+          <Input
+            id="wh-url"
+            name="url"
+            type="url"
+            required
+            defaultValue={hook?.url}
+            className="font-mono"
+            placeholder={
+              format === "slack"
+                ? "https://hooks.slack.com/services/…"
+                : format === "discord"
+                  ? "https://discord.com/api/webhooks/…"
+                  : format === "teams"
+                    ? "https://….logic.azure.com/workflows/…"
+                    : "https://ci.example.com/hooks/registry"
+            }
+          />
         </Field>
       </div>
       <fieldset className="sm:col-span-2 lg:col-span-4">
@@ -233,6 +260,7 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
                 <span className="min-w-0 max-w-full break-all font-mono text-xs text-ink-2">
                   {h.method} {h.url}
                 </span>
+                {h.format !== "json" && <Badge tone="info">{formatLabel(h.format)}</Badge>}
                 {!h.enabled && <Badge>paused</Badge>}
                 {h.lastStatus !== null && (
                   <Badge tone={h.lastStatus >= 200 && h.lastStatus < 300 ? "ok" : "danger"}>

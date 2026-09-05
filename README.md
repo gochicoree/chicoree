@@ -108,6 +108,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE` as defaults — see [Branding](#branding) |
 | Pull rate limits | *Administration → Rate limits*; `RATE_LIMIT_ANONYMOUS`, `RATE_LIMIT_AUTHENTICATED`, `RATE_LIMIT_TRUSTED_PROXIES` as defaults, read by the web app and `registryd` — see [Rate limits](#rate-limits) |
 | Audit log | `AUDIT_RETENTION_DAYS` (default `365`) — see [Audit log](#audit-log) |
+| Keyless signatures | `SIGSTORE_TRUSTED_ROOT` (path to a `trusted_root.json`; default: the bundled public Sigstore root) — see [Keyless signatures](#keyless-signatures-sigstore) |
 | Registry internals | `INTERNAL_API_URL` (where `registryd` reads proxy-cache configuration; defaults to `WEBHOOK_URL` minus its last path segment), `REGISTRY_LOG_FORMAT=text\|json`; `docker build --build-arg VERSION=…` stamps the version shown on the [Health](#health) page |
 
 For production: serve both the web app and the registry behind TLS (any
@@ -195,6 +196,13 @@ Proxy-side requirements:
   (`client_max_body_size 0; proxy_request_buffering off;` in nginx) — image
   layers stream through as multi-GB uploads;
 - generous read/send timeouts on the registry route (minutes, not seconds).
+
+The web app sets its own security headers on every response — a
+Content-Security-Policy with a per-request nonce, `X-Content-Type-Options`,
+`X-Frame-Options`, a referrer and a permissions policy, and
+`Strict-Transport-Security` whenever the request arrived over TLS
+(`X-Forwarded-Proto: https`). The registry sets none, so add HSTS on the
+proxy for the `/v2/` route; the Traefik stack below does.
 
 The registry emits relative `Location` headers for blob uploads and the web
 app never reads forwarded headers, so nothing else is host-specific. Once
@@ -547,6 +555,25 @@ URL, which both services honour.
   pull / push / admin) — both usable as the password with any username.
   Email+password also works, but only for accounts *without* two-factor
   auth; 2FA users must use a token.
+- **Failed logins are throttled.** Five wrong passwords for one account, or
+  thirty failures from one address, within fifteen minutes lock that account
+  or address out of `docker login` for fifteen minutes (the response says so
+  and carries `Retry-After`); a successful login clears the account's count.
+  Counters live in Postgres, so every replica enforces the same budget, and
+  every failure is an audit entry (`registry.login.failed` with the method
+  and reason). Browser sign-ins are rate-limited by better-auth separately.
+- **Email verification.** With a mail server configured, a password sign-in
+  needs a verified address: an unverified account is refused and gets a fresh
+  verification link with every attempt. The first account (the installer's
+  administrator) is verified automatically, LDAP and SSO accounts by their
+  provider, and administrators can mark any address verified under
+  *Administration → Users*. Without a mail server the check is off.
+- **Deleting an account.** *Settings → Security → Delete account* removes
+  the account with its access tokens, signing keys, sessions and memberships
+  — confirmed from the inbox when mail is configured, else with the password
+  (or a fresh sign-in for accounts without one). The only owner of an
+  organization has to transfer or delete it first, and the last instance
+  administrator cannot leave.
 - **Expiry and scoping.** *Settings → Access tokens* gives a token, besides
   its name and scope, an **expiry** (7, 30, 90 or 365 days, a custom date,
   or *Never* — within what the [token policy](#access-token-policy)
@@ -754,7 +781,15 @@ organization-level `quota.warning`. Both share the same form — HTTP method
 custom header; secrets are encrypted at rest) and an optional signing secret
 that adds `X-Chicoree-Signature: sha256=<hmac>` so receivers can verify the
 body — the same delivery log (the last 50 attempts per hook), retries on
-network errors and 5xx, and *Send test*. Each hook picks the events it wants:
+network errors and 5xx, and *Send test*. A hook's **format** decides what
+the body is: the JSON payload below, or one message for a chat service's
+incoming webhook — **Slack** (Block Kit), **Discord** (an embed),
+**Microsoft Teams** (an Adaptive Card for a Workflows webhook) or **plain
+text** (`{"text": …}`, what Mattermost, Google Chat and Rocket.Chat accept).
+Chat messages carry the event as a title, a few lines of detail (digest,
+size, platform, findings, mirror counts, quota numbers, who did it) and a
+link back to the image or repository; they are always POSTed. Each hook
+picks the events it wants:
 
 | Event | Fires when | Payload adds |
 | --- | --- | --- |
@@ -807,7 +842,9 @@ email; everything is on except `scan.completed`. Emails use the SMTP settings
 from *Administration → Email* and link to the image, mirror, delivery log,
 organization, tokens or jobs page concerned. Organization webhooks can
 subscribe to the same organization events, except `webhook.failed`;
-`job.failed` and `token.expiring` never fan out to webhooks.
+`job.failed` and `token.expiring` never fan out to webhooks. For a Slack,
+Discord, Teams or Mattermost channel, add an organization webhook with that
+[format](#webhooks) and subscribe it to the events the channel should see.
 
 ## Mirroring / importing
 
@@ -1337,16 +1374,47 @@ its next check, then shows as *unverified* again. The `reverify-signatures`
 job re-checks everything (optionally one `organization=`) for changes made
 outside the UI.
 
+### Keyless signatures (Sigstore)
+
+`cosign sign` without a key — from GitHub Actions, GitLab CI or a browser
+login — puts a short-lived Fulcio certificate and a Rekor transparency-log
+entry next to the signature instead of a public key. Chicorée verifies the
+whole chain: the certificate must chain to the Sigstore root and carry a
+valid certificate-transparency SCT, the Rekor entry must be signed by the
+log and cover this signature, the certificate must have been valid when
+the log recorded it, and the signature must check out under the
+certificate's key. That holds for cosign v3 bundles (referrers) and for
+the v2 tag convention (`.sig` / `.att` with the `dev.sigstore.cosign/*`
+annotations); a legacy signature made without Rekor cannot be verified and
+says so. The Attestations tab shows the identity (email or workflow URI),
+the OIDC issuer and when the log saw the signature.
+
+A verified chain only proves *who* signed. Whether that counts is the
+**Trusted keyless identities** card under *Organization → Settings →
+Policies* (and per repository): an issuer plus a subject pattern, e.g.
+`https://token.actions.githubusercontent.com` with
+`https://github.com/acme/app/.github/workflows/release.yml@refs/tags/*`, or
+`https://accounts.google.com` with `*@example.com`. A keyless signature
+whose verified identity matches one of them is **verified** (the card
+says *verified by identity release workflow*) and satisfies the signature
+policy like a trusted key; one that verifies but matches nothing stays
+*keyless* with a hint to trust it. Adding or removing an identity
+re-verifies every signature in scope. The trusted root comes from the
+public Sigstore instance (vendored from `sigstore/root-signing`); set
+`SIGSTORE_TRUSTED_ROOT=/path/trusted_root.json` for a private instance or
+a newer snapshot.
+
 ### Require signatures (pull policy)
 
 The **Require signatures** card on the same pages refuses pulls of images
-that carry no cosign signature verified by a trusted key (or, unless the
-organization switched them off, by the personal key of a member who may
-push). The organization switch applies everywhere; a repository can
-inherit it, require signatures, or opt out. `docker pull` then answers:
+that carry no cosign signature verified by a trusted key, a trusted
+keyless identity, or (unless the organization switched them off) the
+personal key of a member who may push. The organization switch applies
+everywhere; a repository can inherit it, require signatures, or opt out.
+`docker pull` then answers:
 
 ```
-denied: pull blocked by policy: no signature from a trusted key (signature policy)
+denied: pull blocked by policy: no signature from a trusted key or identity (signature policy)
 ```
 
 Rules: attached artifacts (signatures, attestations, SBOMs, anything with a
@@ -1634,14 +1702,29 @@ scanner (Clair: liveness and updater freshness; Trivy: binary, database age
 or server health; or *not configured*), the token signing keys (the active
 signer — file or database key — against the keys `registryd` trusts, telling
 "not picked up yet" from a real mismatch), pending / failed scans, failing
-webhooks, the last run per job, failed mirrors and the last garbage
-collection. *Refresh* re-runs everything.
+webhooks, the last run per job, failed mirrors, the last garbage
+collection and the registry event outbox. *Refresh* re-runs everything.
+
+**Registry events.** Every push and delete `registryd` reports to the web
+app (the trigger for scans, signature checks, webhooks and quota warnings)
+is first written to `registry_event_outbox`, then delivered over HTTP. The
+web app claims the row before acting, so a delivery registryd retries after
+a slow response is never handled twice; rows nobody claimed — the web app
+was down, or registryd gave up — are picked up by the scheduler on its next
+tick (every 30 s, with backoff for events that keep failing) even with
+`JOB_SCHEDULER=false`. The health page shows how many are waiting, how old
+the oldest is, how many were recovered this way in the last day and whether
+any gave up after 25 attempts (those stay in the table for inspection).
 
 For uptime monitors, `GET /api/health` needs no credentials: it pings the
 database and the registry and answers `200 {"status":"ok"}` or
-`503 {"status":"degraded"}` with per-check latencies and nothing else.
-`GET /internal/v1/healthz` on the registry itself remains the container
-health check.
+`503 {"status":"degraded"}` with per-check latencies, the number of
+registry events waiting or stuck, and nothing else.
+`GET /internal/v1/healthz` on the registry itself is the container health
+check: it pings the database and the storage backend (3 s budget) and
+answers 503 with the failing check when either does not respond, so
+compose, Kubernetes and Traefik stop routing to a registry that cannot
+serve.
 
 Registry builds can stamp a version into the health page:
 `docker build --build-arg VERSION=1.4.0 registryd/` (or

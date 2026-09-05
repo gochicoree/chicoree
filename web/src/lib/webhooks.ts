@@ -4,6 +4,7 @@
 // other event shares the same envelope (event, timestamp, repository, …)
 // with event-specific fields next to it.
 import { randomUUID, createHmac } from "crypto";
+import { chatMessage, encodeChatMessage } from "./webhook-chat";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -256,7 +257,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Deliver one payload to one hook with retries; records the delivery. */
 export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Promise<void> {
-  const body = JSON.stringify(payload);
+  // Chat formats render the event as a message; the JSON format sends the
+  // payload itself. Signing and authentication apply to whatever is sent.
+  const body = hook.format && hook.format !== "json" ? JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload))) : JSON.stringify(payload);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "User-Agent": "Chicoree-Webhooks/1.0",
@@ -489,6 +492,7 @@ export async function listWebhookRows(scope: WebhookScope): Promise<WebhookRow[]
         name: h.name,
         url: h.url,
         method: h.method,
+        format: h.format,
         headers: h.headers,
         authType: h.authType,
         authHeaderName: h.authHeaderName,

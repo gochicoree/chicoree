@@ -1,28 +1,15 @@
-// Receives push/delete notifications from registryd (HMAC-signed) and kicks
-// off background work: config caching and vulnerability scanning.
+// Receives push/delete notifications from registryd (HMAC-signed). The
+// event also sits in registry_event_outbox; the row is claimed before any
+// work starts, so an event handled here is never handled again by the
+// outbox drain (lib/registry-events.ts) — and one this process drops
+// mid-way is picked up there once the claim goes stale.
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { env } from "@/lib/env";
-import { cacheManifestConfig, runScan } from "@/lib/scan";
-import { buildPushPayload, dispatchRepositoryWebhooks, emitRepositoryEvent, resolveActor } from "@/lib/webhooks";
-import { checkQuotaWarningsForRepository } from "@/lib/notify";
-import { getRepoByPath } from "@/lib/data";
-import { imageReference, splitImagePath } from "@/lib/library";
-import { onManifestPushed } from "@/lib/signatures";
+import { claimOutboxEvent, handleClaimedEvent, processRegistryEvent, type RegistryEvent } from "@/lib/registry-events";
 
 export const dynamic = "force-dynamic";
-
-interface RegistryEvent {
-  type: string;
-  repository: string;
-  digest: string;
-  tag?: string;
-  /** Tags that pointed at a manifest deleted by digest. */
-  tags?: string[];
-  mediaType?: string;
-  actor?: string;
-}
 
 function validSignature(body: string, signature: string | null): boolean {
   if (!signature) return false;
@@ -48,66 +35,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
+  if (!event.type || !event.repository) return NextResponse.json({ error: "invalid payload" }, { status: 400 });
 
-  if (event.type === "manifest.push" && event.repository && event.digest) {
-    after(async () => {
-      await cacheManifestConfig(event.repository, event.digest).catch((err) =>
-        console.error("config cache failed:", err),
-      );
-      // Repository webhooks go out right after the config is cached so the
-      // payload can include platform, labels and entrypoint.
-      const target = splitImagePath(event.repository);
-      if (target) {
-        const built = await buildPushPayload(
-          target.orgSlug,
-          target.repoName,
-          event.digest,
-          event.tag ?? null,
-          event.actor,
-        ).catch((err) => {
-          console.error("webhook payload failed:", err);
-          return null;
-        });
-        if (built) {
-          await dispatchRepositoryWebhooks(built.repositoryId, built.payload);
-          await checkQuotaWarningsForRepository(built.repositoryId).catch((err) =>
-            console.error("quota warning check failed:", err),
-          );
-        }
-      }
-      // Signatures and attestations arrive as pushes too: verify what was
-      // attached (or the image itself) and refresh the signature policy.
-      await onManifestPushed(event.repository, event.digest, event.tag).catch((err) =>
-        console.error("signature verification failed:", err),
-      );
-      await runScan(event.repository, event.digest).catch((err) =>
-        console.error("scan failed:", err),
-      );
-    });
-  }
-
-  if (event.type === "manifest.delete" && event.repository) {
-    after(async () => {
-      const target = splitImagePath(event.repository);
-      if (!target) return;
-      const found = await getRepoByPath(target.orgSlug, target.repoName);
-      if (!found) return;
-      const tags = event.tags ?? (event.tag ? [event.tag] : []);
-      const digest = event.digest || null;
-      await emitRepositoryEvent(found.repo.id, "delete", {
-        tag: event.tag ?? null,
-        tags,
-        digest,
-        image: digest
-          ? {
-              digest,
-              reference: imageReference(env.registryHost, target.orgSlug, target.repoName, digest),
-              digestReference: imageReference(env.registryHost, target.orgSlug, target.repoName, digest),
-            }
-          : null,
-        actor: await resolveActor(event.actor),
-      }).catch((err) => console.error("delete webhook failed:", err));
-    });
+  const id = typeof event.id === "number" && event.id > 0 ? event.id : null;
+  if (id !== null) {
+    // Already delivered, or in flight elsewhere: registryd's retry after a
+    // slow response must not run the webhooks twice.
+    if (!(await claimOutboxEvent(id))) return new NextResponse(null, { status: 204 });
+    after(() => handleClaimedEvent(id, event));
+  } else {
+    // A registryd without the outbox (older build, or its insert failed):
+    // best effort, as before.
+    after(() => processRegistryEvent(event).catch((err) => console.error(`registry event ${event.type} ${event.repository} failed:`, err)));
   }
 
   return new NextResponse(null, { status: 204 });

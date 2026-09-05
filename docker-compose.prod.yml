@@ -146,7 +146,13 @@ services:
       - traefik.http.routers.web.rule=Host(`${DOMAIN}`)
       - traefik.http.routers.web.entrypoints=websecure
       - traefik.http.routers.web.tls.certresolver=le
+      - traefik.http.routers.web.middlewares=secure-headers@docker
       - traefik.http.services.web.loadbalancer.server.port=3000
+      # HSTS and nosniff for everything behind this host, the registry API
+      # included (the web app sets its own CSP and the rest per response).
+      - traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000
+      - traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.secure-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sign-in"]
       interval: 10s
@@ -204,6 +210,7 @@ services:
       - traefik.http.routers.registry.priority=100
       - traefik.http.routers.registry.entrypoints=websecure
       - traefik.http.routers.registry.tls.certresolver=le
+      - traefik.http.routers.registry.middlewares=secure-headers@docker
       - traefik.http.services.registry.loadbalancer.server.port=5000
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5000/internal/v1/healthz"]

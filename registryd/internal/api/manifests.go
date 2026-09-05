@@ -238,7 +238,7 @@ func (s *Server) handleManifestPut(w http.ResponseWriter, r *http.Request, rc *r
 		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(),
 		ManifestDigest: digest, Tag: tag,
 	})
-	s.notifier.Notify(hooks.Event{
+	s.emit(r.Context(), hooks.Event{
 		Type: "manifest.push", Repository: rc.name, Digest: digest, Tag: tag,
 		MediaType: parsed.MediaType, Actor: rc.identity.Subject,
 	})
@@ -292,7 +292,7 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 			RepositoryID: repo.ID, Type: "delete",
 			ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), Tag: ref,
 		})
-		s.notifier.Notify(hooks.Event{
+		s.emit(r.Context(), hooks.Event{
 			Type: "manifest.delete", Repository: rc.name, Digest: digest, Tag: ref, Actor: rc.identity.Subject,
 		})
 		w.WriteHeader(http.StatusAccepted)
@@ -319,7 +319,7 @@ func (s *Server) handleManifestDelete(w http.ResponseWriter, r *http.Request, rc
 		RepositoryID: repo.ID, Type: "delete",
 		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(), ManifestDigest: ref,
 	})
-	s.notifier.Notify(hooks.Event{
+	s.emit(r.Context(), hooks.Event{
 		Type: "manifest.delete", Repository: rc.name, Digest: ref, Tags: tagNames, Actor: rc.identity.Subject,
 	})
 	w.WriteHeader(http.StatusAccepted)
