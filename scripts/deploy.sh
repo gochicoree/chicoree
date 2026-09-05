@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 
 echo "==> syncing to $TARGET:$REMOTE_DIR"
 rsync -az --delete \
-  --exclude .git --exclude node_modules --exclude .next --exclude secrets \
+  --exclude .git --exclude .claude --exclude node_modules --exclude .next --exclude secrets \
   --exclude .env --exclude '*.log' --exclude .DS_Store \
   ./ "$TARGET:$REMOTE_DIR/"
 
