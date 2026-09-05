@@ -283,11 +283,16 @@ export function summarizeSbom(doc: unknown): SbomSummary | null {
       name: str(o.name),
       specVersion: str(o.spdxVersion),
       packageCount: packages.length,
-      components: packages.slice(0, SBOM_COMPONENT_PREVIEW).map((p) => ({
-        name: str(p.name) ?? "unnamed",
-        version: str(p.versionInfo),
-        license: str(p.licenseConcluded) ?? str(p.licenseDeclared),
-      })),
+      // The first entry describes the image itself, which the card already
+      // names above the list; showing it again wastes a slot.
+      components: packages
+        .filter((p) => str(p.name) !== str(o.name))
+        .slice(0, SBOM_COMPONENT_PREVIEW)
+        .map((p) => ({
+          name: str(p.name) ?? "unnamed",
+          version: str(p.versionInfo),
+          license: str(p.licenseConcluded) ?? str(p.licenseDeclared),
+        })),
       tool,
       createdAt: str(info.created),
     };
