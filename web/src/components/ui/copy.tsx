@@ -32,14 +32,17 @@ export function CommandLine({ command, className }: { command: string; className
   return (
     <div
       className={clsx(
-        "flex items-center gap-2 rounded-lg border border-line bg-card-2 py-2 pl-3 pr-2 font-mono text-[13px]",
+        // items-start so the prompt and the copy button stay put once a long
+        // command wraps onto a second line.
+        "flex items-start gap-2 rounded-lg border border-line bg-card-2 py-2 pl-3 pr-2 font-mono text-[13px]",
         className,
       )}
     >
       <span aria-hidden className="select-none text-accent">
         $
       </span>
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-ink">{command}</code>
+      {/* Wraps rather than scrolls: a scrollbar hides the end of the command. */}
+      <code className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-ink">{command}</code>
       <CopyButton value={command} label="Copy command" />
     </div>
   );

@@ -10,7 +10,7 @@ import { getBranding } from "@/lib/branding";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { canCreateOrganization } from "@/lib/signup-policy";
 import { announcementDismissible, announcementHash } from "@/lib/branding-shared";
-import { logoVersionOf } from "@/lib/logo";
+import { logoVersionOf, userLogoVersion } from "@/lib/logo";
 import { logoRef } from "@/lib/logo-shared";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user: {
       name: session.user.name,
       email: session.user.email,
-      logo: logoRef("user", session.user.id, logoVersionOf(session.user.image)),
+      logo: logoRef("user", session.user.id, userLogoVersion(session.user, branding.gravatar)),
     },
     isAdmin: session.user.role === "admin",
     branding: { name: branding.instanceName, logoDataUrl: branding.logoDataUrl || undefined },

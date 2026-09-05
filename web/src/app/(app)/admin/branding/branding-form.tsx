@@ -269,6 +269,24 @@ export function BrandingForm({ branding, source }: { branding: BrandingSettings;
             </div>
 
             <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+          <div className="border-t border-line pt-4">
+            <label className="flex items-start gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                name="gravatar"
+                defaultChecked={branding.gravatar}
+                className="mt-0.5 size-4 accent-[var(--action)]"
+              />
+              <span>
+                <span className="block font-medium text-ink">Use Gravatar for accounts without an avatar</span>
+                <span className="block text-xs text-ink-2">
+                  People who have not uploaded a picture show their Gravatar instead of their initials. Their browser asks
+                  gravatar.com for it, using a hash of their email address; an address without a Gravatar keeps the initials.
+                </span>
+              </span>
+            </label>
+          </div>
+
               <Button type="submit" disabled={saving || !!logoError}>
                 Save branding
               </Button>

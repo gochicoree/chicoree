@@ -13,7 +13,8 @@ import {
 } from "@/db/schema";
 import type { SeveritySummary } from "@/components/severity";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
-import { logoVersionSql } from "./logo";
+import { logoVersionSql, userLogoVersionSql } from "./logo";
+import { getInstanceSettings } from "./instance-settings";
 
 export interface OrgWithMeta {
   id: string;
@@ -503,6 +504,7 @@ export async function recentActivity(opts: {
   page?: number;
   pageSize?: number;
 }): Promise<{ rows: ActivityItem[]; state: PageState }> {
+  const gravatar = (await getInstanceSettings()).branding.gravatar;
   const scope = opts.repoId
     ? sql`AND e.repository_id = ${opts.repoId}`
     : opts.orgId
@@ -528,7 +530,7 @@ export async function recentActivity(opts: {
       CASE WHEN e.actor_type = 'user' AND e.actor_id <> 'system'
         THEN (SELECT u.id FROM "user" u WHERE u.id = e.actor_id) END AS actor_user_id,
       CASE WHEN e.actor_type = 'user' AND e.actor_id <> 'system'
-        THEN (SELECT ${logoVersionSql("u.image")} FROM "user" u WHERE u.id = e.actor_id) END AS actor_logo_version,
+        THEN (SELECT ${userLogoVersionSql("u.image", "u.email", gravatar)} FROM "user" u WHERE u.id = e.actor_id) END AS actor_logo_version,
       CASE e.actor_type
         WHEN 'user' THEN CASE WHEN e.actor_id = 'system' THEN 'system'
           ELSE COALESCE((SELECT u.name FROM "user" u WHERE u.id = e.actor_id), 'deleted user') END
@@ -582,6 +584,7 @@ export async function instanceStats() {
 }
 
 export async function listMembersWithUsers(orgId: string) {
+  const gravatar = (await getInstanceSettings()).branding.gravatar;
   return db
     .select({
       id: member.id,
@@ -590,7 +593,7 @@ export async function listMembersWithUsers(orgId: string) {
       userId: userTable.id,
       userName: userTable.name,
       userEmail: userTable.email,
-      userLogoVersion: sql<string | null>`${logoVersionSql("\"user\".image")}`,
+      userLogoVersion: sql<string | null>`${userLogoVersionSql("\"user\".image", "\"user\".email", gravatar)}`,
     })
     .from(member)
     .innerJoin(userTable, eq(userTable.id, member.userId))
@@ -600,6 +603,7 @@ export async function listMembersWithUsers(orgId: string) {
 
 /** One page of the instance's users, newest first, plus how many there are. */
 export async function listAdminUsers(opts: { page?: number; pageSize?: number } = {}) {
+  const gravatar = (await getInstanceSettings()).branding.gravatar;
   return paginatedQuery({
     page: opts.page ?? 1,
     pageSize: opts.pageSize ?? PAGE_SIZES.users,
@@ -614,7 +618,7 @@ export async function listAdminUsers(opts: { page?: number; pageSize?: number } 
           banned: userTable.banned,
           createdAt: userTable.createdAt,
           emailVerified: userTable.emailVerified,
-          logoVersion: sql<string | null>`${logoVersionSql("\"user\".image")}`,
+          logoVersion: sql<string | null>`${userLogoVersionSql("\"user\".image", "\"user\".email", gravatar)}`,
         })
         .from(userTable)
         .orderBy(desc(userTable.createdAt))

@@ -11,9 +11,10 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavTabs } from "@/components/ui/nav-tabs";
 import { EntityLogo } from "@/components/entity-logo";
-import { logoVersionOf } from "@/lib/logo";
+import { logoVersionOf, userLogoVersion } from "@/lib/logo";
 import { logoRef } from "@/lib/logo-shared";
 import { AdminNav } from "../../admin-nav";
+import { getInstanceSettings } from "@/lib/instance-settings";
 
 export default async function AdminUserLayout({
   children,
@@ -25,6 +26,7 @@ export default async function AdminUserLayout({
   await requireAdmin();
   const { id } = await params;
   const user = await db.query.user.findFirst({ where: eq(userTable.id, id) });
+  const gravatar = (await getInstanceSettings()).branding.gravatar;
   if (!user) notFound();
   const base = `/admin/users/${user.id}`;
 
@@ -39,7 +41,7 @@ export default async function AdminUserLayout({
         <Card>
           <CardHeader
             eyebrow="User"
-            icon={<EntityLogo kind="user" name={user.name} logo={logoRef("user", user.id, logoVersionOf(user.image))} size={36} />}
+            icon={<EntityLogo kind="user" name={user.name} logo={logoRef("user", user.id, userLogoVersion(user, gravatar))} size={36} />}
             title={user.name}
             description={`${user.email} · joined ${formatDate(user.createdAt)}`}
             action={
