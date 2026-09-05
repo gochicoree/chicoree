@@ -67,15 +67,18 @@ jobs:
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public 2>/dev/null || true
           (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 nohup node server.js > ../../server.log 2>&1 &)
+          # /api/health reports "degraded" (503) without a registry, so the
+          # readiness probe uses the credential-free API index instead.
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/api/health > /dev/null 2>&1; then echo "up after ${i}s"; exit 0; fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/v1 || true)
+            if [[ "$code" == "200" ]]; then echo "up after ${i}s"; exit 0; fi
             sleep 1
           done
           echo "the app did not come up"; cat server.log; exit 1
       - name: API contract tests
         run: npm run api:smoke
         env:
-          API_BASE: http://localhost:3000
+          API_BASE: http://127.0.0.1:3000
       - name: Server log
         if: failure()
         run: cat server.log || true
