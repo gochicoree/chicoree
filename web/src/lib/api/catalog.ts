@@ -1017,6 +1017,7 @@ export const API_CATALOG: ApiEndpoint[] = [
       { name: "fixed", in: "query", type: "boolean", description: "Only findings with a fixed version." },
       { name: "q", in: "query", type: "string", description: "Substring of the id, package, title or ecosystem." },
       { name: "include_accepted", in: "query", type: "boolean", description: "Include findings an accepted risk covers. Default true." },
+      { name: "format", in: "query", type: "json | sarif | vex", description: "`sarif`: the whole image as SARIF 2.1.0 (GitHub code scanning; accepted risks become suppressions). `vex`: a CycloneDX 1.5 VEX document (accepted risks are not_affected with the justification). Filters and paging apply to json only." },
       ...PAGE_PARAMS,
     ],
     example: {

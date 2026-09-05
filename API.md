@@ -54,6 +54,8 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.3`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
+- **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
+- **Exports.** `GET …/manifests/{digest}/vulnerabilities?format=sarif` is the image's scan as SARIF 2.1.0 for GitHub code scanning and security dashboards (accepted risks become suppressions); `?format=vex` is a CycloneDX 1.5 VEX document in which accepted risks are `not_affected` with their justification and everything else is `in_triage`.
 - **Rate limits.** Requests are counted per credential (per address without one) in fixed windows set by the administrators (*Administration → Rate limits*, defaults `RATE_LIMIT_API_AUTHENTICATED=1200/1m` and `RATE_LIMIT_API_ANONYMOUS=120/1m`; instance administrators are exempt). Every answer carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (epoch seconds); over the limit the API answers `429 rate_limited` with `Retry-After`.
 - **Deprecations.** An endpoint that is going away is announced first: its responses carry a `Deprecation` header (and `Sunset` once a date is set) with a `Link` to this documentation, the reference marks it, and it stays for at least one more revision. Watch the changelog for `Removed:` lines.
 
@@ -2514,6 +2516,7 @@ Vulnerabilities of an image — The normalised findings of the last scan, worst 
 | `fixed` | query | boolean |  | Only findings with a fixed version. |
 | `q` | query | string |  | Substring of the id, package, title or ecosystem. |
 | `include_accepted` | query | boolean |  | Include findings an accepted risk covers. Default true. |
+| `format` | query | json \| sarif \| vex |  | `sarif`: the whole image as SARIF 2.1.0 (GitHub code scanning; accepted risks become suppressions). `vex`: a CycloneDX 1.5 VEX document (accepted risks are not_affected with the justification). Filters and paging apply to json only. |
 | `page` | query | integer |  | Page number, from 1. |
 | `per_page` | query | integer |  | Rows per page, 1–100 (default 50). |
 
@@ -2795,6 +2798,9 @@ This API follows the registry's features: whenever a feature is added, changed o
 - Members and invitations: change roles, remove members, list, create and cancel invitations.
 - Webhooks: list, create, read, update, delete and test, for organizations and repositories.
 - Repository policies: read the effective pull and signature policy, change the overrides.
+- Exports: GET …/vulnerabilities?format=sarif (SARIF 2.1.0) and ?format=vex (CycloneDX 1.5 VEX) for security dashboards and GitHub code scanning.
+- Conditional requests: GET answers carry a weak ETag and honour If-None-Match with 304.
+- The OpenAPI document is validated by npm run lint, and administrators see a notice on the overview when the API revision changed since they last acknowledged it.
 - Rate limits: requests are counted per credential (per address anonymously) in windows set under Administration → Rate limits (RATE_LIMIT_API_AUTHENTICATED, RATE_LIMIT_API_ANONYMOUS); over the limit the API answers 429 with the new code rate_limited and Retry-After, and every answer carries X-RateLimit-Limit / -Remaining / -Reset.
 - Metrics: chicoree_api_requests_total{endpoint,method,status,credential} on the Prometheus endpoint.
 - Deprecation policy: endpoints that are going away carry Deprecation, Sunset and Link headers and are marked in the docs for at least one revision before removal.

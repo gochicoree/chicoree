@@ -1069,7 +1069,7 @@ The management API lives in `web/src/app/api/v1/**/route.ts` on top of
   `GET /api/v1/openapi.json`, response schemas inferred from the examples),
   the in-app browser (`app/(app)/docs/api`, a client component that sends
   real requests with the session or a pasted token) and the Markdown guide
-  (`docs.ts` → the *Guide* tab and, via `scripts/api-docs.ts`, the
+  (`docs.ts` → the *Guide* tab and, via `scripts/api-docs.mts`, the
   repository's `API.md`).
 - `version.ts` — `API_VERSION` (path prefix), `API_REVISION` and the
   changelog, plus the notice that the API follows the features. **Every
@@ -1112,6 +1112,16 @@ The management API lives in `web/src/app/api/v1/**/route.ts` on top of
   `api_request_stats` for `chicoree_api_requests_total`, and the request →
   catalog matcher that labels metrics and emits `Deprecation` / `Sunset` /
   `Link` headers for entries with `deprecated` set.
+- `exports.ts` — SARIF 2.1.0 and CycloneDX 1.5 VEX renderings of an
+  image's findings (`?format=` on the vulnerabilities endpoint); pure.
+- `revision-notice.ts` — the acknowledged API revision (an
+  `instance_settings` row of its own) behind the "API changed" card on the
+  administration overview.
+- `handler.ts` also computes a weak `ETag` over successful GET bodies and
+  answers `304` to a matching `If-None-Match`.
+- `scripts/api-smoke.mts` — contract tests that seed rows directly and run
+  the request matrix against a running app; `.github/workflows/ci.yml` runs
+  them against a Postgres service after `npm run lint` and `next build`.
 - `scan-gate.ts`, `copy.ts`, `webhooks.ts`, `service-accounts.ts` — the
   pipeline-facing operations (wait for a scan and judge it, promote an image,
   manage hooks and service accounts) built on the same libraries as the UI.

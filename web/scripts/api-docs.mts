@@ -6,8 +6,10 @@
 //   npm run api:check         # fail when API.md is stale or a route is undocumented
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import SwaggerParser from "@apidevtools/swagger-parser";
 import { API_CATALOG, routeDirectory } from "../src/lib/api/catalog";
 import { apiDocsMarkdown } from "../src/lib/api/docs";
+import { openApiDocument } from "../src/lib/api/openapi";
 
 const root = resolve(import.meta.dirname, "..");
 const routesDir = join(root, "src/app/api/v1");
@@ -40,6 +42,13 @@ const documented = new Set(API_CATALOG.map((e) => `${e.method} ${e.path}`));
 for (const r of routes) if (!documented.has(r)) problems.push(`route without a catalog entry: ${r}`);
 for (const d of documented) if (!routes.has(d)) problems.push(`catalog entry without a route: ${d} (expected src/app/api/v1/${routeDirectory(API_CATALOG.find((e) => `${e.method} ${e.path}` === d)!.path)}/route.ts)`);
 
+// The OpenAPI document must be valid for the tools that consume it.
+try {
+  await SwaggerParser.validate(structuredClone(openApiDocument({ appUrl: "https://registry.example.com" })) as never);
+} catch (err) {
+  problems.push(`OpenAPI document invalid: ${err instanceof Error ? err.message : String(err)}`);
+}
+
 const markdown = apiDocsMarkdown({ appUrl: "https://registry.example.com", registryHost: "registry.example.com" });
 if (check) {
   let current = "";
@@ -59,4 +68,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  - ${p}`);
   process.exit(1);
 }
-if (check) console.log(`API docs OK: ${API_CATALOG.length} endpoints documented, API.md current`);
+if (check) console.log(`API docs OK: ${API_CATALOG.length} endpoints documented, OpenAPI valid, API.md current`);
