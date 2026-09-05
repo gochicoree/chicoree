@@ -1057,12 +1057,61 @@ through an old name get no grant at all.
   `docker-compose.observability.yml` (profile `observability`, Prometheus
   and Grafana on loopback) are the ready-made consumers.
 
+## REST API (`/api/v1`)
+
+The management API lives in `web/src/app/api/v1/**/route.ts` on top of
+`web/src/lib/api/`:
+
+- `catalog.ts` — **the single description of the API**: one entry per route
+  handler with method, path, group, summary, who may call it, parameters and
+  an example response. Everything user-facing is rendered from it: the JSON
+  index (`GET /api/v1`), the OpenAPI 3.1 document (`openapi.ts` →
+  `GET /api/v1/openapi.json`, response schemas inferred from the examples),
+  the in-app browser (`app/(app)/docs/api`, a client component that sends
+  real requests with the session or a pasted token) and the Markdown guide
+  (`docs.ts` → the *Guide* tab and, via `scripts/api-docs.ts`, the
+  repository's `API.md`).
+- `version.ts` — `API_VERSION` (path prefix), `API_REVISION` and the
+  changelog, plus the notice that the API follows the features. **Every
+  feature change that touches the API bumps the revision and adds a
+  changelog line**; `npm run lint` (`api:check`) fails when a route has no
+  catalog entry, a catalog entry has no route, or `API.md` is stale.
+- `auth.ts` — the caller: `Authorization: Bearer` (or Basic with the secret
+  as password) resolves personal access tokens and service accounts through
+  `lib/credential-auth.ts` (expiry, last-use bookkeeping, restrictions);
+  without a header the better-auth session cookie counts; else anonymous. A
+  malformed or unknown header is a `401`, never a fall-through.
+- `access.ts` — visibility and rights as SQL filters (`repoFilter`,
+  `orgFilter`) and loaders (`loadOrg`, `loadRepo`) that answer `404` for
+  anything the caller may not see. Users get the UI's rules (public +
+  member organizations, admins everything) narrowed by a token's
+  organization / repository restriction; service accounts get public +
+  their organization (or list). `manage` = owner/admin with a write token;
+  `delete` = manage, or an `admin` service account. The `require*` helpers
+  word the `403` for the credential in use (read-only token, restriction,
+  role).
+- `respond.ts` / `handler.ts` — `ApiError` → `{ error, code }` with the
+  status, `X-Api-Version` / `X-Api-Revision` headers, `page` / `per_page`
+  paging into `{ items, page, perPage, total, pages }`, and the `route()`
+  wrapper that authenticates, resolves params and logs unexpected errors as
+  `500`.
+- `queries.ts` / `serialize.ts` — the few reads the UI libraries do not
+  offer (organization lists filtered by caller, the image document with
+  config, layers, variants, scan, signature and block) and the row → JSON
+  mappers whose field names are the contract.
+
+Writes reuse the libraries the server actions use (`lib/tag-admin.ts`,
+`lib/manifests.ts`, `lib/rescan.ts`, quotas, redirects, audit) so the API
+and the UI cannot diverge in behaviour; API changes are audited with the
+token's user as actor and `"via": "api"` in the details. The jobs API
+(`/api/jobs*`) and the internal routes stay separate.
+
 ## Credentials at a glance
 
 | Credential | Prefix | Scope | Expiry & restrictions | Created in |
 | --- | --- | --- | --- | --- |
-| Personal access token | `chc_pat_` | acts as the user; `read` or `write`; admins' unrestricted write tokens also unlock the jobs API | 7 / 30 / 90 / 365 days, custom date or never (within the instance policy); optionally limited to one organization and, within it, a repository list — restricted tokens get no catalog grant and cannot auto-create repositories; *Rotate* = new token, old one revoked | Settings → Access tokens |
-| Service account | `chc_sa_` | one org; `pull` / `push` / `admin` (+delete), optional repo allowlist | same expiry rules; *Rotate* swaps the secret in place (same id) | Org → Service accounts |
+| Personal access token | `chc_pat_` | acts as the user; `read` or `write`; authenticates docker login and the REST API (`/api/v1`); admins' unrestricted write tokens also unlock the jobs API | 7 / 30 / 90 / 365 days, custom date or never (within the instance policy); optionally limited to one organization and, within it, a repository list — restricted tokens get no catalog grant and cannot auto-create repositories; *Rotate* = new token, old one revoked | Settings → Access tokens |
+| Service account | `chc_sa_` | one org; `pull` / `push` / `admin` (+delete), optional repo allowlist; reads its organization through the REST API, `admin` may delete tags and images there | same expiry rules; *Rotate* swaps the secret in place (same id) | Org → Service accounts |
 
 Only sha256 hashes are stored; secrets are displayed once at creation; the
 last use (time and client IP) is recorded at most every five minutes, and

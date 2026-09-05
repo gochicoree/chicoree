@@ -21,7 +21,8 @@ A self-hosted OCI container registry with a proper management plane.
   notifications, mirrors, retention policies, scheduled maintenance jobs,
   repository rename, transfer and bulk moves, moving a single image to
   another repository, an audit log, sign-up controls, signing-key rotation,
-  branding and a health page. Sign-in supports email+password, magic links,
+  branding, a health page, and a [REST API](#rest-api) with an in-app
+  browser and an OpenAPI document. Sign-in supports email+password, magic links,
   email one-time codes, passkeys, GitHub/Google/any-OIDC OAuth, LDAP/Active
   Directory with group-based roles, and TOTP or email-based two-factor auth.
 - **Clair v4** (combo mode) or **Trivy** — both optional — scan every pushed
@@ -1786,11 +1787,53 @@ Installs that trigger jobs from external cron through the jobs API can set
 `JOB_SCHEDULER=false`; schedules are then stored but never executed by the
 app, and the Jobs page says so.
 
+## REST API
+
+Everything the web app does with organizations, repositories, tags and
+images is also an HTTP API under `/api/v1` — the same personal access
+tokens that authenticate `docker login` authenticate it, with the same
+roles and restrictions:
+
+```sh
+export TOKEN=chc_pat_…
+curl -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/me"
+curl -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/orgs/acme/repos?sort=pulls"
+curl -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api/tags"
+curl -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api/manifests/sha256:…/vulnerabilities?severity=Critical,High"
+curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api/tags/1.3.9"
+```
+
+- **Reference**: [API.md](API.md) — authentication, conventions, errors and
+  every endpoint with parameters and example responses. The same text is
+  the *Guide* tab of the in-app page.
+- **API browser**: `/docs/api` in the app (sidebar → *API*) lists every
+  endpoint, sends real requests with your session or a pasted token, and
+  shows the curl line for the same call.
+- **OpenAPI**: `GET /api/v1/openapi.json` is an OpenAPI 3.1 document for
+  Swagger UI, Postman, Insomnia or client generators.
+- **Index**: `GET /api/v1` needs no credentials and returns the version,
+  the current revision, the changelog and the endpoint list.
+- **Who can do what**: read-only tokens read; read & write tokens also
+  change things; a token limited to an organization or a repository list
+  sees nothing outside it (and cannot search or create repositories).
+  Service accounts read their organization's repositories and, with the
+  `admin` permission, delete tags and images. Anonymous callers get public
+  repositories. Every change is audited with `"via": "api"`.
+
+> **The API follows the features.** Whenever a feature is added, changed or
+> removed, the endpoints that expose it and the documentation change with
+> it in the same release: the revision in `GET /api/v1` moves, and the
+> changelog (in [API.md](API.md#changelog), `/docs/api` and the OpenAPI
+> description) says what changed. Read it before upgrading a client. The
+> endpoint catalog, the route handlers and `API.md` are checked against
+> each other by `npm run lint` in `web/`.
+
 ## Operations
 
 - **Jobs API**: every maintenance job is also an HTTP endpoint for cron, CI
-  or scripts. Authenticate with `JOBS_API_TOKEN` or an administrator's read
-  & write access token.
+  or scripts (separate from the [REST API](#rest-api), which covers
+  organizations, repositories, tags and images). Authenticate with
+  `JOBS_API_TOKEN` or an administrator's read & write access token.
 
   ```sh
   curl -X POST -H "Authorization: Bearer $TOKEN" "$APP_URL/api/jobs/gc?grace=30m"

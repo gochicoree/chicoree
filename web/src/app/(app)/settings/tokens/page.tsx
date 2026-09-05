@@ -10,6 +10,8 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsNav } from "../settings-nav";
 import { loadUserTokens } from "@/lib/credentials-data";
 import { TokenManager, type TokenOrg } from "./token-manager";
+import { API_BASE } from "@/lib/api/version";
+import Link from "next/link";
 
 export const metadata: Metadata = { title: "Access tokens" };
 
@@ -37,8 +39,16 @@ export default async function TokensPage() {
     <>
       <PageHeader eyebrow="Account" title="Settings" />
       <SettingsNav />
+      <p className="mb-4 text-sm text-ink-2">
+        Tokens also authenticate the{" "}
+        <Link href="/docs/api" className="text-action underline underline-offset-2 hover:text-action-hover">
+          REST API
+        </Link>
+        , with the same roles and limits as docker login.
+      </p>
       <TokenManager
         registryHost={env.registryHost}
+        apiUrl={`${env.appUrl.replace(/\/$/, "")}${API_BASE}`}
         email={session.user.email}
         tokens={tokens}
         orgs={tokenOrgs}

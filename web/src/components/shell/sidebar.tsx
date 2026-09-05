@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import {
+  Braces,
   Compass,
   KeyRound,
   LayoutDashboard,
@@ -103,6 +104,9 @@ export function Sidebar({
           </NavLink>
           <NavLink href="/explore" active={pathname === "/explore"}>
             <Compass className="size-4" /> Explore
+          </NavLink>
+          <NavLink href="/docs/api" active={pathname.startsWith("/docs/api")}>
+            <Braces className="size-4" /> API
           </NavLink>
         </div>
 
