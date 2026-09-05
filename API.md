@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-05.2` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-05.3` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -36,7 +36,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.2`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.3`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 
@@ -102,6 +102,8 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | --- | --- | --- |
 | [`GET /api/v1/repos/{org}/{repo}/tags`](#get-repos-org-repo-tags) | List tags | anyone |
 | [`GET /api/v1/repos/{org}/{repo}/tags/{tag}`](#get-repos-org-repo-tags-tag) | Tag details | anyone |
+| [`PUT /api/v1/repos/{org}/{repo}/tags/{tag}`](#put-repos-org-repo-tags-tag) | Tag an image (retag) | organization owners, admins and members |
+| [`POST /api/v1/repos/{org}/{repo}/tags/{tag}/copy`](#post-repos-org-repo-tags-tag-copy) | Copy (promote) a tagged image to another repository | organization owners, admins and members |
 | [`DELETE /api/v1/repos/{org}/{repo}/tags/{tag}`](#delete-repos-org-repo-tags-tag) | Delete a tag | organization owners and admins |
 | [`GET /api/v1/repos/{org}/{repo}/untagged`](#get-repos-org-repo-untagged) | List untagged manifests | anyone |
 
@@ -111,6 +113,8 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | --- | --- | --- |
 | [`GET /api/v1/repos/{org}/{repo}/manifests/{digest}`](#get-repos-org-repo-manifests-digest) | Image details | anyone |
 | [`DELETE /api/v1/repos/{org}/{repo}/manifests/{digest}`](#delete-repos-org-repo-manifests-digest) | Delete an image by digest | organization owners and admins |
+| [`POST /api/v1/repos/{org}/{repo}/manifests/{digest}/copy`](#post-repos-org-repo-manifests-digest-copy) | Copy an image by digest to another repository | organization owners, admins and members |
+| [`GET /api/v1/repos/{org}/{repo}/manifests/{digest}/scan`](#get-repos-org-repo-manifests-digest-scan) | Scan gate | anyone |
 | [`POST /api/v1/repos/{org}/{repo}/manifests/{digest}/scan`](#post-repos-org-repo-manifests-digest-scan) | Queue a vulnerability scan | instance administrators |
 
 **Security**
@@ -766,6 +770,85 @@ curl \
   "https://registry.example.com/api/v1/repos/acme/api/tags/1.4.0"
 ~~~
 
+### <a id="put-repos-org-repo-tags-tag"></a>`PUT /api/v1/repos/{org}/{repo}/tags/{tag}`
+
+Tag an image (retag) — Points the tag at an image that already exists in the repository — "promote this build to latest" without pulling and pushing. The stored manifest is pushed under the tag, so webhooks and scans follow as for any push. Immutable tags are refused when they would move; a tag already naming the digest is left alone (`changed: false`). Answers 201 for a new tag, 200 otherwise, with the image document.
+
+**Who:** organization owners, admins and members · **Service accounts:** yes · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `tag` | path | string | yes | Tag name to create or move. |
+| `digest` | body | string | yes | Digest of an image in this repository. |
+
+Response `200`:
+
+~~~json
+{
+  "tag": "latest",
+  "previousDigest": "sha256:a1b2…",
+  "changed": true,
+  "digest": "sha256:5f2b…",
+  "tags": [
+    "1.4.0",
+    "latest"
+  ],
+  "isIndex": false,
+  "signed": true,
+  "blocked": null
+}
+~~~
+
+~~~sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"digest":"…"}' \
+  "https://registry.example.com/api/v1/repos/acme/api/tags/1.4.0"
+~~~
+
+### <a id="post-repos-org-repo-tags-tag-copy"></a>`POST /api/v1/repos/{org}/{repo}/tags/{tag}/copy`
+
+Copy (promote) a tagged image to another repository — Copies the image — every platform variant, its layers (mounted, not re-uploaded, when both repositories share storage) and, unless `includeArtifacts` is false, its signatures, SBOMs and provenance — into another repository, creating it when missing. Needs push rights on both sides; proxy caches, immutable destination tags and quotas are respected.
+
+**Who:** organization owners, admins and members · **Service accounts:** yes · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `tag` | path | string | yes | Source tag. |
+| `organization` | body | string |  | Destination organization slug; default: the source organization. |
+| `repository` | body | string | yes | Destination repository name (created when missing). |
+| `tag` | body | string |  | Destination tag; default: the source tag. |
+| `includeArtifacts` | body | boolean |  | Copy attached signatures, SBOMs and provenance too. Default true. |
+
+Response `201`:
+
+~~~json
+{
+  "from": "acme/api:1.4.0",
+  "to": "acme/api-prod:1.4.0",
+  "digest": "sha256:5f2b…",
+  "destination": {
+    "organization": "acme",
+    "repository": "api-prod",
+    "tag": "1.4.0",
+    "created": true
+  },
+  "blobsMounted": 9,
+  "blobsUploaded": 0,
+  "manifestsPushed": 4,
+  "artifactsCopied": 1
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"organization":"…","repository":"…","tag":"…","includeArtifacts":true}' \
+  "https://registry.example.com/api/v1/repos/acme/api/tags/1.4.0/copy"
+~~~
+
 ### <a id="delete-repos-org-repo-tags-tag"></a>`DELETE /api/v1/repos/{org}/{repo}/tags/{tag}`
 
 Delete a tag — Removes the tag through the registry. When `latest` pointed at the deleted image it moves to the newest remaining tag (or goes with the last image) unless `keep_latest=true`. Protected tags are refused.
@@ -979,9 +1062,123 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/repos/acme/api/manifests/sha256:5f2b…"
 ~~~
 
+### <a id="post-repos-org-repo-manifests-digest-copy"></a>`POST /api/v1/repos/{org}/{repo}/manifests/{digest}/copy`
+
+Copy an image by digest to another repository — The same as copying a tag, for an image addressed by digest; `tag` is required.
+
+**Who:** organization owners, admins and members · **Service accounts:** yes · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `digest` | path | string | yes | Manifest digest, `sha256:<64 hex>`. |
+| `organization` | body | string |  | Destination organization slug; default: the source organization. |
+| `repository` | body | string | yes | Destination repository name (created when missing). |
+| `tag` | body | string | yes | Destination tag. |
+| `includeArtifacts` | body | boolean |  | Copy attached signatures, SBOMs and provenance too. Default true. |
+
+Response `201`:
+
+~~~json
+{
+  "from": "acme/api@sha256:5f2b…",
+  "to": "acme/api-prod:1.4.0",
+  "digest": "sha256:5f2b…",
+  "destination": {
+    "organization": "acme",
+    "repository": "api-prod",
+    "tag": "1.4.0",
+    "created": false
+  },
+  "blobsMounted": 9,
+  "blobsUploaded": 0,
+  "manifestsPushed": 4,
+  "artifactsCopied": 1
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"organization":"…","repository":"…","tag":"…","includeArtifacts":true}' \
+  "https://registry.example.com/api/v1/repos/acme/api/manifests/sha256:5f2b…/copy"
+~~~
+
+### <a id="get-repos-org-repo-manifests-digest-scan"></a>`GET /api/v1/repos/{org}/{repo}/manifests/{digest}/scan`
+
+Scan gate — The image's current scan judged against a severity threshold — what a pipeline calls before shipping. `wait` blocks until a running scan finishes (at most 300 s); `fail_on` sets the threshold, accepted risks do not count, `unrated` adds findings without a rating. `passed` is true or false when the image could be judged, null otherwise (`note` says why). Indexes are not scanned: gate a platform variant.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `digest` | path | string | yes | Manifest digest, `sha256:<64 hex>`. |
+| `wait` | query | integer |  | Seconds to wait for a running scan, 0–300. |
+| `fail_on` | query | critical \| high \| medium \| low |  | Fail on findings at this severity or above; omitted = report only. |
+| `unrated` | query | boolean |  | Count findings without a rating as failures. |
+
+Response `200`:
+
+~~~json
+{
+  "digest": "sha256:5f2b…",
+  "isIndex": false,
+  "scan": {
+    "status": "scanned",
+    "scanner": "trivy",
+    "scannerVersion": "0.74.0",
+    "updatedAt": "2026-09-05T08:43:02.000Z",
+    "summary": {
+      "Critical": 0,
+      "High": 2,
+      "Medium": 7,
+      "Low": 11,
+      "Negligible": 0,
+      "Unknown": 1
+    },
+    "effectiveSummary": {
+      "Critical": 0,
+      "High": 1,
+      "Medium": 7,
+      "Low": 11,
+      "Negligible": 0,
+      "Unknown": 1
+    },
+    "error": null
+  },
+  "summary": {
+    "High": 2,
+    "Medium": 7,
+    "Low": 11,
+    "Unknown": 1
+  },
+  "effectiveSummary": {
+    "High": 1,
+    "Medium": 7,
+    "Low": 11,
+    "Unknown": 1
+  },
+  "threshold": {
+    "failOn": "high",
+    "unrated": false
+  },
+  "passed": false,
+  "violation": "1 high finding; policy blocks high and above",
+  "note": null,
+  "checkedAt": "2026-09-05T09:00:00.000Z"
+}
+~~~
+
+~~~sh
+curl \
+  "https://registry.example.com/api/v1/repos/acme/api/manifests/sha256:5f2b…/scan"
+~~~
+
 ### <a id="post-repos-org-repo-manifests-digest-scan"></a>`POST /api/v1/repos/{org}/{repo}/manifests/{digest}/scan`
 
-Queue a vulnerability scan — Re-scans one image. Indexes, attestations and images already being scanned are refused with the reason in `message`; `queued` says whether a scan started.
+Queue a vulnerability scan — Re-scans one image. Indexes, attestations and images already being scanned are refused with the reason in `message`; `queued` says whether a scan started. With `wait` the call also waits for the result and answers like the scan gate (200 instead of 202).
 
 **Who:** instance administrators · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.1
 
@@ -990,6 +1187,9 @@ Queue a vulnerability scan — Re-scans one image. Indexes, attestations and ima
 | `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
 | `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
 | `digest` | path | string | yes | Manifest digest, `sha256:<64 hex>`. |
+| `wait` | query | integer |  | Seconds to wait for the scan, 0–300; with a value the answer is the scan gate document. |
+| `fail_on` | query | critical \| high \| medium \| low |  | Threshold for the gate when waiting. |
+| `unrated` | query | boolean |  | Count unrated findings as failures when waiting. |
 
 Response `202`:
 
@@ -1293,6 +1493,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-05.3
+
+- Retag: PUT /repos/{org}/{repo}/tags/{tag} points a tag at an image already in the repository.
+- Promote: POST …/tags/{tag}/copy and POST …/manifests/{digest}/copy copy an image (with variants and attached artifacts) into another repository, creating it when missing.
+- Scan gate: GET …/manifests/{digest}/scan waits for a running scan and judges it against a threshold (wait, fail_on, unrated); POST …/scan accepts the same parameters to queue and wait in one call.
+- A composite GitHub Action, .github/actions/scan-gate, fails a job on the gate's verdict.
 
 ### 2026-09-05.2
 

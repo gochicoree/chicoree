@@ -3,7 +3,8 @@
 // image when the deleted tag was the one it pointed at.
 import { and, eq, notInArray } from "drizzle-orm";
 import { db } from "@/db";
-import { organization, repositories, tags as tagsTable } from "@/db/schema";
+import { manifests, organization, repositories, tags as tagsTable } from "@/db/schema";
+import { tagNameProblem } from "./image-move-shared";
 import { env } from "./env";
 import { imagePath } from "./library";
 import { pickNewest } from "./mirror";
@@ -16,6 +17,58 @@ export interface DeleteTagOutcome {
   /** What happened to "latest": it followed another tag, was removed with the last image, or was untouched. */
   latest: "moved" | "removed" | "unchanged";
   latestTarget?: string;
+}
+
+export interface RetagOutcome {
+  tag: string;
+  digest: string;
+  /** What the tag pointed at before, null when it is new. */
+  previousDigest: string | null;
+  /** False when the tag already pointed at the digest (nothing was pushed). */
+  changed: boolean;
+}
+
+/**
+ * Point `tagName` at a manifest that already exists in the repository, by
+ * pushing the stored manifest bytes under the tag (so events, webhooks and
+ * scans follow as for any push). Immutable tags are refused when they would
+ * move; a tag that already names the digest is left alone. Throws with a
+ * user-facing message.
+ */
+export async function retag(repositoryId: string, tagName: string, digest: string, subject: string): Promise<RetagOutcome> {
+  const problem = tagNameProblem(tagName);
+  if (problem) throw new Error(problem);
+  const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
+  if (!repo) throw new Error("Repository not found.");
+  const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
+  if (!org) throw new Error("Organization not found.");
+  const manifest = await db.query.manifests.findFirst({
+    where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, digest)),
+    columns: { payload: true, mediaType: true },
+  });
+  if (!manifest) throw new Error("This image does not exist in the repository.");
+
+  const [existing, rules] = await Promise.all([
+    db.query.tags.findFirst({ where: and(eq(tagsTable.repositoryId, repo.id), eq(tagsTable.name, tagName)) }),
+    effectiveTagRules(repo.organizationId, repo.id),
+  ]);
+  if (existing?.manifestDigest === digest) return { tag: tagName, digest, previousDigest: digest, changed: false };
+  const flags = tagFlags(rules, tagName);
+  if (existing && flags.immutable) {
+    throw new Error(`Tag "${tagName}" is immutable (rule "${flags.immutable.pattern}") and already points at ${existing.manifestDigest.slice(0, 19)}.`);
+  }
+
+  const path = imagePath(org.slug, repo.name);
+  const { token } = await signRegistryToken(subject, [{ type: "repository", name: path, actions: ["pull", "push"] }], 300);
+  const res = await fetch(`${env.registryInternalUrl}/v2/${path}/manifests/${encodeURIComponent(tagName)}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": manifest.mediaType },
+    body: manifest.payload,
+    cache: "no-store",
+  });
+  if (res.status === 403) throw new Error(`The registry refused: ${await registryErrorMessage(res)}`);
+  if (res.status !== 201) throw new Error(`The registry refused the tag (HTTP ${res.status}): ${await registryErrorMessage(res)}`);
+  return { tag: tagName, digest, previousDigest: existing?.manifestDigest ?? null, changed: true };
 }
 
 async function registryDelete(path: string, reference: string, token: string): Promise<Response> {

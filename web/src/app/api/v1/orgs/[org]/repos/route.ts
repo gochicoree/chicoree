@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { organizationSettings, repositories, userSettings } from "@/db/schema";
+import { repositories } from "@/db/schema";
 import { loadOrg, requireOrgWriter } from "@/lib/api/access";
 import { route } from "@/lib/api/handler";
-import { listRepos, repoListItem, type RepoSort } from "@/lib/api/queries";
+import { defaultVisibility, listRepos, repoListItem, type RepoSort } from "@/lib/api/queries";
 import { conflict, enumField, json, paged, pageParams, readJson, stringField, unprocessable } from "@/lib/api/respond";
 import { repoJson } from "@/lib/api/serialize";
 import { recordAudit } from "@/lib/audit";
@@ -32,14 +32,6 @@ export const GET = route<{ org: string }>(async (_req, { caller, params, url }) 
   const { rows, state } = await listRepos(caller, a.org.id, { q, visibility, sort, page, pageSize });
   return json(paged(rows.map((r) => repoJson(r, a.org.slug)), state));
 });
-
-/** Organization setting → the creator's own setting → private (the push path's rule). */
-async function defaultVisibility(organizationId: string, userId: string): Promise<"public" | "private"> {
-  const org = await db.query.organizationSettings.findFirst({ where: eq(organizationSettings.organizationId, organizationId) });
-  if (org?.defaultVisibility) return org.defaultVisibility;
-  const me = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, userId) });
-  return me?.defaultVisibility ?? "private";
-}
 
 export const POST = route<{ org: string }>(async (req, { caller, params }) => {
   const a = await loadOrg(caller, params.org);

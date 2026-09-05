@@ -4,7 +4,7 @@
 // inline. Everything here is scoped by lib/api/access.ts.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { manifestSignatures, member, serviceAccounts, user as userTable, vulnerabilityScans } from "@/db/schema";
+import { manifestSignatures, member, organizationSettings, serviceAccounts, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
 import { getManifestWithScan, indexScanRollups, mapRepoRow, repoListSelect, type RepoListItem } from "@/lib/data";
 import { env } from "@/lib/env";
 import { imagePath, imageReference } from "@/lib/library";
@@ -131,6 +131,17 @@ export async function listRepos(
       return rows.map(mapRepoRow);
     },
   });
+}
+
+/** Organization setting → the creator's own setting → private (the push path's rule). */
+export async function defaultVisibility(organizationId: string, userId: string | null): Promise<"public" | "private"> {
+  const org = await db.query.organizationSettings.findFirst({ where: eq(organizationSettings.organizationId, organizationId) });
+  if (org?.defaultVisibility) return org.defaultVisibility;
+  if (userId) {
+    const me = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, userId) });
+    if (me?.defaultVisibility) return me.defaultVisibility;
+  }
+  return "private";
 }
 
 /** One repository as a listing row (the same projection as the lists). */

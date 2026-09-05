@@ -108,6 +108,8 @@ export interface RepoAccess extends OrgAccess {
     manage: boolean;
     /** Delete tags and images: managers, plus `admin` service accounts. */
     delete: boolean;
+    /** Push: retag, copy images in — owners, admins and members, plus `push` / `admin` service accounts. */
+    write: boolean;
   };
 }
 
@@ -129,15 +131,21 @@ export async function loadRepo(c: ApiCaller, orgSlug: string, repoName: string):
 
   let manage = false;
   let del = false;
+  let write = false;
   if (c.kind === "user") {
     const inScope = c.caller.patScope !== "read" && restrictionAllows(c.caller.restriction, { organizationId: org.id, repositoryId: repo.id });
     manage = inScope && !!role && MANAGER_ROLES.includes(role);
     del = manage;
+    write = inScope && !!role && WRITER_ROLES.includes(role);
   } else if (c.kind === "sa") {
     const listed = !c.caller.repositoryIds || c.caller.repositoryIds.includes(repo.id);
-    del = c.caller.organizationId === org.id && c.caller.permission === "admin" && listed;
+    const own = c.caller.organizationId === org.id && listed;
+    del = own && c.caller.permission === "admin";
+    write = own && c.caller.permission !== "pull";
   }
-  return { org, role, proxy: !!proxy, repo, can: { manage, delete: del } };
+  // Proxy caches are filled by their upstream only.
+  if (proxy) write = false;
+  return { org, role, proxy: !!proxy, repo, can: { manage, delete: del, write } };
 }
 
 /** Why a write is refused, worded for the credential in use. */
@@ -156,6 +164,14 @@ export function requireManage(c: ApiCaller, a: RepoAccess, what = "change this r
 export function requireDelete(c: ApiCaller, a: RepoAccess, what = "delete images here"): void {
   if (!a.can.delete) {
     if (c.kind === "sa") throw forbidden(`This service account cannot ${what}; it needs the admin permission in this organization.`);
+    denial(c, what);
+  }
+}
+
+export function requireWrite(c: ApiCaller, a: RepoAccess, what = "push here"): void {
+  if (a.proxy) throw forbidden(`${a.org.name} is a proxy cache; only its upstream fills it.`);
+  if (!a.can.write) {
+    if (c.kind === "sa") throw forbidden(`This service account cannot ${what}; it needs the push or admin permission in this organization.`);
     denial(c, what);
   }
 }
