@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsNav } from "./settings-nav";
 import { ProfileDetailsForm } from "./profile-forms";
 import { DefaultVisibilityForm } from "@/components/default-visibility-form";
+import { ArtifactVisibilityForm } from "@/components/artifact-visibility-form";
 import { LogoUploadCard } from "@/components/logo-upload";
 import { saveUserAvatar } from "@/app/actions/logos";
 import { db } from "@/db";
@@ -43,6 +44,7 @@ export default async function SettingsPage() {
           removeLabel="Remove avatar"
         />
         <DefaultVisibilityForm scope="user" value={mine?.defaultVisibility ?? null} />
+        <ArtifactVisibilityForm value={mine?.showArtifacts ?? null} instanceDefault={settings.branding.showArtifacts} />
       </div>
     </>
   );

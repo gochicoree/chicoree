@@ -85,6 +85,13 @@
       "when": 1788624547285,
       "tag": "0011_verify_existing_admins",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788625854875,
+      "tag": "0012_user_show_artifacts",
+      "breakpoints": true
     }
   ]
 }

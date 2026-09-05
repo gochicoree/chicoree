@@ -518,7 +518,9 @@ off by default) — with it off, cosign's `sha256-….sig` / `.att` / `.sbom`
 tags stay out of tag lists, attached artifacts and BuildKit attestation
 entries out of the untagged list and an index's variants table, each with a
 one-line note saying how many are hidden; they remain on the Attestations
-tab and reachable by URL. The logo is checked
+tab and reachable by URL. That is only the default: every user overrides
+it for themselves under *Settings → Display* (follow the instance, show,
+or hide); anonymous visitors see the instance default. The logo is checked
 exactly like the pictures of organizations, repositories and people — see
 [Pictures](#pictures).
 
@@ -1106,8 +1108,9 @@ provenance — on by default since Docker 24 / buildx 0.11 — or an SBOM
 it describes; the variant's page links back under *Build attestations*.
 Attestation entries are never scanned (the Re-scan button says so) and go
 with their index. Lists hide them, like signature tags and attached
-artifacts, unless *Administration → Branding → Show signatures, SBOMs and
-attestation entries* is on.
+artifacts, unless the viewer turned them on under *Settings → Display* or
+the instance default (*Administration → Branding → Show signatures, SBOMs
+and attestation entries*) is on.
 
 The tag page's **Delete image** button removes the manifest by digest
 together with *every* tag pointing at it — the confirmation lists those

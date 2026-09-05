@@ -45,7 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { WRITER_ROLES } from "@/lib/org-roles";
 import { scanInProgress } from "@/lib/scanner-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
-import { getBrandingPlain } from "@/lib/branding";
+import { showArtifactsFor } from "@/lib/artifact-visibility";
 
 interface Descriptor {
   mediaType?: string;
@@ -226,8 +226,8 @@ export default async function TagDetailPage({
       configMediaType: payload.config?.mediaType ?? null,
     });
   const attestationItems = isAttestation ? attestationContents(payload) : [];
-  // Instance-wide switch (Administration → Branding): attestation entries stay out of the variants table unless wanted.
-  const showArtifacts = (await getBrandingPlain()).showArtifacts;
+  // Attestation entries stay out of the variants table unless the viewer (Settings → Display) or the instance wants them.
+  const showArtifacts = await showArtifactsFor(session?.user.id ?? null);
   const isAttestationChild = (c: Descriptor) => c.annotations?.["vnd.docker.reference.type"] === "attestation-manifest";
   const hiddenVariants = showArtifacts ? 0 : children.filter(isAttestationChild).length;
   const visibleChildren = showArtifacts ? children : children.filter((c) => !isAttestationChild(c));
@@ -590,7 +590,15 @@ export default async function TagDetailPage({
             {hiddenVariants > 0 && (
               <p className="pt-2 text-xs text-ink-3">
                 {hiddenVariants} attestation {hiddenVariants === 1 ? "entry" : "entries"} (provenance / SBOM, not images) hidden — see the
-                Attestations tab, or show them under Administration → Branding.
+                Attestations tab, or{" "}
+                {session ? (
+                  <Link href="/settings#display" className="underline hover:text-ink">
+                    show them
+                  </Link>
+                ) : (
+                  "sign in to show them"
+                )}
+                .
               </p>
             )}
           </CardBody>

@@ -365,6 +365,8 @@ export const userSettings = pgTable("user_settings", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   defaultVisibility: text("default_visibility", { enum: ["public", "private"] }),
+  /** Show signatures, SBOMs and attestation entries in lists; null = the instance default (Administration → Branding). */
+  showArtifacts: boolean("show_artifacts"),
   /** The dashboard onboarding checklist was closed by the user. */
   onboardingDismissedAt: timestamp("onboarding_dismissed_at", { withTimezone: true }),
   /** The /admin setup checklist was closed by this administrator. */
