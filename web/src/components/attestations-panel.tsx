@@ -232,13 +232,13 @@ export function AttestationsPanel({
                 </div>
                 {s.sbom ? (
                   <div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-display text-3xl font-semibold tabular-nums">{s.sbom.packageCount}</span>
-                      <span className="text-sm text-ink-2">package{s.sbom.packageCount === 1 ? "" : "s"}</span>
+                    <div className="text-sm text-ink-2">
+                      <span className="font-display text-xl font-semibold tabular-nums text-ink">{s.sbom.packageCount}</span>{" "}
+                      package{s.sbom.packageCount === 1 ? "" : "s"}
                     </div>
                     {/* Its own line: an image reference carries a 64-character digest. */}
                     {s.sbom.name && (
-                      <div className="mt-0.5 font-mono text-xs text-ink-3 [overflow-wrap:anywhere]">in {s.sbom.name}</div>
+                      <div className="mt-1 font-mono text-xs text-ink-3 [overflow-wrap:anywhere]">in {s.sbom.name}</div>
                     )}
                   </div>
                 ) : (
@@ -246,7 +246,7 @@ export function AttestationsPanel({
                 )}
                 {s.sbom && s.sbom.components.length > 0 && (
                   <SbomPackages
-                    preview={s.sbom.components}
+                    preview={s.sbom.components.filter((c) => c.name !== s.sbom?.name)}
                     packageCount={s.sbom.packageCount}
                     href={s.downloadHref}
                     label={s.sbom.name ?? ""}
