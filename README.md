@@ -670,6 +670,19 @@ itself — the `org.opencontainers.image.*` labels and annotations of the
 licenses, authors, and links to source, website and documentation. Images
 from Docker Hub, GHCR and most CI pipelines carry these already.
 
+**Dashboard.** `/dashboard` is about you and your organizations, never
+the instance. It shows one card per organization you belong to — your role,
+repositories, pulls in the last 30 days, last push, members and size, with
+shortcuts to *Members*, *New repository* and *Settings* as your role allows;
+the six most recently pushed-to organizations are shown, the rest are one
+click away under *Organizations* — followed by the push and delete feed
+across those organizations, what you pushed yourself in the last 90 days
+(with your account or one of its access tokens), a summary of your access
+tokens (how many, how many expire within a week, last use) and any open
+invitations addressed to your email address. The quick-start commands stay
+until your first push. Instance-wide numbers live under *Administration →
+Overview*.
+
 **Stars and recently viewed.** Every repository page has a **Star** button
 with the total count; star counts also show next to repository names on
 organization pages, Explore and search results. The dashboard lists your
