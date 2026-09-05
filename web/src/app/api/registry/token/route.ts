@@ -20,7 +20,8 @@ import {
 } from "@/lib/access";
 import { clientIp } from "@/lib/audit";
 import { identifyAccessToken, identifyServiceAccount } from "@/lib/credential-auth";
-import { PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
+import { CI_PREFIX, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
+import { identifyCiToken } from "@/lib/ci-auth";
 import { signRegistryToken, type AccessGrant } from "@/lib/registry-jwt";
 import { splitImagePath } from "@/lib/library";
 import { resolveRepositoryRedirect } from "@/lib/redirects";
@@ -112,6 +113,12 @@ async function identify(req: NextRequest): Promise<Caller | Refusal> {
   if (password.startsWith(SA_PREFIX)) {
     const res = await identifyServiceAccount(password, ip);
     return "error" in res ? failed(req, username, "token", res) : res;
+  }
+
+  // Short-lived CI credentials minted from a workflow's OIDC token (lib/ci-auth.ts).
+  if (password.startsWith(CI_PREFIX)) {
+    const res = await identifyCiToken(password);
+    return "error" in res ? failed(req, username, "token", res) : res.caller;
   }
 
   if (password.startsWith(PAT_PREFIX)) {

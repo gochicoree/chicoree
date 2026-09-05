@@ -4,7 +4,7 @@
 // inline. Everything here is scoped by lib/api/access.ts.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { manifestSignatures, member, organizationSettings, serviceAccounts, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
+import { ciIdentitiesTrusted, manifestSignatures, member, organizationSettings, serviceAccounts, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
 import { getManifestWithScan, indexScanRollups, mapRepoRow, repoListSelect, type RepoListItem } from "@/lib/data";
 import { env } from "@/lib/env";
 import { imagePath, imageReference } from "@/lib/library";
@@ -180,6 +180,10 @@ async function pushedByJson(pushedBy: string | null): Promise<{ type: string; id
     if (id === "system") return { type: "system", id: null, label: "system" };
     const u = await db.query.user.findFirst({ where: eq(userTable.id, id), columns: { name: true } });
     return { type: "user", id, label: u?.name ?? "deleted user" };
+  }
+  if (kind === "sa" && id?.startsWith("ci:")) {
+    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, id.slice(3)), columns: { name: true } });
+    return { type: "ci", id, label: identity ? `CI: ${identity.name}` : "deleted CI identity" };
   }
   if (kind === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id), columns: { name: true } });

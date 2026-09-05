@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, GitCompareArrows, Layers } from "lucide-react";
 import { db } from "@/db";
-import { organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
+import { ciIdentitiesTrusted, organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
 import { getManifestWithScan, getRepoByPath, listUserOrgs } from "@/lib/data";
 import { env } from "@/lib/env";
@@ -79,6 +79,12 @@ async function resolveActor(pushedBy: string | null): Promise<PushActor | null> 
     const u = await db.query.user.findFirst({ where: eq(userTable.id, id) });
     const gravatar = (await getInstanceSettings()).branding.gravatar;
     return u ? { label: u.name, logo: logoRef("user", u.id, userLogoVersion(u, gravatar)), isUser: true } : null;
+  }
+  if (kind === "sa" && id === "ci") {
+    // "sa:ci:<identity id>": a workflow that authenticated with its OIDC token.
+    const identityId = pushedBy.slice("sa:ci:".length);
+    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, identityId), columns: { name: true } });
+    return { label: identity ? `${identity.name} (CI)` : "a CI workflow", logo: null, isUser: false };
   }
   if (kind === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });

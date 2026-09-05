@@ -21,10 +21,25 @@ curl -u "me:$TOKEN" https://registry.example.com/api/v1/me
 | --- | --- | --- |
 | Personal access token `chc_pat_…` | *Settings → Access tokens* | Acts as its user. A **read-only** token can only read; a **read & write** token can also change things. A token **limited to an organization** or to a **repository list** sees and changes nothing outside it, and cannot search or create repositories. |
 | Service account `chc_sa_…` | *Organization → Service accounts* | Reads its organization's repositories (or its repository list) plus public ones. With the `admin` permission it can delete tags and images there. It cannot manage repositories, star, or read members and the audit log. |
+| CI credential `chc_ci_…` | `POST /api/v1/auth/exchange` with the workflow's OIDC token | The same rights as a service account with the trusted identity's permission and repository list, for the lifetime of the job (at most an hour). |
 | Browser session | Being signed in | The same rights as in the web app — handy for trying calls in the browser. |
 | None | — | Public repositories, tags, images and scan results. |
 
 Expired tokens, banned accounts and unknown secrets answer `401`; a valid credential without the right answers `403` with the reason. Every use of a token updates its *last used* time and address (*Settings → Access tokens*).
+
+### Keyless CI authentication
+
+A CI job does not need a stored secret. An organization trusts the workflow's identity once (*Organization → Service accounts → CI identities*, or the `/orgs/{org}/ci-identities` endpoints): the issuer of its OIDC tokens and the subject they carry, exact or with `*` wildcards, plus a permission and an optional repository list. The job then exchanges the token it gets from its CI system for a registry credential:
+
+~~~sh
+# GitHub Actions (permissions: id-token: write); the audience is this registry's URL
+OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+  "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://registry.example.com" | jq -r .value)
+curl -sS -H "Content-Type: application/json" -d "{"token": "$OIDC"}" https://registry.example.com/api/v1/auth/exchange
+# → { "token": "chc_ci_…", "expiresAt": "…", "dockerLogin": { "registry": "registry.example.com", "username": "ci", "password": "chc_ci_…" } }
+~~~
+
+The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is `https://registry.example.com` or `registry.example.com`, and matches the subject; GitHub subjects look like `repo:owner/repo:ref:refs/heads/main`, GitLab's like `project_path:group/project:ref_type:branch:ref:main`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The `.github/actions/login` action in the repository does all of this and runs `docker login`.
 
 Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from `API_ENABLED`): every endpoint, the index and the OpenAPI document then answer `403` with code `api_disabled`. docker login and the jobs API are not affected.
 
@@ -73,6 +88,7 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | --- | --- | --- |
 | [`GET /api/v1`](#get-index) | API index | anyone |
 | [`GET /api/v1/openapi.json`](#get-openapi-json) | OpenAPI document | anyone |
+| [`POST /api/v1/auth/exchange`](#post-auth-exchange) | Exchange a CI OIDC token for a registry credential | anyone |
 | [`GET /api/v1/me`](#get-me) | Who am I | any credential |
 
 **Organizations**
@@ -101,6 +117,9 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | [`GET /api/v1/orgs/{org}/invitations`](#get-orgs-org-invitations) | List pending invitations | organization owners and admins |
 | [`POST /api/v1/orgs/{org}/invitations`](#post-orgs-org-invitations) | Invite someone by email | organization owners and admins |
 | [`DELETE /api/v1/orgs/{org}/invitations/{id}`](#delete-orgs-org-invitations-id) | Cancel an invitation | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/ci-identities`](#get-orgs-org-ci-identities) | List trusted CI identities | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/ci-identities`](#post-orgs-org-ci-identities) | Trust a CI identity | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/ci-identities/{id}`](#delete-orgs-org-ci-identities-id) | Stop trusting a CI identity | organization owners and admins |
 | [`GET /api/v1/orgs/{org}/webhooks`](#get-orgs-org-webhooks) | List organization webhooks | organization owners and admins |
 | [`POST /api/v1/orgs/{org}/webhooks`](#post-orgs-org-webhooks) | Create a organization webhook | organization owners and admins |
 | [`GET /api/v1/orgs/{org}/webhooks/{id}`](#get-orgs-org-webhooks-id) | Organization webhook details | organization owners and admins |
@@ -237,6 +256,47 @@ Response `200`:
 ~~~sh
 curl \
   "https://registry.example.com/api/v1/openapi.json"
+~~~
+
+### <a id="post-auth-exchange"></a>`POST /api/v1/auth/exchange`
+
+Exchange a CI OIDC token for a registry credential — Keyless authentication: send the OIDC token your CI system issued (GitHub Actions, GitLab, any issuer an organization trusts) and get a short-lived credential back. The token is verified against the issuer's published keys, its audience must be this registry's URL or host, and its subject must match a trusted CI identity. The credential works as a bearer token here and as the docker login password. Needs no other credentials.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `token` | body | string | yes | The OIDC token (a JWT). |
+| `organization` | body | string |  | Organization slug, required when several organizations trust the same identity. |
+| `ttl` | body | integer |  | Lifetime in seconds, 60–3600 (default 1800). |
+
+Response `200`:
+
+~~~json
+{
+  "token": "chc_ci_eyJhbGciOi…",
+  "expiresAt": "2026-09-05T11:00:00.000Z",
+  "ttlSeconds": 1800,
+  "identity": {
+    "id": "ci_7a…",
+    "name": "github-main",
+    "organization": "acme",
+    "permission": "push",
+    "repositories": null
+  },
+  "subject": "repo:acme/api:ref:refs/heads/main",
+  "dockerLogin": {
+    "registry": "registry.example.com",
+    "username": "ci",
+    "password": "chc_ci_eyJhbGciOi…"
+  }
+}
+~~~
+
+~~~sh
+curl -X POST \
+  -H "Content-Type: application/json" -d '{"token":"…","organization":"…","ttl":1}' \
+  "https://registry.example.com/api/v1/auth/exchange"
 ~~~
 
 ### <a id="get-me"></a>`GET /api/v1/me`
@@ -1047,6 +1107,104 @@ Response `200`:
 ~~~sh
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/orgs/acme/invitations/{id}"
+~~~
+
+### <a id="get-orgs-org-ci-identities"></a>`GET /api/v1/orgs/{org}/ci-identities`
+
+List trusted CI identities — Workflows that may authenticate keylessly through POST /auth/exchange.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "ci_7a…",
+      "name": "github-main",
+      "issuer": "https://token.actions.githubusercontent.com",
+      "subject": "repo:acme/api:ref:refs/heads/main",
+      "permission": "push",
+      "repositories": null,
+      "createdAt": "2026-09-05T10:00:00.000Z",
+      "lastUsedAt": "2026-09-05T10:30:00.000Z",
+      "lastSubject": "repo:acme/api:ref:refs/heads/main"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/ci-identities"
+~~~
+
+### <a id="post-orgs-org-ci-identities"></a>`POST /api/v1/orgs/{org}/ci-identities`
+
+Trust a CI identity.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `name` | body | string | yes | Lowercase letters, digits and single ._- separators. |
+| `issuer` | body | string | yes | The token's issuer URL, e.g. https://token.actions.githubusercontent.com or https://gitlab.com. |
+| `subject` | body | string | yes | The token's sub claim, exact or with * wildcards, e.g. repo:acme/api:ref:refs/heads/main. |
+| `permission` | body | pull \| push \| admin |  | Default push. |
+| `repositories` | body | string[] |  | Limit to these repository names. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "ci_7a…",
+  "name": "github-main",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:acme/api:ref:refs/heads/main",
+  "permission": "push",
+  "repositories": null,
+  "createdAt": "2026-09-05T10:00:00.000Z",
+  "lastUsedAt": "2026-09-05T10:30:00.000Z",
+  "lastSubject": "repo:acme/api:ref:refs/heads/main"
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","issuer":"…","subject":"…","permission":"…","repositories":"…"}' \
+  "https://registry.example.com/api/v1/orgs/acme/ci-identities"
+~~~
+
+### <a id="delete-orgs-org-ci-identities-id"></a>`DELETE /api/v1/orgs/{org}/ci-identities/{id}`
+
+Stop trusting a CI identity — Credentials minted through it stop working at once.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Identity id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": "ci_7a…",
+  "name": "github-main"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/ci-identities/{id}"
 ~~~
 
 ### <a id="get-orgs-org-webhooks"></a>`GET /api/v1/orgs/{org}/webhooks`
@@ -2634,6 +2792,7 @@ This API follows the registry's features: whenever a feature is added, changed o
 - Members and invitations: change roles, remove members, list, create and cancel invitations.
 - Webhooks: list, create, read, update, delete and test, for organizations and repositories.
 - Repository policies: read the effective pull and signature policy, change the overrides.
+- Keyless CI authentication: POST /auth/exchange trades a workflow's OIDC token (GitHub Actions, GitLab, any trusted issuer) for a short-lived chc_ci_ credential that works for the API and docker login; organizations manage the trusted identities under /orgs/{org}/ci-identities and in Organization → Service accounts. A login GitHub Action (.github/actions/login) wraps the exchange.
 
 ### 2026-09-05.2
 

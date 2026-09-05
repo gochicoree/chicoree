@@ -7,7 +7,8 @@
 import type { NextRequest } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { identifyAccessToken, identifyServiceAccount } from "@/lib/credential-auth";
-import { PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
+import { CI_PREFIX, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
+import { identifyCiToken } from "@/lib/ci-auth";
 import { clientIp, type AuditActor } from "@/lib/audit";
 import type { Caller } from "@/lib/access";
 import { ANONYMOUS, viewerFromSession, type Viewer } from "@/lib/viewer";
@@ -56,7 +57,7 @@ export type ApiCaller =
     }
   | {
       kind: "sa";
-      via: "service-account";
+      via: "service-account" | "ci";
       viewer: Viewer;
       caller: Extract<Caller, { kind: "sa" }>;
       sa: ApiServiceAccount;
@@ -137,7 +138,28 @@ export async function authenticate(req: NextRequest): Promise<ApiCaller> {
       };
     }
 
-    throw unauthorized("Unknown credential: personal access tokens (chc_pat_…) and service-account secrets (chc_sa_…) are accepted.");
+    if (secret.startsWith(CI_PREFIX)) {
+      const res = await identifyCiToken(secret);
+      if ("error" in res) throw unauthorized(`CI token refused: ${res.error}.`);
+      return {
+        kind: "sa",
+        via: "ci",
+        viewer: ANONYMOUS,
+        caller: res.caller,
+        sa: {
+          id: res.caller.saId,
+          name: res.identity.name,
+          organizationId: res.identity.organizationId,
+          permission: res.identity.permission,
+          repositoryIds: res.identity.repositoryIds ?? null,
+          expiresAt: res.expiresAt,
+        },
+        subject: `sa:${res.caller.saId}`,
+        auditActor: { type: "sa", id: res.caller.saId, label: `ci:${res.identity.name} (${res.oidcSubject})` },
+      };
+    }
+
+    throw unauthorized("Unknown credential: personal access tokens (chc_pat_…), service-account secrets (chc_sa_…) and CI tokens (chc_ci_…) are accepted.");
   }
 
   const auth = await getAuth();

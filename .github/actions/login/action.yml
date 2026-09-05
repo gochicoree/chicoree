@@ -1,0 +1,61 @@
+name: Chicorée login
+description: Sign a GitHub Actions job in to a Chicorée registry with the job's OIDC token — no stored secret. Needs `permissions: id-token: write`.
+inputs:
+  registry-url:
+    description: Base URL of the web app, e.g. https://registry.example.com
+    required: true
+  organization:
+    description: Organization to sign in to, when the workflow is trusted by more than one.
+    default: ""
+  ttl:
+    description: Lifetime of the credential in seconds (60–3600).
+    default: "1800"
+  docker-login:
+    description: Also run `docker login` against the registry host.
+    default: "true"
+outputs:
+  token:
+    description: The short-lived credential (use it as a bearer token for the API or as the docker login password).
+    value: ${{ steps.exchange.outputs.token }}
+  registry:
+    description: The registry host for docker login.
+    value: ${{ steps.exchange.outputs.registry }}
+  username:
+    description: The docker login user name.
+    value: ${{ steps.exchange.outputs.username }}
+  expires-at:
+    description: When the credential expires (ISO 8601).
+    value: ${{ steps.exchange.outputs.expires }}
+runs:
+  using: composite
+  steps:
+    - id: exchange
+      shell: bash
+      env:
+        REGISTRY_URL: ${{ inputs.registry-url }}
+        ORG: ${{ inputs.organization }}
+        TTL: ${{ inputs.ttl }}
+        DO_LOGIN: ${{ inputs.docker-login }}
+      run: |
+        set -euo pipefail
+        base="${REGISTRY_URL%/}"
+        if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+          echo "::error::No OIDC token available: add 'permissions: id-token: write' to the job."; exit 1
+        fi
+        oidc=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$base" | jq -r '.value')
+        body=$(jq -n --arg t "$oidc" --arg o "$ORG" --argjson ttl "$TTL" '{token: $t, ttl: $ttl} + (if $o != "" then {organization: $o} else {} end)')
+        res=$(curl -sS -H "Content-Type: application/json" -d "$body" "$base/api/v1/auth/exchange")
+        token=$(printf '%s' "$res" | jq -r '.token // empty')
+        if [[ -z "$token" ]]; then echo "$res" | jq . || echo "$res"; echo "::error::$(printf '%s' "$res" | jq -r '.error // "exchange failed"')"; exit 1; fi
+        echo "::add-mask::$token"
+        registry=$(printf '%s' "$res" | jq -r '.dockerLogin.registry')
+        username=$(printf '%s' "$res" | jq -r '.dockerLogin.username')
+        expires=$(printf '%s' "$res" | jq -r '.expiresAt')
+        identity=$(printf '%s' "$res" | jq -r '.identity | "\(.name) (\(.organization), \(.permission))"')
+        echo "signed in as $identity until $expires"
+        {
+          echo "token=$token"; echo "registry=$registry"; echo "username=$username"; echo "expires=$expires"
+        } >> "$GITHUB_OUTPUT"
+        if [[ "$DO_LOGIN" == "true" ]]; then
+          printf '%s' "$token" | docker login "$registry" -u "$username" --password-stdin
+        fi
