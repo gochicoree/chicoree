@@ -56,3 +56,20 @@ export async function setUserDefaultVisibility(
   revalidatePath("/settings");
   return { saved: true };
 }
+
+/**
+ * Whether the user wants signatures, SBOMs and attestation entries listed
+ * next to images: "" follows the instance default, else an explicit yes / no.
+ */
+export async function setUserShowArtifacts(_prev: SettingsResult | null, formData: FormData): Promise<SettingsResult> {
+  const session = await requireSession();
+  const raw = String(formData.get("showArtifacts") ?? "");
+  if (!["", "show", "hide"].includes(raw)) return { error: "Unknown choice." };
+  const showArtifacts = raw === "" ? null : raw === "show";
+  await db
+    .insert(userSettings)
+    .values({ userId: session.user.id, showArtifacts, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: userSettings.userId, set: { showArtifacts, updatedAt: new Date() } });
+  revalidatePath("/", "layout");
+  return { saved: true };
+}

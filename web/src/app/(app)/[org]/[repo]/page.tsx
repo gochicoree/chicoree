@@ -20,7 +20,7 @@ import { imageReference } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
 import { countUntaggedArtifacts, describeIndexChild, describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
-import { getBrandingPlain } from "@/lib/branding";
+import { showArtifactsFor } from "@/lib/artifact-visibility";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
 import { after } from "next/server";
@@ -54,9 +54,10 @@ export default async function RepoPage({
   if (found.repo.visibility === "private" && !role) notFound();
   const session = await getSession();
 
-  // Instance-wide switch (Administration → Branding): signature tags, attached
-  // artifacts and BuildKit attestation entries stay out of the lists unless wanted.
-  const hideArtifacts = !(await getBrandingPlain()).showArtifacts;
+  // Signature tags, attached artifacts and BuildKit attestation entries stay
+  // out of the lists unless the viewer (Settings → Display) or, failing a
+  // choice there, the instance (Administration → Branding) wants them.
+  const hideArtifacts = !(await showArtifactsFor(session?.user.id ?? null));
   const [tags, overview, series, proxy, egress, traffic, rules, untagged, star, about, storage, hiddenTags, hiddenUntagged] = await Promise.all([
     listRepoTags(found.repo.id, { page: pageParam(query, "tags"), pageSize: PAGE_SIZES.tags, hideArtifacts }),
     repoTagOverview(found.repo.id),
@@ -78,17 +79,17 @@ export default async function RepoPage({
       <p className="border-t border-line px-4 py-2 text-xs text-ink-3 sm:px-5">
         {n} {what}
         {n === 1 ? " is" : " are"} hidden
-        {session?.user.role === "admin" ? (
+        {session ? (
           <>
             {" "}
             (
-            <Link href="/admin/branding" className="underline hover:text-ink">
+            <Link href="/settings#display" className="underline hover:text-ink">
               show them
             </Link>
             )
           </>
         ) : (
-          " (an administrator can show them under Administration → Branding)"
+          " (sign in to change this)"
         )}
         .
       </p>
