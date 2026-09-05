@@ -48,17 +48,21 @@ const orgStorageUsedSQL = `
 		JOIN repositories r ON r.id = rb.repository_id
 		WHERE r.organization_id = $1) t`
 
-// ownerStorageUsedSQL sums usage across every organization the user owns.
+// ownerStorageUsedSQL sums usage across the organizations the user owns
+// that have no storage limit of their own: an organization with its own
+// limit is governed by that limit alone (see web/src/lib/quota.ts).
 const ownerStorageUsedSQL = `
 	SELECT COALESCE(sum(size), 0)::bigint FROM (
 		SELECT DISTINCT r.organization_id, b.digest, b.size FROM blobs b
 		JOIN repository_blobs rb ON rb.blob_digest = b.digest
 		JOIN repositories r ON r.id = rb.repository_id
 		JOIN member m ON m.organization_id = r.organization_id
-		WHERE m.user_id = $1 AND m.role = 'owner') t`
+		LEFT JOIN organization_limits ol ON ol.organization_id = r.organization_id
+		WHERE m.user_id = $1 AND m.role = 'owner' AND ol.max_storage_bytes IS NULL) t`
 
 // CheckStorageQuota fails with a *QuotaError when adding `additional` bytes
-// to the organization would exceed the org's limit or any owner's limit.
+// to the organization would exceed the org's own limit or, when it has
+// none, any owner's account limit.
 func (s *Store) CheckStorageQuota(ctx context.Context, orgID string, additional int64) error {
 	var limit *int64
 	err := s.pool.QueryRow(ctx, `SELECT max_storage_bytes FROM organization_limits WHERE organization_id = $1`, orgID).Scan(&limit)
@@ -73,6 +77,8 @@ func (s *Store) CheckStorageQuota(ctx context.Context, orgID string, additional 
 		if used+additional > *limit {
 			return &QuotaError{Scope: "organization", Kind: "storage", Used: used, Limit: *limit}
 		}
+		// The organization's own limit governs it; the owners' accounts are not consulted.
+		return nil
 	}
 
 	rows, err := s.pool.Query(ctx, `
@@ -134,6 +140,8 @@ func (s *Store) CheckRepositoryQuota(ctx context.Context, orgID, visibility stri
 		if used >= *limit {
 			return &QuotaError{Scope: "organization", Kind: kind, Used: used, Limit: *limit}
 		}
+		// The organization's own limit governs it; the owners' accounts are not consulted.
+		return nil
 	}
 
 	rows, err := s.pool.Query(ctx, `
@@ -161,10 +169,12 @@ func (s *Store) CheckRepositoryQuota(ctx context.Context, orgID, visibility stri
 	}
 	for _, o := range owners {
 		var used int64
+		// Organizations with their own limit of this kind are outside the owner's pool.
 		if err := s.pool.QueryRow(ctx, `
 			SELECT count(*) FROM repositories r
 			JOIN member m ON m.organization_id = r.organization_id
-			WHERE m.user_id = $1 AND m.role = 'owner' AND r.visibility = $2`, o.id, visibility).Scan(&used); err != nil {
+			LEFT JOIN organization_limits ol ON ol.organization_id = r.organization_id
+			WHERE m.user_id = $1 AND m.role = 'owner' AND r.visibility = $2 AND ol.`+column+` IS NULL`, o.id, visibility).Scan(&used); err != nil {
 			return err
 		}
 		if used >= o.limit {

@@ -35,7 +35,7 @@ export function PlanCard({
       <CardHeader
         eyebrow="Plan"
         title={label || (scope === "user" ? "Your usage" : "Usage")}
-        description={scope === "user" ? "Across the organizations you own." : "Owner account limits apply on top."}
+        description={scope === "user" ? "Across the organizations you own that have no limits of their own." : "Limits set for this organization; where it has none, the owners' account limits apply."}
         action={portal.url ? <PortalButton url={portal.url} label={portal.label} organization={organization} /> : undefined}
       />
       <CardBody>

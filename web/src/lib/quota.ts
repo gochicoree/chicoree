@@ -1,10 +1,16 @@
 // Admin-enforced limits: how many repositories (public / private), how much
-// storage and how many members an organization — or a user, across every
-// organization they own — may consume. null means unlimited. registryd
-// enforces the repository and storage rules at push time (see
-// registryd/internal/store/quota.go); this module is the web-side twin used
-// by server actions, the REST API and the admin screens. The member limit is
-// enforced here only (registryd never adds members).
+// storage and how many members an organization — or a user, across the
+// organizations they own — may consume. null means unlimited.
+//
+// An organization's own limit governs it alone: when the organization has a
+// row with that kind of limit set, the owners' account limits are not
+// consulted for it, and its usage does not count against their accounts.
+// Account limits cover the owner's organizations *without* a limit of that
+// kind (their shared pool). registryd enforces the repository and storage
+// rules at push time with the same reading (registryd/internal/store/quota.go);
+// this module is the web-side twin used by server actions, the REST API and
+// the admin screens. The member limit is enforced here only (registryd never
+// adds members).
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { organizationLimits, userLimits } from "@/db/schema";
@@ -57,22 +63,29 @@ export async function getOrgUsage(orgId: string): Promise<Usage> {
   };
 }
 
-/** Everything in organizations where the user is an owner. */
+/**
+ * What counts against the user's account limits: the organizations they own
+ * that have no limit of their own for that kind (an organization with its own
+ * storage limit is left out of the storage sum, and so on). `organizations`
+ * and `members` count every owned organization.
+ */
 export async function getUserUsage(userId: string): Promise<Usage> {
   const { rows } = await db.execute(sql`
     WITH owned AS (
-      SELECT organization_id FROM member WHERE user_id = ${userId} AND role = 'owner'
+      SELECT m.organization_id, ol.max_public_repos, ol.max_private_repos, ol.max_storage_bytes
+      FROM member m LEFT JOIN organization_limits ol ON ol.organization_id = m.organization_id
+      WHERE m.user_id = ${userId} AND m.role = 'owner'
     )
     SELECT
       (SELECT count(*)::int FROM owned) AS organizations,
-      (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned) AND visibility = 'public') AS public_repos,
-      (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned) AND visibility = 'private') AS private_repos,
+      (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned WHERE max_public_repos IS NULL) AND visibility = 'public') AS public_repos,
+      (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned WHERE max_private_repos IS NULL) AND visibility = 'private') AS private_repos,
       (SELECT count(*)::int FROM member WHERE organization_id IN (SELECT organization_id FROM owned)) AS members,
       COALESCE((SELECT sum(size)::bigint FROM (
         SELECT DISTINCT r.organization_id, b.digest, b.size FROM blobs b
         JOIN repository_blobs rb ON rb.blob_digest = b.digest
         JOIN repositories r ON r.id = rb.repository_id
-        WHERE r.organization_id IN (SELECT organization_id FROM owned)) t), 0) AS storage_bytes`);
+        WHERE r.organization_id IN (SELECT organization_id FROM owned WHERE max_storage_bytes IS NULL)) t), 0) AS storage_bytes`);
   const r = rows[0];
   return {
     organizations: Number(r.organizations),
@@ -128,8 +141,10 @@ export async function checkRepoQuota(
   const usageKey = visibility === "public" ? "publicRepos" : "privateRepos";
 
   const [orgLimit, orgUsage] = await Promise.all([getOrgLimits(orgId), getOrgUsage(orgId)]);
-  if (orgLimit[key] !== null && orgUsage[usageKey] + pending >= orgLimit[key]) {
-    return `${orgLabel} has reached its limit of ${orgLimit[key]} ${visibility} repositories.`;
+  if (orgLimit[key] !== null) {
+    // The organization's own limit governs it; the owners' accounts are not consulted.
+    if (orgUsage[usageKey] + pending >= orgLimit[key]) return `${orgLabel} has reached its limit of ${orgLimit[key]} ${visibility} repositories.`;
+    return null;
   }
   for (const ownerId of await orgOwnerIds(orgId)) {
     const [limit, usage] = await Promise.all([getUserLimits(ownerId), getUserUsage(ownerId)]);
@@ -143,8 +158,9 @@ export async function checkRepoQuota(
 /** Would adding `additionalBytes` to the org exceed any storage limit? */
 export async function checkStorageQuota(orgId: string, additionalBytes: number): Promise<string | null> {
   const [orgLimit, orgUsage] = await Promise.all([getOrgLimits(orgId), getOrgUsage(orgId)]);
-  if (orgLimit.maxStorageBytes !== null && orgUsage.storageBytes + additionalBytes > orgLimit.maxStorageBytes) {
-    return `Storage limit reached: ${formatBytes(orgUsage.storageBytes)} of ${formatBytes(orgLimit.maxStorageBytes)} used.`;
+  if (orgLimit.maxStorageBytes !== null) {
+    if (orgUsage.storageBytes + additionalBytes > orgLimit.maxStorageBytes) return `Storage limit reached: ${formatBytes(orgUsage.storageBytes)} of ${formatBytes(orgLimit.maxStorageBytes)} used.`;
+    return null;
   }
   for (const ownerId of await orgOwnerIds(orgId)) {
     const [limit, usage] = await Promise.all([getUserLimits(ownerId), getUserUsage(ownerId)]);
