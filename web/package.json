@@ -41,6 +41,7 @@
     "sanitize-html": "^2.17.7"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.0.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^24.10.1",
     "@types/nodemailer": "^7.0.4",
