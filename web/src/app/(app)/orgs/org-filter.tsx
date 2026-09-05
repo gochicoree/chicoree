@@ -22,7 +22,7 @@ export function OrgFilter({ initial }: { initial: string }) {
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Filter organizations…"
+          placeholder="Search your organizations…"
           aria-label="Filter organizations"
           className="pl-8"
         />

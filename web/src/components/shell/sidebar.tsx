@@ -98,7 +98,9 @@ export function Sidebar({
 
         <div>
           <div className="eyebrow mb-1.5 flex items-center justify-between px-2.5">
-            <span>Organizations</span>
+            <Link href="/orgs" className="transition-colors hover:text-ink">
+              Organizations
+            </Link>
             {canCreateOrgs && (
               <Link
                 href="/orgs/new"

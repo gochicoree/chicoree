@@ -33,6 +33,8 @@ export const PAGE_SIZES = {
   users: 50,
   /** Instance organizations. */
   organizations: 50,
+  /** The organizations one user belongs to (/orgs). */
+  userOrganizations: 24,
   /** Tags of a repository. */
   tags: 50,
   /** Untagged manifests of a repository. */
