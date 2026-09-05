@@ -20,6 +20,15 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-05.3",
+    changes: [
+      "Retag: PUT /repos/{org}/{repo}/tags/{tag} points a tag at an image already in the repository.",
+      "Promote: POST …/tags/{tag}/copy and POST …/manifests/{digest}/copy copy an image (with variants and attached artifacts) into another repository, creating it when missing.",
+      "Scan gate: GET …/manifests/{digest}/scan waits for a running scan and judges it against a threshold (wait, fail_on, unrated); POST …/scan accepts the same parameters to queue and wait in one call.",
+      "A composite GitHub Action, .github/actions/scan-gate, fails a job on the gate's verdict.",
+    ],
+  },
+  {
     revision: "2026-09-05.2",
     changes: [
       "Administrators can switch the API off (Administration → Auth providers → Access, default from API_ENABLED); every endpoint then answers 403 with the new error code api_disabled.",

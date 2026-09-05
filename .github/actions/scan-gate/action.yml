@@ -1,0 +1,100 @@
+name: Chicorée scan gate
+description: Fail the job when an image in a Chicorée registry has vulnerabilities at or above a severity, using the registry's REST API.
+inputs:
+  registry-url:
+    description: Base URL of the web app, e.g. https://registry.example.com
+    required: true
+  token:
+    description: A personal access token (chc_pat_…), service-account secret (chc_sa_…) or CI token (chc_ci_…) that can read the repository.
+    required: true
+  image:
+    description: The image as org/repo:tag or org/repo@sha256:… (top-level images live in the library organization).
+    required: true
+  fail-on:
+    description: Fail on findings at this severity or above (critical, high, medium, low). Accepted risks do not count.
+    default: high
+  unrated:
+    description: Also fail on findings without a severity rating.
+    default: "false"
+  wait:
+    description: Seconds to wait for a running scan (at most 300).
+    default: "240"
+  scan:
+    description: Queue a fresh scan first (the token must belong to an instance administrator).
+    default: "false"
+outputs:
+  passed:
+    description: "true" when the image passes the threshold.
+    value: ${{ steps.gate.outputs.passed }}
+  digest:
+    description: The digest that was judged.
+    value: ${{ steps.gate.outputs.digest }}
+  summary:
+    description: Severity counts after accepted risks, as JSON.
+    value: ${{ steps.gate.outputs.summary }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        REGISTRY_URL: ${{ inputs.registry-url }}
+        TOKEN: ${{ inputs.token }}
+        IMAGE: ${{ inputs.image }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        UNRATED: ${{ inputs.unrated }}
+        WAIT: ${{ inputs.wait }}
+        SCAN: ${{ inputs.scan }}
+      run: |
+        set -euo pipefail
+        base="${REGISTRY_URL%/}/api/v1"
+        auth=(-H "Authorization: Bearer $TOKEN" -H "Accept: application/json")
+
+        # org/repo[:tag|@digest] → path pieces
+        ref="$IMAGE"
+        if [[ "$ref" == *@sha256:* ]]; then digest="${ref##*@}"; path="${ref%@*}"; tag="";
+        elif [[ "$ref" == *:* ]]; then tag="${ref##*:}"; path="${ref%:*}"; digest="";
+        else tag="latest"; path="$ref"; digest=""; fi
+        if [[ "$path" == */* ]]; then org="${path%%/*}"; repo="${path#*/}"; else org="library"; repo="$path"; fi
+        repo_enc=$(printf '%s' "$repo" | sed 's|/|%2F|g')
+
+        if [[ -z "$digest" ]]; then
+          echo "::group::Resolve $org/$repo:$tag"
+          res=$(curl -sS "${auth[@]}" "$base/repos/$org/$repo_enc/tags/$tag")
+          digest=$(printf '%s' "$res" | jq -r '.digest // empty')
+          if [[ -z "$digest" ]]; then echo "$res" | jq . || echo "$res"; echo "::endgroup::"; echo "::error::Could not resolve $IMAGE"; exit 1; fi
+          # An index is not scanned itself: judge its first platform variant.
+          variant=$(printf '%s' "$res" | jq -r '[.variants[]? | select(.attestation == false and .digest != null)][0].digest // empty')
+          if [[ -n "$variant" ]]; then echo "index $digest → variant $variant"; digest="$variant"; fi
+          echo "::endgroup::"
+        fi
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+        if [[ "$SCAN" == "true" ]]; then
+          curl -sS -X POST "${auth[@]}" "$base/repos/$org/$repo_enc/manifests/$digest/scan" | jq -c . || true
+        fi
+
+        gate=$(curl -sS "${auth[@]}" "$base/repos/$org/$repo_enc/manifests/$digest/scan?wait=$WAIT&fail_on=$FAIL_ON&unrated=$UNRATED")
+        echo "$gate" | jq .
+        passed=$(printf '%s' "$gate" | jq -r '.passed')
+        summary=$(printf '%s' "$gate" | jq -c '.effectiveSummary // {}')
+        note=$(printf '%s' "$gate" | jq -r '.note // empty')
+        violation=$(printf '%s' "$gate" | jq -r '.violation // empty')
+        err=$(printf '%s' "$gate" | jq -r '.error // empty')
+        echo "passed=$passed" >> "$GITHUB_OUTPUT"
+        echo "summary=$summary" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "### Chicorée scan gate: \`$IMAGE\`"
+          echo
+          echo "- digest: \`$digest\`"
+          echo "- threshold: $FAIL_ON and above${UNRATED:+ (unrated: $UNRATED)}"
+          echo "- findings after accepted risks: \`$summary\`"
+          [[ -n "$violation" ]] && echo "- **$violation**"
+          [[ -n "$note" ]] && echo "- $note"
+          [[ -n "$err" ]] && echo "- error: $err"
+          if [[ "$passed" == "true" ]]; then echo; echo "✅ passed"; else echo; echo "❌ not passed"; fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [[ -n "$err" ]]; then echo "::error::$err"; exit 1; fi
+        if [[ "$passed" != "true" ]]; then echo "::error::${violation:-$note}"; exit 1; fi
