@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import type { PageState } from "@/lib/paginate-shared";
 import { API_REVISION, API_VERSION } from "./version";
 
-export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "unprocessable" | "api_disabled" | "internal";
+export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "unprocessable" | "api_disabled" | "rate_limited" | "internal";
 
 const STATUS: Record<ApiErrorCode, number> = {
   bad_request: 400,
@@ -16,6 +16,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   conflict: 409,
   unprocessable: 422,
   api_disabled: 403,
+  rate_limited: 429,
   internal: 500,
 };
 
@@ -59,7 +60,9 @@ export function json(body: unknown, init: { status?: number; headers?: Record<st
 }
 
 export function errorResponse(err: ApiError): NextResponse {
-  const headers = err.code === "unauthorized" ? { "WWW-Authenticate": 'Bearer realm="chicoree-api"' } : undefined;
+  const headers: Record<string, string> = {};
+  if (err.code === "unauthorized") headers["WWW-Authenticate"] = 'Bearer realm="chicoree-api"';
+  if (err.code === "rate_limited" && typeof err.details?.retryAfter === "number") headers["Retry-After"] = String(err.details.retryAfter);
   return json({ error: err.message, code: err.code, ...(err.details ? { details: err.details } : {}) }, { status: err.status, headers });
 }
 

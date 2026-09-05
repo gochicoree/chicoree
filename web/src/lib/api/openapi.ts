@@ -75,6 +75,7 @@ function operation(e: ApiEndpoint) {
   const params = e.params ?? [];
   const body = params.filter((p) => p.in === "body");
   const description = [
+    e.deprecated ? `**Deprecated since ${e.deprecated.since}${e.deprecated.sunset ? `, sunset ${e.deprecated.sunset}` : ""}.** ${e.deprecated.replacement ? `Use ${e.deprecated.replacement}. ` : ""}${e.deprecated.note ?? ""}` : null,
     e.description,
     `**Who:** ${ACCESS_LABELS[e.access]}.`,
     e.write ? "Needs a read & write token." : null,
@@ -117,6 +118,7 @@ function operation(e: ApiEndpoint) {
       : {}),
     responses,
     security: e.access === "public" ? [{}, { bearerAuth: [] }, { basicAuth: [] }] : [{ bearerAuth: [] }, { basicAuth: [] }],
+    ...(e.deprecated ? { deprecated: true } : {}),
     "x-access": e.access,
     "x-write": !!e.write,
     "x-service-accounts": !!e.serviceAccounts,
@@ -152,7 +154,7 @@ export function openApiDocument(o: { appUrl: string; instanceName?: string }) {
           required: ["error", "code"],
           properties: {
             error: { type: "string", description: "Human-readable message." },
-            code: { type: "string", enum: ["bad_request", "unauthorized", "forbidden", "not_found", "conflict", "unprocessable", "api_disabled", "internal"] },
+            code: { type: "string", enum: ["bad_request", "unauthorized", "forbidden", "not_found", "conflict", "unprocessable", "api_disabled", "rate_limited", "internal"] },
             details: { type: "object", description: "Optional extra context (the offending field, queued: false, …)." },
           },
         },

@@ -55,6 +55,20 @@ export interface ApiEndpoint {
   example?: unknown;
   /** Revision the endpoint appeared in (lib/api/version.ts). */
   since: string;
+  /**
+   * Announced removal. Responses carry Deprecation (and Sunset) headers, the
+   * docs show a warning, and the endpoint stays for at least one revision
+   * after `since` before it may go (see CLAUDE.md).
+   */
+  deprecated?: {
+    /** Revision the deprecation was announced in. */
+    since: string;
+    /** Date after which the endpoint may disappear (YYYY-MM-DD), when decided. */
+    sunset?: string;
+    /** What to use instead, as a path or a sentence. */
+    replacement?: string;
+    note?: string;
+  };
 }
 
 export type ApiGroup = "General" | "Organizations" | "Repositories" | "Tags" | "Images" | "Security" | "Search" | "Account";

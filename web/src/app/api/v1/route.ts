@@ -27,6 +27,7 @@ export const GET = route(async () => {
       write: !!e.write,
       serviceAccounts: !!e.serviceAccounts,
       since: e.since,
+      ...(e.deprecated ? { deprecated: e.deprecated } : {}),
     })),
   });
 });

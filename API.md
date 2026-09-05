@@ -54,6 +54,8 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.3`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
+- **Rate limits.** Requests are counted per credential (per address without one) in fixed windows set by the administrators (*Administration → Rate limits*, defaults `RATE_LIMIT_API_AUTHENTICATED=1200/1m` and `RATE_LIMIT_API_ANONYMOUS=120/1m`; instance administrators are exempt). Every answer carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (epoch seconds); over the limit the API answers `429 rate_limited` with `Retry-After`.
+- **Deprecations.** An endpoint that is going away is announced first: its responses carry a `Deprecation` header (and `Sunset` once a date is set) with a `Link` to this documentation, the reference marks it, and it stays for at least one more revision. Watch the changelog for `Removed:` lines.
 
 ## Errors
 
@@ -69,6 +71,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 | `not_found` | 404 | The organization, repository, tag or image does not exist — or is not visible to the caller. |
 | `conflict` | 409 | The registry's state refuses the change: a name is taken, a tag is protected, an index member cannot go alone, a scan is already running. |
 | `unprocessable` | 422 | The body is well-formed but a value is not acceptable (name rules, quotas, missing fields). |
+| `rate_limited` | 429 | Too many requests in the current window; `Retry-After` says when to try again. |
 | `api_disabled` | 403 | An administrator switched the API off (*Administration → Auth providers → Access*, or `API_ENABLED=false`); every endpoint answers this until it is on again. |
 | `internal` | 500 | Something failed on the server; the details are in the web app's log. |
 
@@ -2792,6 +2795,9 @@ This API follows the registry's features: whenever a feature is added, changed o
 - Members and invitations: change roles, remove members, list, create and cancel invitations.
 - Webhooks: list, create, read, update, delete and test, for organizations and repositories.
 - Repository policies: read the effective pull and signature policy, change the overrides.
+- Rate limits: requests are counted per credential (per address anonymously) in windows set under Administration → Rate limits (RATE_LIMIT_API_AUTHENTICATED, RATE_LIMIT_API_ANONYMOUS); over the limit the API answers 429 with the new code rate_limited and Retry-After, and every answer carries X-RateLimit-Limit / -Remaining / -Reset.
+- Metrics: chicoree_api_requests_total{endpoint,method,status,credential} on the Prometheus endpoint.
+- Deprecation policy: endpoints that are going away carry Deprecation, Sunset and Link headers and are marked in the docs for at least one revision before removal.
 - Keyless CI authentication: POST /auth/exchange trades a workflow's OIDC token (GitHub Actions, GitLab, any trusted issuer) for a short-lived chc_ci_ credential that works for the API and docker login; organizations manage the trusted identities under /orgs/{org}/ci-identities and in Organization → Service accounts. A login GitHub Action (.github/actions/login) wraps the exchange.
 
 ### 2026-09-05.2

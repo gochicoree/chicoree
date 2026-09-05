@@ -7,6 +7,7 @@ import { env } from "./env";
 import { getInstanceSettings } from "./instance-settings";
 import { registryHealth } from "./registry-client";
 import { getScanner } from "./scanners";
+import { flushApiStats } from "./api/stats";
 
 type Labels = Record<string, string>;
 type Sample = [Labels, number];
@@ -52,7 +53,7 @@ async function scannerUp(): Promise<{ backend: string; up: number }> {
 /** Render the whole exposition; a few aggregate queries plus two health probes. */
 export async function renderMetrics(): Promise<string> {
   const started = performance.now();
-  const [totals, byRepo, events, scans, findings, automation, health, clair, trafficByRepo, trafficTotals] = await Promise.all([
+  const [totals, byRepo, events, scans, findings, automation, health, clair, trafficByRepo, trafficTotals, apiRequests] = await Promise.all([
     db.execute(sql`
       SELECT
         (SELECT count(*) FROM "user" WHERE role = 'admin')::int AS admins,
@@ -114,6 +115,7 @@ export async function renderMetrics(): Promise<string> {
         COALESCE(sum(push_bytes), 0)::bigint AS ingress,
         COALESCE(sum(redirect_bytes), 0)::bigint AS redirect
       FROM repository_traffic`),
+    flushApiStats().then(() => db.execute(sql`SELECT endpoint, method, status, credential, count::bigint AS n FROM api_request_stats ORDER BY endpoint, method, status, credential`)),
   ]);
 
   const t = totals.rows[0];
@@ -146,6 +148,8 @@ export async function renderMetrics(): Promise<string> {
     byRepo.rows.map((r) => [{ organization: String(r.org), repository: String(r.name) }, num(r.bytes)] as Sample));
   x.add("chicoree_repository_tags", "gauge", "Tags per repository.",
     byRepo.rows.map((r) => [{ organization: String(r.org), repository: String(r.name) }, num(r.tags)] as Sample));
+  x.add("chicoree_api_requests_total", "counter", "REST API requests by endpoint (catalog path), method, status and credential kind (token, service-account, ci, session, none).",
+    apiRequests.rows.map((r) => [{ endpoint: String(r.endpoint), method: String(r.method), status: String(r.status), credential: String(r.credential) }, num(r.n)] as Sample));
   x.add("chicoree_vulnerability_scans_total", "gauge", "Scan records by status.",
     ["pending", "indexing", "scanned", "failed"].map((s) => [{ status: s }, num(scans.rows.find((r) => r.status === s)?.n)] as Sample));
   const f = findings.rows[0];

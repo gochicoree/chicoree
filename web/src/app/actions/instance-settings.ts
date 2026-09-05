@@ -203,10 +203,18 @@ export async function saveRateLimitSettings(_prev: SettingsResult | null, fd: Fo
   if (auth.error) return { error: `Authenticated limit: ${auth.error}` };
   const proxies = parseTrustedProxies(trustedProxies);
   if (proxies.error) return { error: `Trusted proxies: ${proxies.error}` };
+  const apiAnonymous = str(fd, "apiAnonymous");
+  const apiAuthenticated = str(fd, "apiAuthenticated");
+  const apiAnon = parseRateLimit(apiAnonymous);
+  if (apiAnon.error) return { error: `API anonymous limit: ${apiAnon.error}` };
+  const apiAuth = parseRateLimit(apiAuthenticated);
+  if (apiAuth.error) return { error: `API authenticated limit: ${apiAuth.error}` };
   await saveSettingsSection("ratelimit", {
     anonymous: anon.limit ? anonymous.replace(/\s+/g, "") : "",
     authenticated: auth.limit ? authenticated.replace(/\s+/g, "") : "",
     trustedProxies: proxies.entries.join(", "),
+    apiAnonymous: apiAnon.limit ? apiAnonymous.replace(/\s+/g, "") : "",
+    apiAuthenticated: apiAuth.limit ? apiAuthenticated.replace(/\s+/g, "") : "",
   });
   const result = await done("ratelimit");
   result.message = "Rate limits saved; the registry applies them within 30 seconds";

@@ -109,6 +109,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Upload staging | `STORAGE_STAGING=local\|shared` and `UPLOAD_SESSION_TTL` (default `24h`) on `registryd` — see [Running several registryd replicas](#running-several-registryd-replicas) |
 | Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE` as defaults — see [Branding](#branding) |
 | Pull rate limits | *Administration → Rate limits*; `RATE_LIMIT_ANONYMOUS`, `RATE_LIMIT_AUTHENTICATED`, `RATE_LIMIT_TRUSTED_PROXIES` as defaults, read by the web app and `registryd` — see [Rate limits](#rate-limits) |
+| REST API rate limits | *Administration → Rate limits*; `RATE_LIMIT_API_ANONYMOUS` (default `120/1m`), `RATE_LIMIT_API_AUTHENTICATED` (default `1200/1m`) as defaults — see [REST API](#rest-api) |
 | Audit log | `AUDIT_RETENTION_DAYS` (default `365`) — see [Audit log](#audit-log) |
 | Keyless signatures | `SIGSTORE_TRUSTED_ROOT` (path to a `trusted_root.json`; default: the bundled public Sigstore root) — see [Keyless signatures](#keyless-signatures-sigstore) |
 | Registry internals | `INTERNAL_API_URL` (where `registryd` reads proxy-cache configuration; defaults to `WEBHOOK_URL` minus its last path segment), `REGISTRY_LOG_FORMAT=text\|json`; `docker build --build-arg VERSION=…` stamps the version shown on the [Health](#health) page |
@@ -1814,6 +1815,22 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
   Swagger UI, Postman, Insomnia or client generators.
 - **Index**: `GET /api/v1` needs no credentials and returns the version,
   the current revision, the changelog and the endpoint list.
+- **Keyless CI**: a workflow exchanges the OIDC token its CI system issues
+  for a short-lived credential (`POST /api/v1/auth/exchange`) once the
+  organization trusts its identity (*Organization → Service accounts → CI
+  identities*); `.github/actions/login` does it for GitHub Actions and
+  `.github/actions/scan-gate` fails a job on the scan verdict — see
+  [API.md](API.md#keyless-ci-authentication).
+- **Rate limits**: requests are counted per credential (per address without
+  one) in windows set under *Administration → Rate limits*; over the limit
+  the API answers `429 rate_limited` with `Retry-After`, and every answer
+  carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+  `X-RateLimit-Reset`. Instance administrators are exempt.
+  `chicoree_api_requests_total` on the metrics endpoint counts requests by
+  endpoint, method, status and credential kind.
+- **Deprecations**: an endpoint that is going away carries `Deprecation`,
+  `Sunset` and `Link` headers and stays for at least one revision after the
+  changelog announces it.
 - **Switching it off**: *Administration → Auth providers → Access → REST
   API* (default from `API_ENABLED`). While off, every endpoint, the index
   and the OpenAPI document answer `403` with code `api_disabled`, the API

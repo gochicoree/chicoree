@@ -41,12 +41,13 @@ const UNIT_WORDS: [number, string][] = [
 ];
 
 /** Human sentence for a limit: "100 pulls per 6 hours"; "unlimited" for none. */
-export function describeRateLimit(limit: RateLimit | null): string {
+export function describeRateLimit(limit: RateLimit | null, noun = "pulls"): string {
   if (!limit) return "unlimited";
   const [size, word] = UNIT_WORDS.find(([s]) => limit.windowSeconds % s === 0) ?? [1, "second"];
   const n = limit.windowSeconds / size;
   const unit = n === 1 ? word : `${word}s`;
-  return `${limit.count} ${limit.count === 1 ? "pull" : "pulls"} per ${n === 1 ? "" : `${n} `}${unit}`;
+  const singular = noun.replace(/s$/, "");
+  return `${limit.count} ${limit.count === 1 ? singular : noun} per ${n === 1 ? "" : `${n} `}${unit}`;
 }
 
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
