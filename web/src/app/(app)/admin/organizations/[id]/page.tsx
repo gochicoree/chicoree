@@ -27,10 +27,11 @@ export default async function AdminOrganizationOverview({ params }: { params: Pr
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <UsageMeter label="Public repositories" used={usage.publicRepos} limit={limits.maxPublicRepos} />
         <UsageMeter label="Private repositories" used={usage.privateRepos} limit={limits.maxPrivateRepos} />
         <UsageMeter label="Storage" used={usage.storageBytes} limit={limits.maxStorageBytes} bytes />
+        <UsageMeter label="Members" used={usage.members} limit={limits.maxMembers} />
       </div>
       <LogoUploadCard
         action={adminSaveOrganizationLogo}
@@ -98,7 +99,7 @@ export default async function AdminOrganizationOverview({ params }: { params: Pr
           </CardBody>
         </Card>
       )}
-      <LimitsForm scope="organization" targetId={org.id} limits={limits} note={limitsRow?.note ?? ""} />
+      <LimitsForm scope="organization" targetId={org.id} limits={limits} label={limitsRow?.label ?? ""} note={limitsRow?.note ?? ""} />
     </div>
   );
 }

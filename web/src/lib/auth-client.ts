@@ -3,6 +3,7 @@ import {
   adminClient,
   emailOTPClient,
   magicLinkClient,
+  oneTimeTokenClient,
   organizationClient,
   twoFactorClient,
 } from "better-auth/client/plugins";
@@ -21,6 +22,7 @@ export const authClient = createAuthClient({
     emailOTPClient(),
     passkeyClient(),
     adminClient(),
+    oneTimeTokenClient(),
   ],
 });
 

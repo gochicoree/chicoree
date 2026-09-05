@@ -12,6 +12,22 @@ function required(name: string, devDefault?: string): string {
   throw new Error(`Missing required environment variable ${name}`);
 }
 
+/** A non-negative whole number from the environment; unset or invalid → null (unlimited). */
+function optionalCount(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+/** GiB from the environment as bytes; unset or invalid → null (unlimited). */
+function optionalGiB(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 1024 * 1024 * 1024) : null;
+}
+
 export const env = {
   get appUrl() {
     return process.env.APP_URL ?? "http://localhost:3000";
@@ -303,5 +319,39 @@ export const env = {
   },
   get rateLimitApiAuthenticated() {
     return process.env.RATE_LIMIT_API_AUTHENTICATED ?? "1200/1m";
+  },
+
+  // Default limits for new accounts and organizations (Administration → Limits
+  // overrides them). Empty = unlimited; storage in GiB.
+  get defaultUserMaxOrganizations() {
+    return optionalCount("DEFAULT_USER_MAX_ORGANIZATIONS");
+  },
+  get defaultUserMaxPublicRepos() {
+    return optionalCount("DEFAULT_USER_MAX_PUBLIC_REPOS");
+  },
+  get defaultUserMaxPrivateRepos() {
+    return optionalCount("DEFAULT_USER_MAX_PRIVATE_REPOS");
+  },
+  get defaultUserMaxStorageBytes() {
+    return optionalGiB("DEFAULT_USER_MAX_STORAGE_GIB");
+  },
+  get defaultOrgMaxPublicRepos() {
+    return optionalCount("DEFAULT_ORG_MAX_PUBLIC_REPOS");
+  },
+  get defaultOrgMaxPrivateRepos() {
+    return optionalCount("DEFAULT_ORG_MAX_PRIVATE_REPOS");
+  },
+  get defaultOrgMaxStorageBytes() {
+    return optionalGiB("DEFAULT_ORG_MAX_STORAGE_GIB");
+  },
+  get defaultOrgMaxMembers() {
+    return optionalCount("DEFAULT_ORG_MAX_MEMBERS");
+  },
+  /** External account portal (Administration → Limits overrides it); empty = no Manage button. */
+  get portalUrl() {
+    return process.env.PORTAL_URL ?? "";
+  },
+  get portalLabel() {
+    return process.env.PORTAL_LABEL ?? "";
   },
 };
