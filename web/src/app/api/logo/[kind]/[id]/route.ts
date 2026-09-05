@@ -50,8 +50,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ kind
     }
     dataUrl = repo.logo;
   } else {
-    // Organization and user pictures are readable by any signed-in user.
-    if (!(await getSession())) return notFound();
+    // An organization's picture is public: it appears next to public
+    // repositories. A user's avatar needs a session.
+    if (kind === "user" && !(await getSession())) return notFound();
     if (kind === "organization") {
       const org = await db.query.organization.findFirst({ where: eq(organization.id, id) });
       dataUrl = org?.logo ?? null;
@@ -62,6 +63,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ kind
   }
 
   if (!dataUrl) return notFound();
+  // A provider avatar (GitHub, Google) arrives as an https URL rather than
+  // stored bytes; send the browser there instead of failing to decode it.
+  if (/^https?:\/\//i.test(dataUrl)) {
+    return NextResponse.redirect(dataUrl, {
+      status: 307,
+      headers: { "cache-control": `${shared ? "public" : "private"}, max-age=300` },
+    });
+  }
   const picture = decodeLogo(dataUrl);
   if (!picture) return notFound();
 
