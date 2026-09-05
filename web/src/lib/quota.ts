@@ -1,8 +1,10 @@
-// Admin-enforced limits: how many repositories (public / private) and how
-// much storage an organization — or a user, across every organization they
-// own — may consume. null means unlimited. registryd enforces the same rules
-// at push time (see registryd/internal/store/quota.go); this module is the
-// web-side twin used by server actions and the admin screens.
+// Admin-enforced limits: how many repositories (public / private), how much
+// storage and how many members an organization — or a user, across every
+// organization they own — may consume. null means unlimited. registryd
+// enforces the repository and storage rules at push time (see
+// registryd/internal/store/quota.go); this module is the web-side twin used
+// by server actions, the REST API and the admin screens. The member limit is
+// enforced here only (registryd never adds members).
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { organizationLimits, userLimits } from "@/db/schema";
@@ -13,6 +15,8 @@ export interface Usage {
   publicRepos: number;
   privateRepos: number;
   storageBytes: number;
+  /** Members of the organization; for a user, members across the organizations they own. */
+  members: number;
 }
 
 export interface Limits {
@@ -20,6 +24,8 @@ export interface Limits {
   maxPublicRepos: number | null;
   maxPrivateRepos: number | null;
   maxStorageBytes: number | null;
+  /** Organizations only (null for users). */
+  maxMembers: number | null;
 }
 
 export const UNLIMITED: Limits = {
@@ -27,6 +33,7 @@ export const UNLIMITED: Limits = {
   maxPublicRepos: null,
   maxPrivateRepos: null,
   maxStorageBytes: null,
+  maxMembers: null,
 };
 
 export async function getOrgUsage(orgId: string): Promise<Usage> {
@@ -34,6 +41,7 @@ export async function getOrgUsage(orgId: string): Promise<Usage> {
     SELECT
       (SELECT count(*)::int FROM repositories WHERE organization_id = ${orgId} AND visibility = 'public') AS public_repos,
       (SELECT count(*)::int FROM repositories WHERE organization_id = ${orgId} AND visibility = 'private') AS private_repos,
+      (SELECT count(*)::int FROM member WHERE organization_id = ${orgId}) AS members,
       COALESCE((SELECT sum(size)::bigint FROM (
         SELECT DISTINCT b.digest, b.size FROM blobs b
         JOIN repository_blobs rb ON rb.blob_digest = b.digest
@@ -45,6 +53,7 @@ export async function getOrgUsage(orgId: string): Promise<Usage> {
     publicRepos: Number(r.public_repos),
     privateRepos: Number(r.private_repos),
     storageBytes: Number(r.storage_bytes),
+    members: Number(r.members),
   };
 }
 
@@ -58,6 +67,7 @@ export async function getUserUsage(userId: string): Promise<Usage> {
       (SELECT count(*)::int FROM owned) AS organizations,
       (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned) AND visibility = 'public') AS public_repos,
       (SELECT count(*)::int FROM repositories WHERE organization_id IN (SELECT organization_id FROM owned) AND visibility = 'private') AS private_repos,
+      (SELECT count(*)::int FROM member WHERE organization_id IN (SELECT organization_id FROM owned)) AS members,
       COALESCE((SELECT sum(size)::bigint FROM (
         SELECT DISTINCT r.organization_id, b.digest, b.size FROM blobs b
         JOIN repository_blobs rb ON rb.blob_digest = b.digest
@@ -69,6 +79,7 @@ export async function getUserUsage(userId: string): Promise<Usage> {
     publicRepos: Number(r.public_repos),
     privateRepos: Number(r.private_repos),
     storageBytes: Number(r.storage_bytes),
+    members: Number(r.members),
   };
 }
 
@@ -76,12 +87,12 @@ export async function getOrgLimits(orgId: string): Promise<Limits> {
   const row = await db.query.organizationLimits.findFirst({
     where: eq(organizationLimits.organizationId, orgId),
   });
-  return row ? { maxOrganizations: null, ...pick(row) } : UNLIMITED;
+  return row ? { maxOrganizations: null, ...pick(row), maxMembers: row.maxMembers } : UNLIMITED;
 }
 
 export async function getUserLimits(userId: string): Promise<Limits> {
   const row = await db.query.userLimits.findFirst({ where: eq(userLimits.userId, userId) });
-  return row ? { maxOrganizations: row.maxOrganizations, ...pick(row) } : UNLIMITED;
+  return row ? { maxOrganizations: row.maxOrganizations, ...pick(row), maxMembers: null } : UNLIMITED;
 }
 
 function pick(row: {
@@ -151,6 +162,31 @@ export async function checkOrgCreationQuota(userId: string): Promise<string | nu
     return `You have reached your limit of ${limit.maxOrganizations} organizations.`;
   }
   return null;
+}
+
+/**
+ * May one more member join the organization? An open invitation holds a
+ * seat: with `includePending` (inviting) the check counts members plus
+ * pending, unexpired invitations; without it (accepting an invitation,
+ * adding a member directly) only the members already there count.
+ */
+export async function checkMemberQuota(
+  orgId: string,
+  opts: { includePending?: boolean; orgLabel?: string } = {},
+): Promise<string | null> {
+  const limits = await getOrgLimits(orgId);
+  if (limits.maxMembers === null) return null;
+  const { rows } = await db.execute(sql`
+    SELECT
+      (SELECT count(*)::int FROM member WHERE organization_id = ${orgId}) AS members,
+      (SELECT count(*)::int FROM invitation WHERE organization_id = ${orgId} AND status = 'pending' AND expires_at > now()) AS pending`);
+  const members = Number(rows[0].members);
+  const pending = opts.includePending ? Number(rows[0].pending) : 0;
+  if (members + pending < limits.maxMembers) return null;
+  const label = opts.orgLabel ?? "This organization";
+  return pending > 0
+    ? `${label} has reached its limit of ${limits.maxMembers} members; open invitations count until they are accepted or cancelled.`
+    : `${label} has reached its limit of ${limits.maxMembers} members.`;
 }
 
 /** Parse a limits form: empty string → unlimited (null). */

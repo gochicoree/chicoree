@@ -12,6 +12,7 @@ import { recordAudit } from "@/lib/audit";
 import { getBranding } from "@/lib/branding";
 import { sendInvitationMail } from "@/lib/invitation-mail";
 import { ORG_ROLE_NAMES } from "@/lib/org-roles";
+import { checkMemberQuota } from "@/lib/quota";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,8 @@ export const POST = route<{ org: string }>(async (req, { caller, params }) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw unprocessable('"email" must be an email address.', { field: "email" });
   const role = enumField(body, "role", ORG_ROLE_NAMES) ?? "member";
   if (role === "owner" && a.role !== "owner" && !c.caller.isAdmin) throw forbidden("Only organization owners can invite owners.");
+  const full = await checkMemberQuota(a.org.id, { includePending: true, orgLabel: a.org.name });
+  if (full) throw forbidden(full);
 
   const existingUser = await db.query.user.findFirst({ where: eq(userTable.email, email), columns: { id: true } });
   if (existingUser) {

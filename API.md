@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-05.3` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-05.4` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.3`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.4`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -189,6 +189,22 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | Endpoint | What it does | Who |
 | --- | --- | --- |
 | [`GET /api/v1/me/starred`](#get-me-starred) | Repositories I starred | a signed-in user or personal access token |
+| [`GET /api/v1/me/usage`](#get-me-usage) | My usage against my limits | a signed-in user or personal access token |
+
+**Administration**
+
+| Endpoint | What it does | Who |
+| --- | --- | --- |
+| [`GET /api/v1/users`](#get-users) | List users | instance administrators |
+| [`GET /api/v1/users/{userId}`](#get-users-userId) | User details | instance administrators |
+| [`GET /api/v1/users/{userId}/organizations`](#get-users-userId-organizations) | A user's organizations | instance administrators |
+| [`GET /api/v1/users/{userId}/usage`](#get-users-userId-usage) | A user's usage against their limits | instance administrators |
+| [`GET /api/v1/users/{userId}/limits`](#get-users-userId-limits) | Account limits | instance administrators |
+| [`PATCH /api/v1/users/{userId}/limits`](#patch-users-userId-limits) | Change account limits | instance administrators |
+| [`DELETE /api/v1/users/{userId}/limits`](#delete-users-userId-limits) | Remove account limits | instance administrators |
+| [`GET /api/v1/orgs/{org}/limits`](#get-orgs-org-limits) | Organization limits | instance administrators |
+| [`PATCH /api/v1/orgs/{org}/limits`](#patch-orgs-org-limits) | Change organization limits | instance administrators |
+| [`DELETE /api/v1/orgs/{org}/limits`](#delete-orgs-org-limits) | Remove organization limits | instance administrators |
 
 ## General
 
@@ -697,13 +713,14 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ### <a id="get-orgs-org-usage"></a>`GET /api/v1/orgs/{org}/usage`
 
-Usage against limits.
+Usage against limits — Repositories, storage and members against the organization's limits (null = unlimited), the label administrators gave the limits (a plan name, say) and the month's traffic: `pullBytes` served by the registry itself, `redirectBytes` handed to the storage backend or CDN, `pushBytes` received.
 
 **Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
 
 | Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `month` | query | string |  | Calendar month of the traffic figures, `YYYY-MM` in UTC (default: the current month). |
 
 Response `200`:
 
@@ -713,17 +730,31 @@ Response `200`:
   "usage": {
     "publicRepositories": 2,
     "privateRepositories": 10,
-    "storageBytes": 12884901888
+    "storageBytes": 12884901888,
+    "members": 4
   },
   "limits": {
     "maxPublicRepositories": null,
     "maxPrivateRepositories": 20,
-    "maxStorageBytes": 53687091200
+    "maxStorageBytes": 53687091200,
+    "maxMembers": 5
   },
   "percent": {
     "publicRepositories": null,
     "privateRepositories": 50,
-    "storage": 24
+    "storage": 24,
+    "members": 80
+  },
+  "label": "Team",
+  "traffic": {
+    "month": "2026-09",
+    "from": "2026-09-01",
+    "to": "2026-10-01",
+    "pullBytes": 734003200,
+    "redirectBytes": 4194304000,
+    "pushBytes": 268435456,
+    "blobPulls": 812,
+    "manifestPulls": 1290
   }
 }
 ~~~
@@ -2783,9 +2814,439 @@ curl -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/me/starred"
 ~~~
 
+### <a id="get-me-usage"></a>`GET /api/v1/me/usage`
+
+My usage against my limits — Everything the caller owns, summed across the organizations where they are an owner, against their account limits; with the month's traffic and the label administrators gave the account (a plan name, say).
+
+**Who:** a signed-in user or personal access token · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `month` | query | string |  | Calendar month of the traffic figures, `YYYY-MM` in UTC (default: the current month). |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "usage": {
+    "organizations": 2,
+    "publicRepositories": 3,
+    "privateRepositories": 12,
+    "storageBytes": 21474836480,
+    "members": 6
+  },
+  "limits": {
+    "maxOrganizations": null,
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": null,
+    "maxStorageBytes": 107374182400
+  },
+  "percent": {
+    "organizations": null,
+    "publicRepositories": null,
+    "privateRepositories": null,
+    "storage": 20
+  },
+  "label": "Pro",
+  "traffic": {
+    "month": "2026-09",
+    "from": "2026-09-01",
+    "to": "2026-10-01",
+    "pullBytes": 734003200,
+    "redirectBytes": 4194304000,
+    "pushBytes": 268435456,
+    "blobPulls": 812,
+    "manifestPulls": 1290
+  }
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/me/usage"
+~~~
+
+## Administration
+
+
+
+### <a id="get-users"></a>`GET /api/v1/users`
+
+List users — Accounts on this instance. `email` finds one address exactly (case-insensitive); `q` searches names and addresses. Read-only tokens may read.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Paginated** · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `email` | query | string |  | Exact email address. |
+| `q` | query | string |  | Substring of the name or email. |
+| `page` | query | integer |  | Page number, from 1. |
+| `per_page` | query | integer |  | Rows per page, 1–100 (default 50). |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "user",
+      "emailVerified": true,
+      "twoFactorEnabled": false,
+      "banned": false,
+      "createdAt": "2026-08-30T08:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "perPage": 50,
+  "total": 1,
+  "pages": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users"
+~~~
+
+### <a id="get-users-userId"></a>`GET /api/v1/users/{userId}`
+
+User details — The account with how many organizations it owns and belongs to, and the label of its limits.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+
+Response `200`:
+
+~~~json
+{
+  "id": "u_7f…",
+  "name": "Jo Doe",
+  "email": "jo@example.com",
+  "role": "user",
+  "emailVerified": true,
+  "twoFactorEnabled": false,
+  "banned": false,
+  "createdAt": "2026-08-30T08:00:00.000Z",
+  "organizations": {
+    "owned": 1,
+    "memberships": 3
+  },
+  "accessTokens": 2,
+  "label": "Pro"
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users/{userId}"
+~~~
+
+### <a id="get-users-userId-organizations"></a>`GET /api/v1/users/{userId}/organizations`
+
+A user's organizations — Every organization the account belongs to, with its role there and the organization's size and limits label.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "items": [
+    {
+      "id": "9a1c…",
+      "slug": "acme",
+      "name": "Acme",
+      "role": "owner",
+      "memberCount": 4,
+      "repositoryCount": 12,
+      "storageBytes": 12884901888,
+      "label": "Team"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users/{userId}/organizations"
+~~~
+
+### <a id="get-users-userId-usage"></a>`GET /api/v1/users/{userId}/usage`
+
+A user's usage against their limits — Like `GET /me/usage`, for any account.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+| `month` | query | string |  | Calendar month of the traffic figures, `YYYY-MM` in UTC (default: the current month). |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "usage": {
+    "organizations": 2,
+    "publicRepositories": 3,
+    "privateRepositories": 12,
+    "storageBytes": 21474836480,
+    "members": 6
+  },
+  "limits": {
+    "maxOrganizations": null,
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": null,
+    "maxStorageBytes": 107374182400
+  },
+  "percent": {
+    "organizations": null,
+    "publicRepositories": null,
+    "privateRepositories": null,
+    "storage": 20
+  },
+  "label": "Pro",
+  "traffic": {
+    "month": "2026-09",
+    "from": "2026-09-01",
+    "to": "2026-10-01",
+    "pullBytes": 734003200,
+    "redirectBytes": 4194304000,
+    "pushBytes": 268435456,
+    "blobPulls": 812,
+    "manifestPulls": 1290
+  }
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users/{userId}/usage"
+~~~
+
+### <a id="get-users-userId-limits"></a>`GET /api/v1/users/{userId}/limits`
+
+Account limits — The account's limits row: caps on everything the user owns, summed across their organizations. `configured` is false when there is no row (unlimited).
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "configured": true,
+  "limits": {
+    "maxOrganizations": null,
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": null,
+    "maxStorageBytes": 107374182400
+  },
+  "label": "Pro",
+  "note": "",
+  "updatedAt": "2026-09-05T09:00:00.000Z",
+  "updatedBy": "u_admin…"
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users/{userId}/limits"
+~~~
+
+### <a id="patch-users-userId-limits"></a>`PATCH /api/v1/users/{userId}/limits`
+
+Change account limits — Send only the fields to change; null lifts a limit. Creates the row when there is none. The same rules registryd enforces at push time apply from the next request.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+| `maxOrganizations` | body | integer \| null |  | Organizations the user may own; null lifts the limit. |
+| `maxPublicRepositories` | body | integer \| null |  | null lifts the limit. |
+| `maxPrivateRepositories` | body | integer \| null |  | null lifts the limit. |
+| `maxStorageBytes` | body | integer \| null |  | Deduplicated bytes; null lifts the limit. |
+| `label` | body | string |  | Shown to the owner next to their usage (a plan name, say); at most 80 characters, empty hides it. |
+| `note` | body | string |  | For administrators only. |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "configured": true,
+  "limits": {
+    "maxOrganizations": null,
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": null,
+    "maxStorageBytes": 107374182400
+  },
+  "label": "Pro",
+  "note": "",
+  "updatedAt": "2026-09-05T09:00:00.000Z",
+  "updatedBy": "u_admin…"
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"maxOrganizations":"…","maxPublicRepositories":"…","maxPrivateRepositories":"…","maxStorageBytes":"…","label":"…","note":"…"}' \
+  "https://registry.example.com/api/v1/users/{userId}/limits"
+~~~
+
+### <a id="delete-users-userId-limits"></a>`DELETE /api/v1/users/{userId}/limits`
+
+Remove account limits — Drops the row: the account is unlimited again. `removed` is false when there was none.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `userId` | path | string | yes | The user's id (from `GET /users` or `GET /me`). |
+
+Response `200`:
+
+~~~json
+{
+  "user": "u_7f…",
+  "removed": true
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/users/{userId}/limits"
+~~~
+
+### <a id="get-orgs-org-limits"></a>`GET /api/v1/orgs/{org}/limits`
+
+Organization limits — The organization's limits row. Owner-level account limits apply on top; `configured` is false when there is no row.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "organization": "acme",
+  "configured": true,
+  "limits": {
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": 20,
+    "maxStorageBytes": 53687091200,
+    "maxMembers": 5
+  },
+  "label": "Team",
+  "note": "5 seats since 2026-09",
+  "updatedAt": "2026-09-05T09:00:00.000Z",
+  "updatedBy": "u_admin…"
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/limits"
+~~~
+
+### <a id="patch-orgs-org-limits"></a>`PATCH /api/v1/orgs/{org}/limits`
+
+Change organization limits — Send only the fields to change; null lifts a limit. Creates the row when there is none. `maxMembers` counts every role; an open invitation holds a seat until it is accepted or cancelled.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `maxPublicRepositories` | body | integer \| null |  | null lifts the limit. |
+| `maxPrivateRepositories` | body | integer \| null |  | null lifts the limit. |
+| `maxStorageBytes` | body | integer \| null |  | Deduplicated bytes; null lifts the limit. |
+| `label` | body | string |  | Shown to the owner next to their usage (a plan name, say); at most 80 characters, empty hides it. |
+| `note` | body | string |  | For administrators only. |
+| `maxMembers` | body | integer \| null |  | At least 1; null lifts the limit. |
+
+Response `200`:
+
+~~~json
+{
+  "organization": "acme",
+  "configured": true,
+  "limits": {
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": 20,
+    "maxStorageBytes": 53687091200,
+    "maxMembers": 5
+  },
+  "label": "Team",
+  "note": "5 seats since 2026-09",
+  "updatedAt": "2026-09-05T09:00:00.000Z",
+  "updatedBy": "u_admin…"
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"maxPublicRepositories":"…","maxPrivateRepositories":"…","maxStorageBytes":"…","label":"…","note":"…","maxMembers":"…"}' \
+  "https://registry.example.com/api/v1/orgs/acme/limits"
+~~~
+
+### <a id="delete-orgs-org-limits"></a>`DELETE /api/v1/orgs/{org}/limits`
+
+Remove organization limits — Drops the row; only the owners' account limits remain. `removed` is false when there was none.
+
+**Who:** instance administrators · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.4
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "organization": "acme",
+  "removed": true
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/limits"
+~~~
+
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-05.4
+
+- Member limit: organizations can be capped at a number of members (Administration → Organizations → Limits, maxMembers); an open invitation holds a seat. Enforced when inviting, accepting an invitation, adding a member and on group-binding logins. GET /orgs/{org}/usage reports members and maxMembers.
+- Usage: GET /orgs/{org}/usage and the new GET /me/usage carry the month's traffic (pullBytes, redirectBytes, pushBytes, blobPulls, manifestPulls; ?month=YYYY-MM) and the label administrators gave the limits.
+- Administration: GET /users (exact email or search), GET /users/{userId}, GET /users/{userId}/organizations, GET /users/{userId}/usage; GET/PATCH/DELETE /orgs/{org}/limits and /users/{userId}/limits read, change and drop limits rows, including a label shown to the owner and an administrators-only note.
+- Default limits: Administration → Limits gives every new account and organization a limits row (DEFAULT_USER_MAX_ORGANIZATIONS, DEFAULT_USER_MAX_PUBLIC_REPOS, DEFAULT_USER_MAX_PRIVATE_REPOS, DEFAULT_USER_MAX_STORAGE_GIB, DEFAULT_ORG_MAX_PUBLIC_REPOS, DEFAULT_ORG_MAX_PRIVATE_REPOS, DEFAULT_ORG_MAX_STORAGE_GIB, DEFAULT_ORG_MAX_MEMBERS as defaults).
+- Account portal: Administration → Limits (PORTAL_URL, PORTAL_LABEL as defaults) adds a Manage button to the account and organization settings that opens the portal with a one-time token; the portal verifies it with POST /api/auth/one-time-token/verify.
 
 ### 2026-09-05.3
 

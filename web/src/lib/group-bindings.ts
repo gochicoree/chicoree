@@ -25,6 +25,8 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { member, organization, user as userTable } from "@/db/schema";
+import { recordAudit, SYSTEM_ACTOR } from "./audit";
+import { checkMemberQuota } from "./quota";
 import { getInstanceSettings } from "./instance-settings";
 import { ORG_ROLE_NAMES, type OrgRole } from "./org-roles";
 import { ensureLibraryOrg } from "./library";
@@ -153,6 +155,14 @@ export async function syncGroupBindings(source: GroupSource, userId: string, gro
     });
     if (role) {
       if (!existing) {
+        // A full organization (Administration → Organizations → Limits)
+        // takes no new members from a group binding either; the login goes
+        // on, the audit log says why the membership is missing.
+        const full = await checkMemberQuota(org.id, { orgLabel: org.name });
+        if (full) {
+          await recordAudit({ action: "org.member.limit", actor: SYSTEM_ACTOR, organizationId: org.id, targetType: "user", targetId: userId, details: { organization: org.slug, role, source, reason: full } });
+          continue;
+        }
         await db.insert(member).values({
           id: randomUUID(),
           organizationId: org.id,

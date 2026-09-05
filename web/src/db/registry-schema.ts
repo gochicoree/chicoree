@@ -289,6 +289,9 @@ export const userLimits = pgTable("user_limits", {
   maxPublicRepos: integer("max_public_repos"),
   maxPrivateRepos: integer("max_private_repos"),
   maxStorageBytes: bigint("max_storage_bytes", { mode: "number" }),
+  /** Shown to the account owner next to their usage (a plan name, say); empty = nothing shown. */
+  label: text("label").notNull().default(""),
+  /** Operator note, visible to administrators only. */
   note: text("note").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by"),
@@ -301,6 +304,15 @@ export const organizationLimits = pgTable("organization_limits", {
   maxPublicRepos: integer("max_public_repos"),
   maxPrivateRepos: integer("max_private_repos"),
   maxStorageBytes: bigint("max_storage_bytes", { mode: "number" }),
+  /**
+   * How many members (any role) the organization may have; pending
+   * invitations count while they are open. Enforced by the web app only
+   * (registryd never adds members). null = unlimited.
+   */
+  maxMembers: integer("max_members"),
+  /** Shown to owners and admins next to the organization's usage; empty = nothing shown. */
+  label: text("label").notNull().default(""),
+  /** Operator note, visible to administrators only. */
   note: text("note").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by"),
