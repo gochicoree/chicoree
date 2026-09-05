@@ -54,10 +54,15 @@ const untaggedSelect = sql`
 const untaggedWhere = (repoId: string) => sql`m.repository_id = ${repoId}
       AND NOT EXISTS (SELECT 1 FROM tags t WHERE t.repository_id = m.repository_id AND t.manifest_digest = m.digest)`;
 
-/** Attached artifacts (referrers) and BuildKit attestation entries — what the list hides unless the instance shows artifacts. */
+/**
+ * What the untagged list hides unless the viewer shows artifacts: attached
+ * artifacts (referrers) and every member of an index that still exists —
+ * platform variants and BuildKit attestation entries alike. None of them
+ * can be deleted on its own, and the index page lists them, so hiding them
+ * leaves only manifests that are really loose.
+ */
 const untaggedArtifactWhere = sql`(m.subject_digest IS NOT NULL
-      OR (coalesce(m.config->>'os', '') = 'unknown'
-          AND EXISTS (SELECT 1 FROM manifest_refs mr WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest)))`;
+      OR EXISTS (SELECT 1 FROM manifest_refs mr WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest))`;
 
 /** How many untagged artifacts the list leaves out when hiding them. */
 export async function countUntaggedArtifacts(repoId: string): Promise<number> {

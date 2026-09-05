@@ -33,11 +33,13 @@ export interface BrandingSettings {
    */
   gravatar: boolean;
   /**
-   * List supply-chain artifacts next to images: cosign tag-convention tags
-   * (sha256-….sig / .att / .sbom), attached artifacts (referrers) in the
-   * untagged list and BuildKit attestation entries (unknown/unknown) in the
-   * untagged list and in an index's variants. Off by default — they are
-   * still reachable by URL and on the Attestations tab.
+   * Instance default for listing what belongs to something else next to
+   * images: members of an index (platform variants, BuildKit attestation
+   * entries) and attached artifacts in the untagged list, cosign
+   * tag-convention tags (sha256-….sig / .att / .sbom) in tag lists,
+   * attestation entries in variants tables. Off by default — everything
+   * stays on the index page, the Attestations tab and by URL. Users override
+   * it per account (user_settings.show_artifacts).
    */
   showArtifacts: boolean;
 }

@@ -22,13 +22,13 @@ export function ArtifactVisibilityForm({ value, instanceDefault }: { value: bool
       <div id="display" />
       <CardHeader
         eyebrow="Display"
-        title="Signatures, SBOMs and attestation entries"
-        description="Whether cosign tags, attached artifacts and the unknown/unknown entries docker buildx adds to an index appear in tag lists, the untagged list and variants tables."
+        title="Index members and artifacts in lists"
+        description="Whether manifests that belong to a multi-arch index (platform variants, buildx attestation entries), attached artifacts and cosign tags appear in the untagged list, tag lists and variants tables. They always stay on the index page and the Attestations tab."
       />
       <CardBody>
         <form action={action} className="flex flex-wrap items-start gap-3">
           <div className="w-full sm:w-72">
-            <Field label="In lists, artifacts are" htmlFor="showArtifacts">
+            <Field label="In lists, they are" htmlFor="showArtifacts">
               <Select id="showArtifacts" name="showArtifacts" options={options} defaultValue={value === null ? "" : value ? "show" : "hide"} />
             </Field>
           </div>

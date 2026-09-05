@@ -293,11 +293,12 @@ export function BrandingForm({ branding, source }: { branding: BrandingSettings;
                 className="mt-0.5 size-4 accent-[var(--action)]"
               />
               <span>
-                <span className="block font-medium text-ink">Show signatures, SBOMs and attestation entries in lists</span>
+                <span className="block font-medium text-ink">Show index members and artifacts in lists (default for everyone)</span>
                 <span className="block text-xs text-ink-2">
-                  Off: cosign tags (sha256-….sig / .att / .sbom), attached artifacts and the unknown/unknown attestation entries
-                  docker buildx adds to an index stay out of tag lists, the untagged list and the variants table. They remain on
-                  the Attestations tab and reachable by URL.
+                  Off: the untagged list leaves out manifests that belong to a multi-arch index (platform variants and the
+                  unknown/unknown attestation entries docker buildx adds) and attached artifacts, tag lists leave out cosign tags
+                  (sha256-….sig / .att / .sbom), and variants tables leave out attestation entries. Everything stays on the index
+                  page, the Attestations tab and by URL. Each user can override this under Settings → Display.
                 </span>
               </span>
             </label>
