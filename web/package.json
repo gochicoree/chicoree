@@ -10,8 +10,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "lint": "tsc --noEmit && npm run api:check",
-    "api:docs": "tsx scripts/api-docs.ts",
-    "api:check": "tsx scripts/api-docs.ts --check"
+    "api:docs": "tsx scripts/api-docs.mts",
+    "api:check": "tsx scripts/api-docs.mts --check",
+    "api:smoke": "tsx scripts/api-smoke.mts"
   },
   "dependencies": {
     "@better-auth/core": "^1.7.2",

@@ -1828,6 +1828,17 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
   `X-RateLimit-Reset`. Instance administrators are exempt.
   `chicoree_api_requests_total` on the metrics endpoint counts requests by
   endpoint, method, status and credential kind.
+- **Exports**: `…/vulnerabilities?format=sarif` (SARIF 2.1.0 for GitHub
+  code scanning and security dashboards, accepted risks as suppressions)
+  and `?format=vex` (CycloneDX 1.5 VEX with the accepted risks as
+  `not_affected`). GETs carry a weak `ETag` and answer `304` to
+  `If-None-Match`.
+- **Contract tests**: `npm run api:smoke` in `web/` seeds an organization,
+  tokens and a tagged manifest straight into the database, runs the request
+  matrix against a running app (`API_BASE`, default `http://localhost:3000`)
+  and cleans up; the GitHub Actions workflow runs it on every push together
+  with `npm run lint` (typecheck, catalog ⇄ routes, OpenAPI validation,
+  `API.md` freshness) and the Go tests.
 - **Deprecations**: an endpoint that is going away carries `Deprecation`,
   `Sunset` and `Link` headers and stays for at least one revision after the
   changelog announces it.

@@ -4,6 +4,10 @@ import { loadRepo } from "@/lib/api/access";
 import { route } from "@/lib/api/handler";
 import { badRequest, boolParam, iso, json, notFound, paged, pageParams, requireDigest } from "@/lib/api/respond";
 import { scanJson } from "@/lib/api/serialize";
+import { toCycloneDxVex, toSarif, type ExportSubject } from "@/lib/api/exports";
+import { tagsForDigest } from "@/lib/manifests";
+import { env } from "@/lib/env";
+import { imageReference } from "@/lib/library";
 import { getManifestWithScan } from "@/lib/data";
 import { pageSlice, paginate } from "@/lib/paginate-shared";
 import { decodeRepoParam } from "@/lib/proxy-shared";
@@ -36,6 +40,25 @@ export const GET = route<{ org: string; repo: string; digest: string }>(async (_
 
   const [findings, rules] = await Promise.all([ensureFindings(scan), loadExceptionRules(a.org.id, a.repo.id)]);
   const assessed = applyExceptions(findings, rules, a.repo.id);
+
+  // Whole-image exports for other tools (no paging, no filters).
+  const format = (url.searchParams.get("format") ?? "json").toLowerCase();
+  if (format === "sarif" || format === "vex" || format === "cyclonedx-vex") {
+    const subject: ExportSubject = {
+      reference: imageReference(env.registryHost, a.org.slug, a.repo.name),
+      organization: a.org.slug,
+      repository: a.repo.name,
+      digest,
+      tags: await tagsForDigest(a.repo.id, digest),
+      scanner: scan.scanner,
+      scannerVersion: scan.scannerVersion,
+      scannedAt: iso(scan.updatedAt),
+    };
+    const doc = format === "sarif" ? toSarif(subject, assessed) : toCycloneDxVex(subject, assessed);
+    const type = format === "sarif" ? "application/sarif+json" : "application/vnd.cyclonedx+json";
+    return json(doc, { headers: { "Content-Type": type, "Content-Disposition": `inline; filename="${a.repo.name}-${digest.slice(7, 19)}.${format === "sarif" ? "sarif" : "vex.json"}"` } });
+  }
+  if (format !== "json") throw badRequest('"format" must be json, sarif or vex.');
   const filtered = filterFindings(assessed, {
     severities,
     fixedOnly: boolParam(url, "fixed", false),
