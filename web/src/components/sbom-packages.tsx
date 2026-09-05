@@ -74,7 +74,8 @@ export function SbomPackages({
     try {
       const res = await fetch(href);
       if (!res.ok) throw new Error(`The SBOM could not be loaded (${res.status}).`);
-      setAll(packagesOf(await res.json()));
+      // The document names the image itself as a package; the card says that above.
+      setAll(packagesOf(await res.json()).filter((pkg) => pkg.name !== label));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The SBOM could not be loaded.");
     } finally {
@@ -106,7 +107,7 @@ export function SbomPackages({
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title={`Packages (${packageCount})`}
+        title={`Packages (${all ? all.length : packageCount})`}
         description={<span className="font-mono text-xs [overflow-wrap:anywhere]">{label}</span>}
         size="lg"
       >
