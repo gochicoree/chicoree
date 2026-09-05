@@ -175,8 +175,9 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
   const [busy, setBusy] = useState(false);
 
   async function revoke(token: string) {
-    await authClient.revokeSession({ token });
-    toast({ title: "Session revoked" });
+    const res = await authClient.revokeSession({ token });
+    if (res.error) toast({ title: "Could not revoke the session", description: res.error.message ?? undefined, tone: "error" });
+    else toast({ title: "Session revoked" });
     router.refresh();
   }
 

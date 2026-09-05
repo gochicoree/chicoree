@@ -17,7 +17,14 @@ interface PasskeyRow {
   deviceType: string;
 }
 
-export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
+export function PasskeyManager({
+  passkeys,
+  fresh = true,
+}: {
+  passkeys: PasskeyRow[];
+  /** Registering a passkey needs a session younger than better-auth's freshAge (a day by default). */
+  fresh?: boolean;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = useState("");
@@ -30,7 +37,13 @@ export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
     setError(null);
     const res = await authClient.passkey.addPasskey({ name: name || undefined });
     setBusy(false);
-    if (res?.error) setError(res.error.message ?? "Could not register the passkey");
+    if (res?.error) {
+      setError(
+        "code" in res.error && res.error.code === "SESSION_NOT_FRESH"
+          ? "Adding a passkey needs a recent sign-in. Sign out and back in, then try again."
+          : (res.error.message ?? "Could not register the passkey"),
+      );
+    }
     else {
       toast({ title: "Passkey added" });
       setName("");
@@ -63,6 +76,9 @@ export function PasskeyManager({ passkeys }: { passkeys: PasskeyRow[] }) {
           </Button>
         </form>
         {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+        {!fresh && !error && (
+          <p className="text-xs text-ink-3">You signed in more than a day ago; adding a passkey asks for a fresh sign-in first.</p>
+        )}
 
         {passkeys.length === 0 ? (
           <p className="text-sm text-ink-3">No passkeys registered yet.</p>
