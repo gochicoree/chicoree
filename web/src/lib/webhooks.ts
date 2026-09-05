@@ -431,6 +431,67 @@ function scopeWhere(scope: WebhookScope) {
     : and(eq(repositoryWebhooks.organizationId, scope.organizationId), isNull(repositoryWebhooks.repositoryId));
 }
 
+/**
+ * Send a test delivery to one hook: a push-shaped payload built from the
+ * most recent tag of the repository (or of any repository in the
+ * organization), or a stub when there is nothing to describe yet. Returns
+ * what the hook recorded for the attempt.
+ */
+export async function sendTestDelivery(
+  org: { id: string; slug: string; name: string },
+  repoIn: { id: string; name: string } | null,
+  hook: Hook,
+  actor: string,
+): Promise<{ ok: boolean; status: number | null; error: string | null }> {
+  let repo: { id: string; name: string } | null = repoIn;
+  let latest: { name: string; manifestDigest: string } | null = null;
+  if (repo) {
+    latest = (await db.query.tags.findFirst({ where: eq(tagsTable.repositoryId, repo.id), orderBy: (t, { desc }) => [desc(t.updatedAt)] })) ?? null;
+  } else {
+    const { rows } = await db.execute(sql`
+      SELECT t.name, t.manifest_digest, t.repository_id FROM tags t
+      JOIN repositories r ON r.id = t.repository_id
+      WHERE r.organization_id = ${org.id} ORDER BY t.updated_at DESC LIMIT 1`);
+    const row = rows[0];
+    if (row) {
+      latest = { name: String(row.name), manifestDigest: String(row.manifest_digest) };
+      repo = (await db.query.repositories.findFirst({ where: eq(repositories.id, String(row.repository_id)) })) ?? null;
+    } else {
+      repo = (await db.query.repositories.findFirst({ where: eq(repositories.organizationId, org.id) })) ?? null;
+    }
+  }
+  let payload: WebhookEnvelope | null = null;
+  if (repo) {
+    const built = await buildPushPayload(
+      org.slug,
+      repo.name,
+      latest?.manifestDigest ?? "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      latest?.name ?? "test",
+      actor,
+      "test",
+    );
+    payload = built?.payload ?? null;
+  }
+  payload ??= {
+    event: "test",
+    deliveryId: randomUUID(),
+    timestamp: new Date().toISOString(),
+    registry: env.registryHost,
+    repository: null,
+    organization: { slug: org.slug, name: org.name },
+    tag: null,
+    image: null,
+    actor: await resolveActor(actor),
+  } as WebhookEnvelope;
+  await deliverWebhook(hook, payload);
+  const refreshed = await db.query.repositoryWebhooks.findFirst({ where: eq(repositoryWebhooks.id, hook.id) });
+  return {
+    ok: !!refreshed?.lastStatus && refreshed.lastStatus >= 200 && refreshed.lastStatus < 300,
+    status: refreshed?.lastStatus ?? null,
+    error: refreshed?.lastError ?? null,
+  };
+}
+
 export function maxWebhooks(scope: WebhookScope): number {
   return scope.kind === "repository" ? MAX_WEBHOOKS_PER_REPO : MAX_WEBHOOKS_PER_ORG;
 }

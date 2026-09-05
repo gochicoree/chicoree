@@ -96,6 +96,27 @@ export function resolveExpiry(
   return { expiresAt };
 }
 
+/**
+ * Expiry for a rotated credential: keep the original lifetime (expires − created)
+ * counted from now, capped by the current policy; "never" stays "never" unless
+ * the policy now requires an expiry, in which case the cap (or one year) applies.
+ */
+export function replacementExpiry(
+  createdAt: Date,
+  expiresAt: Date | null,
+  policy: TokenExpiryPolicy,
+  now: Date = new Date(),
+): { expiresAt: Date | null } | { error: string } {
+  const capDays = policy.maxTokenLifetimeDays > 0 ? policy.maxTokenLifetimeDays : null;
+  if (!expiresAt) {
+    if (!policy.requireTokenExpiry) return { expiresAt: null };
+    return resolveExpiry(String(capDays ?? 365), "", policy, now);
+  }
+  const lifetimeDays = Math.max(1, Math.round((expiresAt.getTime() - createdAt.getTime()) / 86_400_000));
+  const days = capDays ? Math.min(lifetimeDays, capDays) : lifetimeDays;
+  return resolveExpiry(String(days), "", policy, now);
+}
+
 export type ExpiryState =
   | { state: "never" }
   | { state: "expired"; daysAgo: number }
