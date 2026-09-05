@@ -39,6 +39,7 @@ import { getAttestationView, isSignatureBlockReason } from "@/lib/signatures";
 import { AttestationsPanel } from "@/components/attestations-panel";
 import { Badge } from "@/components/ui/badge";
 import { WRITER_ROLES } from "@/lib/org-roles";
+import { scanInProgress } from "@/lib/scanner-shared";
 
 interface Descriptor {
   mediaType?: string;
@@ -177,6 +178,8 @@ export default async function TagDetailPage({
   const scanning = !!scanner;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
+  // A scan already running: the button waits rather than queueing a second one.
+  const rescanRunning = scanInProgress(scan);
   // Which other images share each layer (one query), filtered to what the viewer may see.
   const shared: Record<string, SharedLayerInfo> = {};
   if (!isIndex && layers.length > 0) {
@@ -290,8 +293,15 @@ export default async function TagDetailPage({
               <form action={requestRescan}>
                 <input type="hidden" name="repositoryId" value={found.repo.id} />
                 <input type="hidden" name="digest" value={digest} />
-                <Button type="submit" variant="secondary" size="sm">
-                  <RotateCw className="size-3.5" /> Re-scan
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  size="sm"
+                  disabled={rescanRunning}
+                  title={rescanRunning ? "A scan of this image is already running; the result appears here when it finishes." : undefined}
+                >
+                  <RotateCw className={`size-3.5${rescanRunning ? " animate-spin" : ""}`} />
+                  {rescanRunning ? "Scanning…" : "Re-scan"}
                 </Button>
               </form>
             )}
@@ -483,7 +493,7 @@ function LayerTable({
   shared: Record<string, SharedLayerInfo>;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-card">
+    <div className="overflow-x-auto rounded-xl border border-line bg-card">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line text-left">

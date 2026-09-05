@@ -94,7 +94,8 @@ function RuleTable({
   readOnly?: boolean;
 }) {
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-line text-left">
           <th className="px-4 py-2 text-xs font-medium text-ink-2 sm:px-5">Pattern</th>
@@ -124,6 +125,7 @@ function RuleTable({
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

@@ -64,7 +64,8 @@ function RemoveKeyButton({ item }: { item: TrustedKeyItem }) {
 
 function KeyTable({ keys, scope, readOnly }: { keys: TrustedKeyItem[]; scope: "organization" | "repository"; readOnly?: boolean }) {
   return (
-    <table className="w-full text-sm">
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-line text-left">
           <th className="px-4 py-2 text-xs font-medium text-ink-2 sm:px-5">Name</th>
@@ -101,6 +102,7 @@ function KeyTable({ keys, scope, readOnly }: { keys: TrustedKeyItem[]; scope: "o
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

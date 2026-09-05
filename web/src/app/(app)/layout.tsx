@@ -46,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               hash={announcementHash(announcement)}
             />
           )}
-          <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:px-8">
+          <main className="mx-auto w-full max-w-[110rem] px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:px-8">
             {children}
             <AppFooter name={branding.instanceName} tagline={branding.tagline} links={branding.footerLinks} />
           </main>

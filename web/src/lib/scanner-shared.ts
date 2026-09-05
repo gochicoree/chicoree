@@ -52,6 +52,22 @@ export interface ExceptionRule {
   expiresAt: Date | string | null;
 }
 
+/**
+ * A scan the registry is still working on. A row that has sat in `pending`
+ * or `indexing` for longer than this was almost certainly abandoned (the web
+ * app restarted mid-scan), so it stops blocking a new attempt.
+ */
+export const SCAN_STUCK_AFTER_MS = 30 * 60 * 1000;
+
+export function scanInProgress(
+  scan: { status: string | null; updatedAt: Date | string | null } | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!scan || (scan.status !== "pending" && scan.status !== "indexing")) return false;
+  const started = scan.updatedAt ? new Date(scan.updatedAt).getTime() : 0;
+  return now.getTime() - started < SCAN_STUCK_AFTER_MS;
+}
+
 export function normalizeSeverity(value: string | null | undefined): Severity {
   const v = (value ?? "").trim().toLowerCase();
   switch (v) {
