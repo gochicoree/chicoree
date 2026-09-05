@@ -127,7 +127,10 @@ export function AttestationsPanel({
   canReverify: boolean;
   signaturesRequired: boolean;
 }) {
-  const verified = view.signatures.filter((s) => s.sig?.status === "verified").length;
+  // An attestation carries a signature too: counting only the plain ones read
+  // as "0 verified signatures" next to a card that said it was verified.
+  const signed = [...view.signatures, ...view.sboms, ...view.provenance, ...view.others];
+  const verified = signed.filter((s) => s.sig?.status === "verified").length;
 
   return (
     <div className="space-y-6">
@@ -143,7 +146,7 @@ export function AttestationsPanel({
         {canReverify && view.total > 0 && <ReverifyButton repositoryId={repositoryId} digest={digest} />}
       </div>
 
-      {view.trustedKeys === 0 && view.signatures.length > 0 && (
+      {view.trustedKeys === 0 && signed.some((s) => s.sig) && (
         <div className="rounded-xl border border-line bg-card-2 px-4 py-3 text-sm text-ink-2">
           No trusted signing key is configured for this repository, so signatures show as unverified. Owners and admins can add the
           signer&apos;s <code className="font-mono">cosign.pub</code> under{" "}
