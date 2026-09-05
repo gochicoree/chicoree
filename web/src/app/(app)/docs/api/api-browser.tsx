@@ -8,7 +8,7 @@
 // before they go out.
 import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { ChevronRight, Loader2, Play, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Play, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { CommandLine, CopyButton } from "@/components/ui/copy";
-import { ACCESS_LABELS, API_GROUPS, type ApiEndpoint, type ApiMethod, type ApiParam } from "@/lib/api/catalog";
+import { ACCESS_LABELS, API_GROUPS, type ApiEndpoint, type ApiGroup, type ApiMethod, type ApiParam } from "@/lib/api/catalog";
 
 const METHOD_TONE: Record<ApiMethod, "info" | "ok" | "accent" | "danger"> = {
   GET: "info",
@@ -174,6 +174,33 @@ function ParamGroup({
   );
 }
 
+const PREVIEW_LINES = 80;
+
+/** Pretty text that wraps and flows with the page; long bodies start folded with a "show all" toggle instead of an inner scrollbar. */
+function BodyView({ text, copyLabel }: { text: string; copyLabel: string }) {
+  const [all, setAll] = useState(false);
+  const lines = text.split("\n");
+  const folded = !all && lines.length > PREVIEW_LINES + 10;
+  const shown = folded ? lines.slice(0, PREVIEW_LINES).join("\n") : text;
+  return (
+    <div className="relative">
+      <div className="absolute right-2 top-2">
+        <CopyButton value={text} label={copyLabel} />
+      </div>
+      <pre className="whitespace-pre-wrap rounded-lg border border-line bg-card-2 p-3 pr-10 font-mono text-xs leading-relaxed text-ink [overflow-wrap:anywhere]">
+        {shown || "(empty)"}
+      </pre>
+      {(folded || all) && lines.length > PREVIEW_LINES + 10 && (
+        <div className={clsx("flex justify-center", folded ? "-mt-3" : "mt-2")}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setAll((v) => !v)}>
+            {folded ? `Show all ${lines.length.toLocaleString("en-US")} lines` : "Show less"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: number }) {
   const tone = status >= 500 ? "danger" : status >= 400 ? "danger" : status >= 300 ? "accent" : "ok";
   return (
@@ -193,6 +220,8 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
   const [confirming, setConfirming] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<ApiGroup[]>(() => [endpoints[0].group]);
+  const [showExample, setShowExample] = useState(false);
 
   const selected = endpoints.find((e) => keyOf(e) === selectedKey) ?? endpoints[0];
 
@@ -200,14 +229,22 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
   useEffect(() => {
     const hash = window.location.hash.replace(/^#/, "");
     const match = hash && endpoints.find((e) => anchorOf(e) === hash);
-    if (match) setSelectedKey(keyOf(match));
+    if (match) {
+      setSelectedKey(keyOf(match));
+      setOpenGroups((g) => (g.includes(match.group) ? g : [...g, match.group]));
+    }
   }, [endpoints]);
+
+  function toggleGroup(g: ApiGroup) {
+    setOpenGroups((open) => (open.includes(g) ? open.filter((x) => x !== g) : [...open, g]));
+  }
 
   function select(e: ApiEndpoint) {
     setSelectedKey(keyOf(e));
     setValues({});
     setOutcome(null);
     setFailure(null);
+    setShowExample(false);
     window.history.replaceState(null, "", `#${anchorOf(e)}`);
   }
 
@@ -272,7 +309,7 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <Card className="lg:sticky lg:top-6 lg:self-start">
+      <Card className="lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:self-start lg:overflow-y-auto">
         <div className="border-b border-line p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" />
@@ -285,35 +322,54 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
             />
           </div>
         </div>
-        <nav aria-label="Endpoints" className="max-h-[50vh] overflow-y-auto p-2 lg:max-h-[calc(100dvh-12rem)]">
-          {API_GROUPS.filter((g) => visible.some((e) => e.group === g)).map((g) => (
-            <div key={g} className="mb-2">
-              <div className="eyebrow px-2 py-1.5">{g}</div>
-              {visible
-                .filter((e) => e.group === g)
-                .map((e) => {
-                  const active = keyOf(e) === selectedKey;
-                  return (
-                    <button
-                      key={keyOf(e)}
-                      type="button"
-                      title={`${e.method} ${e.path} — ${e.summary}`}
-                      onClick={() => select(e)}
-                      className={clsx(
-                        "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors",
-                        active ? "bg-card-2 text-ink" : "text-ink-2 hover:bg-card-2 hover:text-ink",
-                      )}
-                    >
-                      <Badge tone={METHOD_TONE[e.method]} className="w-14 justify-center font-mono text-[10px]">
-                        {e.method}
-                      </Badge>
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{e.path}</span>
-                      {active && <ChevronRight className="size-3.5 shrink-0 text-ink-3" />}
-                    </button>
-                  );
-                })}
-            </div>
-          ))}
+        <nav aria-label="Endpoints" className="p-2">
+          {API_GROUPS.filter((g) => visible.some((e) => e.group === g)).map((g) => {
+            // A filter shows every match; otherwise only the opened groups unfold.
+            const open = filter.trim() !== "" || openGroups.includes(g);
+            const items = visible.filter((e) => e.group === g);
+            return (
+              <div key={g} className="mb-1">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => toggleGroup(g)}
+                  className="eyebrow flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-card-2 hover:text-ink"
+                >
+                  <span>
+                    {g}
+                    {!open && items.some((e) => keyOf(e) === selectedKey) && <span className="ml-1.5 text-accent">•</span>}
+                  </span>
+                  <span className="flex items-center gap-1.5 normal-case tracking-normal">
+                    <span className="font-mono text-[10px] text-ink-3">{items.length}</span>
+                    <ChevronDown className={clsx("size-3.5 text-ink-3 transition-transform", !open && "-rotate-90")} />
+                  </span>
+                </button>
+                {open &&
+                  items.map((e) => {
+                    const active = keyOf(e) === selectedKey;
+                    return (
+                      <button
+                        key={keyOf(e)}
+                        type="button"
+                        data-endpoint={keyOf(e)}
+                        title={`${e.method} ${e.path} — ${e.summary}`}
+                        onClick={() => select(e)}
+                        className={clsx(
+                          "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors",
+                          active ? "bg-card-2 text-ink" : "text-ink-2 hover:bg-card-2 hover:text-ink",
+                        )}
+                      >
+                        <Badge tone={METHOD_TONE[e.method]} className="w-14 justify-center font-mono text-[10px]">
+                          {e.method}
+                        </Badge>
+                        <span className="min-w-0 flex-1 truncate font-mono text-xs">{e.path}</span>
+                        {active && <ChevronRight className="size-3.5 shrink-0 text-ink-3" />}
+                      </button>
+                    );
+                  })}
+              </div>
+            );
+          })}
           {visible.length === 0 && <p className="px-2 py-4 text-sm text-ink-3">Nothing matches.</p>}
         </nav>
       </Card>
@@ -407,14 +463,7 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
                       ))}
                     </dl>
                   </details>
-                  <div className="relative">
-                    <div className="absolute right-2 top-2">
-                      <CopyButton value={outcome.pretty ?? outcome.body} label="Copy response" />
-                    </div>
-                    <pre className="max-h-[32rem] overflow-auto rounded-lg border border-line bg-card-2 p-3 font-mono text-xs leading-relaxed text-ink">
-                      {outcome.pretty ?? outcome.body ?? "(empty)"}
-                    </pre>
-                  </div>
+                  <BodyView text={outcome.pretty ?? outcome.body} copyLabel="Copy response" />
                 </>
               )}
             </CardBody>
@@ -423,12 +472,20 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
 
         {selected.example !== undefined && (
           <Card>
-            <CardHeader eyebrow="Documented" title={`Example response (${selected.status ?? 200})`} />
-            <CardBody>
-              <pre className="max-h-[28rem] overflow-auto rounded-lg border border-line bg-card-2 p-3 font-mono text-xs leading-relaxed text-ink">
-                {JSON.stringify(selected.example, null, 2)}
-              </pre>
-            </CardBody>
+            <CardHeader
+              eyebrow="Documented"
+              title={`Example response (${selected.status ?? 200})`}
+              action={
+                <Button type="button" variant="ghost" size="sm" aria-expanded={showExample} onClick={() => setShowExample((v) => !v)}>
+                  {showExample ? "Hide" : "Show"}
+                </Button>
+              }
+            />
+            {showExample && (
+              <CardBody>
+                <BodyView text={JSON.stringify(selected.example, null, 2)} copyLabel="Copy example" />
+              </CardBody>
+            )}
           </Card>
         )}
       </div>
