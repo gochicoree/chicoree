@@ -143,7 +143,7 @@ services:
       # Domain for the docker API; Coolify routes it to port 5000 here.
       - SERVICE_FQDN_REGISTRYD_5000
       - DATABASE_URL=postgres://chicoree:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/chicoree
-      # Storage: filesystem on the registry-data volume, or S3 (STORAGE_DRIVER=s3).
+      # Storage: filesystem on the registry-data volume, S3 (STORAGE_DRIVER=s3) or bunny.net (STORAGE_DRIVER=bunny).
       - STORAGE_DRIVER=${STORAGE_DRIVER:-filesystem}
       - STORAGE_STAGING=${STORAGE_STAGING:-local}
       - FILESYSTEM_ROOT=/var/lib/registry
@@ -154,6 +154,14 @@ services:
       - S3_SECRET_KEY=${S3_SECRET_KEY:-}
       - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-true}
       - S3_REDIRECT_GET=${S3_REDIRECT_GET:-false}
+      # bunny.net Edge Storage (STORAGE_DRIVER=bunny); CDN_URL needs CDN_TOKEN_KEY (signed redirects).
+      - BUNNY_STORAGE_ZONE=${BUNNY_STORAGE_ZONE:-}
+      - BUNNY_ACCESS_KEY=${BUNNY_ACCESS_KEY:-}
+      - BUNNY_REGION=${BUNNY_REGION:-}
+      - BUNNY_ENDPOINT=${BUNNY_ENDPOINT:-}
+      - BUNNY_CDN_URL=${BUNNY_CDN_URL:-}
+      - BUNNY_CDN_TOKEN_KEY=${BUNNY_CDN_TOKEN_KEY:-}
+      - BUNNY_PRESIGN_EXPIRY=${BUNNY_PRESIGN_EXPIRY:-}
       - GC_GRACE_PERIOD=${GC_GRACE_PERIOD:-1h}
       - REGISTRY_LOG_FORMAT=${REGISTRY_LOG_FORMAT:-text}
       # Pull rate limit defaults, shared with the web app (Administration → Rate limits overrides them).

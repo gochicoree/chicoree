@@ -123,6 +123,8 @@ services:
       BUNNY_REGION: ${BUNNY_REGION:-}
       BUNNY_CDN_URL: ${BUNNY_CDN_URL:-}
       BUNNY_CDN_TOKEN_KEY: ${BUNNY_CDN_TOKEN_KEY:-}
+      BUNNY_ENDPOINT: ${BUNNY_ENDPOINT:-}
+      BUNNY_PRESIGN_EXPIRY: ${BUNNY_PRESIGN_EXPIRY:-}
       GC_GRACE_PERIOD: ${GC_GRACE_PERIOD:-1h}
       REGISTRY_LOG_FORMAT: ${REGISTRY_LOG_FORMAT:-text}
       # Pull rate limit defaults, shared with the web app (Administration → Rate limits overrides them).

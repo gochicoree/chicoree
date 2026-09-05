@@ -180,6 +180,14 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
       S3_REDIRECT_GET: ${S3_REDIRECT_GET:-false}
+      # bunny.net Edge Storage (STORAGE_DRIVER=bunny); CDN_URL needs CDN_TOKEN_KEY (signed redirects).
+      BUNNY_STORAGE_ZONE: ${BUNNY_STORAGE_ZONE:-}
+      BUNNY_ACCESS_KEY: ${BUNNY_ACCESS_KEY:-}
+      BUNNY_REGION: ${BUNNY_REGION:-}
+      BUNNY_ENDPOINT: ${BUNNY_ENDPOINT:-}
+      BUNNY_CDN_URL: ${BUNNY_CDN_URL:-}
+      BUNNY_CDN_TOKEN_KEY: ${BUNNY_CDN_TOKEN_KEY:-}
+      BUNNY_PRESIGN_EXPIRY: ${BUNNY_PRESIGN_EXPIRY:-}
       GC_GRACE_PERIOD: ${GC_GRACE_PERIOD:-1h}
       REGISTRY_LOG_FORMAT: ${REGISTRY_LOG_FORMAT:-text}
       # Pull rate limit defaults, shared with the web app (Administration → Rate limits overrides them).
