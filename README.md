@@ -1312,12 +1312,38 @@ apply to every repository; repository keys add to them (shown read-only as
 signature in scope right away. Owners and admins manage keys; at most 50
 per scope.
 
+### Personal signing keys
+
+Whoever may push to a repository may also sign what they push. Under
+*Settings → Signing keys* every user registers the public keys that belong
+to them (name + PEM of a `cosign.pub`, at most 10; a public key belongs to
+exactly one account). A signature or attestation made with a personal key
+counts as **verified** in every repository its owner may push to: members
+with the *owner*, *admin* or *member* role of the organization, and
+instance administrators everywhere. Viewers' keys never count, banned
+accounts' keys neither. The Attestations tab then reads *verified by
+Alice's key laptop*, with the owner named, so a personal signature is
+always attributable.
+
+Organizations decide whether they accept this: the **Members' signing
+keys** card under *Organization → Settings → Policies* (on by default)
+switches personal keys off for organizations that want only their own
+trusted keys to count — a release pipeline with a single signing key, say.
+Signatures are re-verified when a personal key is added or removed (in the
+background, across every organization the owner may push to), when the
+switch changes, and when a member is removed or changes role. Losing push
+access does not retroactively unverify: a signature stays *verified* until
+its next check, then shows as *unverified* again. The `reverify-signatures`
+job re-checks everything (optionally one `organization=`) for changes made
+outside the UI.
+
 ### Require signatures (pull policy)
 
 The **Require signatures** card on the same pages refuses pulls of images
-that carry no cosign signature verified by a trusted key. The organization
-switch applies everywhere; a repository can inherit it, require signatures,
-or opt out. `docker pull` then answers:
+that carry no cosign signature verified by a trusted key (or, unless the
+organization switched them off, by the personal key of a member who may
+push). The organization switch applies everywhere; a repository can
+inherit it, require signatures, or opt out. `docker pull` then answers:
 
 ```
 denied: pull blocked by policy: no signature from a trusted key (signature policy)
@@ -1668,9 +1694,11 @@ app, and the Jobs page says so.
   expiring within `withinDays`, default 7), `prune-untagged` (delete
   untagged manifests older than `olderThan`; run `gc` afterwards),
   `mirror-sync` (re-sync every enabled mirror), `proxy-evict` (drop
-  proxy-cache tags nobody pulled for `unusedFor`; `dryRun=true` only counts)
-  and `retention` (apply retention policies; a dry run unless
-  `dryRun=false`, narrowed by `organization=` / `repository=`). Add
+  proxy-cache tags nobody pulled for `unusedFor`; `dryRun=true` only counts),
+  `retention` (apply retention policies; a dry run unless
+  `dryRun=false`, narrowed by `organization=` / `repository=`) and
+  `reverify-signatures` (re-check every cosign signature and attestation
+  against the trusted and personal keys, optionally one `organization=`). Add
   `?wait=false` to queue and return immediately. All of them can also run on
   a schedule — see [Job schedules](#job-schedules). Access tokens limited to
   an organization cannot call the jobs API.

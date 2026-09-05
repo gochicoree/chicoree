@@ -7,6 +7,7 @@ import { organization, organizationSettings, repositories } from "@/db/schema";
 import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
 import { refreshOrganizationBlocks, refreshRepositoryBlocks } from "@/lib/pull-policy";
+import { reverifyOrganization } from "@/lib/signatures";
 import { recordAudit } from "@/lib/audit";
 
 export interface SignaturePolicyResult {
@@ -36,6 +37,34 @@ export async function setOrgSignaturePolicy(_prev: SignaturePolicyResult | null,
     targetLabel: org?.slug,
     details: { scope: "organization", requireSignature },
   });
+  if (org) {
+    revalidatePath(`/${org.slug}/settings`);
+    revalidatePath(`/${org.slug}`, "layout");
+  }
+  return { saved: true };
+}
+
+/** Organization switch: do members' personal signing keys count as trusted? Every signature is re-verified. */
+export async function setOrgMemberKeysPolicy(_prev: SignaturePolicyResult | null, formData: FormData): Promise<SignaturePolicyResult> {
+  await requireSession();
+  const organizationId = String(formData.get("organizationId") ?? "");
+  const role = await getOrgRole(organizationId);
+  if (!role || !MANAGER_ROLES.includes(role)) return { error: "Only organization owners and admins can change the signature policy." };
+  const trustMemberKeys = formData.get("trustMemberKeys") === "on";
+  await db
+    .insert(organizationSettings)
+    .values({ organizationId, trustMemberKeys, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: organizationSettings.organizationId, set: { trustMemberKeys, updatedAt: new Date() } });
+  const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
+  await recordAudit({
+    action: "policy.update",
+    organizationId,
+    targetType: "organization",
+    targetId: organizationId,
+    targetLabel: org?.slug,
+    details: { scope: "organization", trustMemberKeys },
+  });
+  await reverifyOrganization(organizationId);
   if (org) {
     revalidatePath(`/${org.slug}/settings`);
     revalidatePath(`/${org.slug}`, "layout");

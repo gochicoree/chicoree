@@ -28,6 +28,20 @@ import { auditAfterHook, auditBefore, auditOrganizationHooks, auditSessionCreate
 import { canCreateOrganization, enforceSignUpPolicy, INVITATION_HEADER, ORG_CREATION_DENIED } from "./signup-policy";
 import { clearOrganizationRedirect } from "./redirects";
 
+/**
+ * Fire-and-forget re-verification of an organization's signatures after a
+ * membership change; loaded lazily so the auth module does not pull the
+ * supply-chain code (and its dependencies) into every request.
+ */
+function reverifyAfterMembershipChange(organizationId: string): void {
+  void (async () => {
+    const { listMemberKeys, orgTrustsMemberKeys, reverifyOrganization } = await import("./signatures");
+    if (!(await orgTrustsMemberKeys(organizationId))) return;
+    if ((await listMemberKeys(organizationId)).length === 0) return;
+    await reverifyOrganization(organizationId);
+  })().catch((err) => console.error("re-verification after a membership change failed:", err));
+}
+
 // Org slugs become both URL paths and image namespaces; these collide with
 // app routes or registry internals.
 export const RESERVED_SLUGS = new Set([
@@ -186,6 +200,17 @@ function buildAuth(settings: EffectiveSettings) {
       // be valid OCI path components.
       organizationHooks: {
         ...auditOrganizationHooks,
+        // Members' personal signing keys count only while they may push:
+        // a removal or role change re-verifies the organization's signatures
+        // (in the background — it can touch every repository).
+        afterRemoveMember: async (data) => {
+          await auditOrganizationHooks.afterRemoveMember(data);
+          reverifyAfterMembershipChange(data.organization.id);
+        },
+        afterUpdateMemberRole: async (data) => {
+          await auditOrganizationHooks.afterUpdateMemberRole(data);
+          reverifyAfterMembershipChange(data.organization.id);
+        },
         beforeCreateOrganization: async ({ organization, user }) => {
           if (!canCreateOrganization(settings.access, user.role)) {
             throw new APIError("FORBIDDEN", { message: ORG_CREATION_DENIED });

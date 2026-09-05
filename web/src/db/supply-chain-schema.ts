@@ -36,6 +36,33 @@ export const signingKeysTrusted = pgTable(
   (t) => [index("signing_keys_trusted_org_idx").on(t.organizationId), index("signing_keys_trusted_repo_idx").on(t.repositoryId)],
 );
 
+/**
+ * Personal signing keys, registered by a user under Settings → Signing keys.
+ * A signature made with one counts as verified in every repository the
+ * owner may push to (writer role in the organization, or instance admin)
+ * as long as the organization trusts members' keys
+ * (organization_settings.trust_member_keys). The fingerprint is unique
+ * across users so a key has exactly one owner to attribute signatures to.
+ */
+export const userSigningKeys = pgTable(
+  "user_signing_keys",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    publicKeyPem: text("public_key_pem").notNull(),
+    /** sha256 hex of the DER-encoded SubjectPublicKeyInfo. */
+    fingerprint: text("fingerprint").notNull().unique(),
+    keyType: text("key_type").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("user_signing_keys_user_idx").on(t.userId)],
+);
+
 export const SIGNATURE_STATUSES = ["verified", "untrusted", "invalid", "keyless"] as const;
 export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
 
@@ -58,6 +85,8 @@ export const manifestSignatures = pgTable(
     status: text("status", { enum: SIGNATURE_STATUSES }).notNull(),
     /** The trusted key that verified it (null unless status = verified). */
     keyId: text("key_id").references(() => signingKeysTrusted.id, { onDelete: "set null" }),
+    /** The member's personal key that verified it instead (null unless status = verified through one). */
+    userKeyId: text("user_key_id").references(() => userSigningKeys.id, { onDelete: "set null" }),
     /** Certificate identity of a keyless signature, e.g. "user@example.com (https://accounts.google.com)". */
     identity: text("identity"),
     /** Per-signature detail (format, key fingerprint, reason, signed reference); see lib/signatures-shared.ts SignatureCheck. */

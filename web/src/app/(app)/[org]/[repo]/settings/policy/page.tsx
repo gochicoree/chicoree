@@ -7,7 +7,7 @@ import { TagRulesManager, type TagRuleItem } from "@/components/tag-rules-manage
 import { orgPolicy } from "@/lib/pull-policy";
 import { getRetentionPolicies, toSettings } from "@/lib/retention";
 import { listTagRules, type TagRuleRow } from "@/lib/tag-rules";
-import { listTrustedKeys, type TrustedKeyRow } from "@/lib/signatures";
+import { listMemberKeys, listTrustedKeys, type TrustedKeyRow } from "@/lib/signatures";
 import { SignaturePolicyForm } from "@/components/signature-policy-form";
 import { TrustedKeysManager, type TrustedKeyItem } from "@/components/trusted-keys-manager";
 import { repoSettingsContext } from "../context";
@@ -36,7 +36,7 @@ function serializeKeys(rows: TrustedKeyRow[]): TrustedKeyItem[] {
 
 export default async function RepoPolicyPage({ params }: { params: Promise<{ org: string; repo: string }> }) {
   const { repo } = await repoSettingsContext(params);
-  const [orgSettings, rules, orgRules, retention, keys, orgKeys] = await Promise.all([
+  const [orgSettings, rules, orgRules, retention, keys, orgKeys, memberKeys] = await Promise.all([
     db.query.organizationSettings.findFirst({
       where: eq(organizationSettings.organizationId, repo.organizationId),
     }),
@@ -45,7 +45,9 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
     getRetentionPolicies(repo.organizationId, repo.id),
     listTrustedKeys(repo.organizationId, repo.id),
     listTrustedKeys(repo.organizationId, null),
+    listMemberKeys(repo.organizationId),
   ]);
+  const memberKeyCount = (orgSettings?.trustMemberKeys ?? true) ? memberKeys.length : 0;
   return (
     <div className="space-y-6">
       <PullPolicyForm
@@ -60,7 +62,7 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
         repositoryId={repo.id}
         value={repo.requireSignature ?? null}
         inherited={orgSettings?.requireSignature ?? false}
-        keyCount={keys.length + orgKeys.length}
+        keyCount={keys.length + orgKeys.length + memberKeyCount}
       />
       <TrustedKeysManager
         scope="repository"

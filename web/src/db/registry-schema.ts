@@ -343,6 +343,8 @@ export const organizationSettings = pgTable("organization_settings", {
   blockUnrated: boolean("block_unrated").notNull().default(false),
   /** Signature policy: pulls of images without a cosign signature from a trusted key are refused. */
   requireSignature: boolean("require_signature").notNull().default(false),
+  /** Whether the personal signing keys of members who may push count as trusted in the organization's repositories. */
+  trustMemberKeys: boolean("trust_member_keys").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

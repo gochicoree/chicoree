@@ -418,11 +418,12 @@ through an old name get no grant at all.
   organization hooks), `repository_stars`, `repository_visits`,
   `vulnerability_scans` (+ `findings`, `scanner`, `scanner_version`),
   `scan_findings` and `vulnerability_exceptions` (`db/scanning-schema.ts`),
-  `signing_keys_trusted`, `manifest_signatures` and `manifest_artifacts`
-  (`db/supply-chain-schema.ts`), `access_tokens` (+ `last_used_ip`,
-  `description`, `organization_id`, `repository_ids`), `service_accounts`
-  (+ `last_used_ip`); columns `repositories.readme` / `require_signature` /
-  `logo`, `organization_settings.require_signature`,
+  `signing_keys_trusted`, `user_signing_keys`, `manifest_signatures` and
+  `manifest_artifacts` (`db/supply-chain-schema.ts`), `access_tokens` (+
+  `last_used_ip`, `description`, `organization_id`, `repository_ids`),
+  `service_accounts` (+ `last_used_ip`); columns `repositories.readme` /
+  `require_signature` / `logo`, `organization_settings.require_signature` /
+  `trust_member_keys`,
   `user_settings.onboarding_dismissed_at` / `admin_checklist_dismissed_at`.
   registryd's `INSERT INTO repositories` names its columns and no query there
   selects `*`, so nullable additions like `repositories.logo` (see *Pictures*)
@@ -546,7 +547,20 @@ through an old name get no grant at all.
   (`signing_keys_trusted`: organization, optional repository, normalised
   SPKI PEM, fingerprint = sha256 of the DER SPKI — the value Sigstore
   bundles carry as the key hint, type; ≤ 50 per scope) are parsed with
-  Node's `createPublicKey` (ECDSA, Ed25519, RSA ≥ 2048).
+  Node's `createPublicKey` (ECDSA, Ed25519, RSA ≥ 2048). Personal keys
+  (`user_signing_keys`: owner, name, PEM, globally unique fingerprint; ≤ 10
+  per user, *Settings → Signing keys*) join them through
+  `effectiveVerificationKeys(orgId, repoId)`, which yields `VerificationKey`s
+  of scope `trusted` (organization / repository rows) or `user` —
+  `listMemberKeys(orgId)`: keys of non-banned users who are members with a
+  `WRITER_ROLES` role or instance admins — unless
+  `organization_settings.trust_member_keys` (default true) is off. A
+  verified row records either `key_id` or `user_key_id`; checks carry
+  `signer` for the wording *verified by Alice's key laptop*. Personal key
+  changes re-verify every organization the owner may push to after the
+  response (`reverifyForUser`, `after()`); `afterRemoveMember` /
+  `afterUpdateMemberRole` re-verify the organization in the background; the
+  `reverify-signatures` job re-checks everything on demand.
   `checkArtifactSignatures` verifies cosign legacy layers (simple-signing
   payload must name this digest and repository; annotation signature over
   the raw payload), Sigstore bundles (`dsseEnvelope` — statement subject
@@ -829,7 +843,8 @@ through an old name get no grant at all.
   *Run now* on the settings pages go through `runJob`. `deleteTag` refuses
   protected tags before calling the registry, surfaces the registry's 403
   message, and leaves an immutable or protected `latest` alone.
-- **Jobs** (`src/lib/jobs.ts`): `gc`, `scan-stale` (throws when scanning
+- **Jobs** (`src/lib/jobs.ts`): `gc`, `reverify-signatures` (every organization or
+  `organization=<slug>`; `reverifyOrganization` each), `scan-stale` (throws when scanning
   is off and is hidden from `listJobs()`, now async for that reason),
   `scan-normalize`, `exceptions-expire`, `token-expiry`, `prune-untagged`,
   `mirror-sync`, `proxy-evict`, `retention` — each run recorded in

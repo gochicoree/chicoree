@@ -8,19 +8,23 @@
 // push, when trusted keys change, and on demand; lib/pull-policy.ts turns
 // "no verified signature" into manifest_blocks when the policy requires one.
 import { constants, createHash, createPublicKey, verify as cryptoVerify, X509Certificate, type KeyObject } from "crypto";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   manifestArtifacts,
   manifestSignatures,
   manifests,
+  member,
   organization,
   organizationSettings,
   repositories,
   signingKeysTrusted,
   tags,
+  user,
+  userSigningKeys,
 } from "@/db/schema";
 import { imagePath, splitImagePath } from "./library";
+import { WRITER_ROLES } from "./org-roles";
 import { refreshRepositoryBlocks } from "./pull-policy";
 import { effectiveSignaturePolicy } from "./pull-policy-shared";
 import { fetchBlobBytes } from "./registry-client";
@@ -55,10 +59,28 @@ import {
 export * from "./signatures-shared";
 
 export type TrustedKeyRow = typeof signingKeysTrusted.$inferSelect;
+export type UserKeyRow = typeof userSigningKeys.$inferSelect;
 export type SignatureRow = typeof manifestSignatures.$inferSelect;
 type RepoRow = typeof repositories.$inferSelect;
 
 export const MAX_TRUSTED_KEYS_PER_SCOPE = 50;
+export const MAX_USER_SIGNING_KEYS = 10;
+
+/**
+ * A key a signature may verify with: a key trusted by the organization or
+ * repository, or the personal key of a member who may push there.
+ */
+export interface VerificationKey {
+  id: string;
+  name: string;
+  fingerprint: string;
+  publicKeyPem: string;
+  scope: "trusted" | "user";
+  /** Personal keys: the owner. */
+  userId?: string;
+  /** Personal keys: the owner's display name, shown as "verified by <signer>'s key <name>". */
+  signer?: string;
+}
 
 // --- Public keys -------------------------------------------------------------------------
 
@@ -250,7 +272,7 @@ export async function listTrustedKeys(organizationId: string, repositoryId: stri
   });
 }
 
-/** Every key a repository's signatures may be verified with: its own plus the organization's. */
+/** Keys trusted for a repository by configuration: its own plus the organization's. */
 export async function effectiveTrustedKeys(organizationId: string, repositoryId: string): Promise<TrustedKeyRow[]> {
   return db.query.signingKeysTrusted.findMany({
     where: and(
@@ -259,6 +281,123 @@ export async function effectiveTrustedKeys(organizationId: string, repositoryId:
     ),
     orderBy: (t, { asc }) => [asc(t.name)],
   });
+}
+
+export function trustedVerificationKey(k: TrustedKeyRow): VerificationKey {
+  return { id: k.id, name: k.name, fingerprint: k.fingerprint, publicKeyPem: k.publicKeyPem, scope: "trusted" };
+}
+
+export function userVerificationKey(k: UserKeyRow, signer: string): VerificationKey {
+  return { id: k.id, name: k.name, fingerprint: k.fingerprint, publicKeyPem: k.publicKeyPem, scope: "user", userId: k.userId, signer };
+}
+
+/** Whether an organization counts members' personal keys as trusted (the default). */
+export async function orgTrustsMemberKeys(organizationId: string): Promise<boolean> {
+  const s = await db.query.organizationSettings.findFirst({
+    where: eq(organizationSettings.organizationId, organizationId),
+    columns: { trustMemberKeys: true },
+  });
+  return s?.trustMemberKeys ?? true;
+}
+
+export type MemberKeyRow = UserKeyRow & { userName: string; userEmail: string; userRole: string | null; memberRole: string | null };
+
+/**
+ * Personal keys of everyone who may push to the organization's repositories:
+ * members with a writer role (owner, admin, member) and instance
+ * administrators, unless the account is banned. Whether they count is the
+ * organization's decision (orgTrustsMemberKeys); this lists them regardless.
+ */
+export async function listMemberKeys(organizationId: string): Promise<MemberKeyRow[]> {
+  const rows = await db
+    .select({ key: userSigningKeys, userName: user.name, userEmail: user.email, userRole: user.role, memberRole: member.role })
+    .from(userSigningKeys)
+    .innerJoin(user, eq(user.id, userSigningKeys.userId))
+    .leftJoin(member, and(eq(member.userId, userSigningKeys.userId), eq(member.organizationId, organizationId)))
+    .where(and(or(isNull(user.banned), eq(user.banned, false)), or(eq(user.role, "admin"), inArray(member.role, WRITER_ROLES))))
+    .orderBy(asc(user.name), asc(userSigningKeys.name));
+  return rows.map((r) => ({ ...r.key, userName: r.userName, userEmail: r.userEmail, userRole: r.userRole, memberRole: r.memberRole }));
+}
+
+/**
+ * Every key a repository's signatures may be verified with: the trusted keys
+ * of the repository and organization, plus — when the organization allows
+ * it — the personal keys of members who may push there.
+ */
+export async function effectiveVerificationKeys(organizationId: string, repositoryId: string): Promise<VerificationKey[]> {
+  const [trusted, memberKeys] = await Promise.all([
+    effectiveTrustedKeys(organizationId, repositoryId),
+    orgTrustsMemberKeys(organizationId).then((on) => (on ? listMemberKeys(organizationId) : [])),
+  ]);
+  return [...trusted.map(trustedVerificationKey), ...memberKeys.map((k) => userVerificationKey(k, k.userName))];
+}
+
+// --- Personal keys --------------------------------------------------------------------------
+
+export async function listUserSigningKeys(userId: string): Promise<UserKeyRow[]> {
+  return db.query.userSigningKeys.findMany({ where: eq(userSigningKeys.userId, userId), orderBy: (t, { asc }) => [asc(t.name)] });
+}
+
+/** Register a personal key; a public key belongs to exactly one account. */
+export async function addUserSigningKey(input: { userId: string; name: string; pem: string }): Promise<UserKeyRow> {
+  const name = input.name.trim();
+  if (!name) throw new Error("Give the key a name.");
+  if (name.length > 80) throw new Error("Key names are at most 80 characters.");
+  const parsed = parsePublicKey(input.pem);
+  const mine = await listUserSigningKeys(input.userId);
+  if (mine.some((k) => k.name === name)) throw new Error(`You already have a key named "${name}".`);
+  if (mine.length >= MAX_USER_SIGNING_KEYS) throw new Error(`At most ${MAX_USER_SIGNING_KEYS} personal signing keys per account.`);
+  const taken = await db.query.userSigningKeys.findFirst({ where: eq(userSigningKeys.fingerprint, parsed.fingerprint), columns: { userId: true, name: true } });
+  if (taken) {
+    throw new Error(
+      taken.userId === input.userId ? `This key is already registered as "${taken.name}".` : "This public key is already registered by another account.",
+    );
+  }
+  const [row] = await db
+    .insert(userSigningKeys)
+    .values({ userId: input.userId, name, publicKeyPem: parsed.pem, fingerprint: parsed.fingerprint, keyType: parsed.keyType })
+    .returning();
+  return row;
+}
+
+export async function removeUserSigningKey(id: string, userId: string): Promise<UserKeyRow | null> {
+  const [row] = await db.delete(userSigningKeys).where(and(eq(userSigningKeys.id, id), eq(userSigningKeys.userId, userId))).returning();
+  return row ?? null;
+}
+
+/**
+ * Organizations whose repositories a user's personal keys may verify in:
+ * every organization for instance administrators, otherwise those where the
+ * user holds a writer role. (Whether the organization trusts member keys is
+ * checked at verification time.)
+ */
+export async function organizationsTrustingUser(userId: string): Promise<{ id: string; slug: string; name: string; role: string }[]> {
+  const u = await db.query.user.findFirst({ where: eq(user.id, userId), columns: { role: true } });
+  if (u?.role === "admin") {
+    const all = await db.query.organization.findMany({ columns: { id: true, slug: true, name: true }, orderBy: (t, { asc }) => [asc(t.name)] });
+    return all.map((o) => ({ ...o, role: "admin" }));
+  }
+  const rows = await db
+    .select({ id: organization.id, slug: organization.slug, name: organization.name, role: member.role })
+    .from(member)
+    .innerJoin(organization, eq(organization.id, member.organizationId))
+    .where(and(eq(member.userId, userId), inArray(member.role, WRITER_ROLES)))
+    .orderBy(asc(organization.name));
+  return rows;
+}
+
+/** Re-verify every organization a user's personal keys apply to (after the user adds or removes one). */
+export async function reverifyForUser(userId: string): Promise<{ organizations: number; subjects: number; signed: number }> {
+  const orgs = await organizationsTrustingUser(userId);
+  let subjects = 0;
+  let signed = 0;
+  for (const o of orgs) {
+    if (!(await orgTrustsMemberKeys(o.id))) continue;
+    const out = await reverifyOrganization(o.id);
+    subjects += out.subjects;
+    signed += out.signed;
+  }
+  return { organizations: orgs.length, subjects, signed };
 }
 
 export async function addTrustedKey(input: {
@@ -606,11 +745,11 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
 // --- Verification -------------------------------------------------------------------------------
 
 interface PreparedKey {
-  row: TrustedKeyRow;
+  row: VerificationKey;
   key: KeyObject;
 }
 
-function prepareKeys(keys: TrustedKeyRow[]): PreparedKey[] {
+function prepareKeys(keys: VerificationKey[]): PreparedKey[] {
   const out: PreparedKey[] = [];
   for (const row of keys) {
     try {
@@ -626,7 +765,9 @@ function matchKeys(check: SignatureCheck, data: Buffer, signature: Buffer, keys:
   for (const k of keys) {
     if (verifyWithKey(k.key, data, signature)) {
       check.status = "verified";
-      check.keyId = k.row.id;
+      check.keyId = k.row.scope === "trusted" ? k.row.id : null;
+      check.userKeyId = k.row.scope === "user" ? k.row.id : null;
+      check.signer = k.row.scope === "user" ? (k.row.signer ?? null) : null;
       check.keyName = k.row.name;
       check.keyFingerprint = k.row.fingerprint;
       check.reason = null;
@@ -675,7 +816,11 @@ export function repositoryPathCandidates(orgSlug: string, repoName: string): str
 export interface SignatureResult {
   kind: "signature" | "attestation";
   status: SignatureStatus;
+  /** Trusted key that verified it. */
   keyId: string | null;
+  /** Member's personal key that verified it instead. */
+  userKeyId: string | null;
+  signer: string | null;
   identity: string | null;
   checks: SignatureCheck[];
 }
@@ -693,7 +838,7 @@ export async function checkArtifactSignatures(input: {
   subjectPayload: string | null;
   artifact: ArtifactRef;
   classification: Classification;
-  keys: TrustedKeyRow[];
+  keys: VerificationKey[];
   load: BlobLoader;
 }): Promise<SignatureResult | null> {
   const { artifact, classification, subjectDigest } = input;
@@ -767,7 +912,10 @@ export async function checkArtifactSignatures(input: {
       }
       if (check.status === "untrusted" && check.hint) {
         const hinted = keys.find((k) => k.row.fingerprint === check.hint);
-        if (hinted) invalid(check, `does not verify with trusted key "${hinted.row.name}", the key it names`);
+        if (hinted) {
+          const label = hinted.row.scope === "user" ? `${hinted.row.signer ?? "a member"}'s key "${hinted.row.name}"` : `trusted key "${hinted.row.name}"`;
+          invalid(check, `does not verify with ${label}, the key it names`);
+        }
       }
       const certRaw =
         bundle.verificationMaterial?.certificate?.rawBytes ?? bundle.verificationMaterial?.x509CertificateChain?.certificates?.[0]?.rawBytes;
@@ -806,13 +954,15 @@ export async function checkArtifactSignatures(input: {
     kind: classification.kind === "signature" ? "signature" : "attestation",
     status,
     keyId: verified?.keyId ?? null,
+    userKeyId: verified?.userKeyId ?? null,
+    signer: verified?.signer ?? null,
     identity: keyless?.identity ?? null,
     checks,
   };
 }
 
 interface VerifyContext {
-  keys?: TrustedKeyRow[];
+  keys?: VerificationKey[];
   orgSlug?: string;
   load?: BlobLoader;
 }
@@ -829,7 +979,7 @@ async function orgSlugOf(organizationId: string): Promise<string> {
  */
 export async function verifyManifestSignatures(repo: RepoRow, subjectDigest: string, ctx: VerifyContext = {}): Promise<number> {
   const orgSlug = ctx.orgSlug ?? (await orgSlugOf(repo.organizationId));
-  const keys = ctx.keys ?? (await effectiveTrustedKeys(repo.organizationId, repo.id));
+  const keys = ctx.keys ?? (await effectiveVerificationKeys(repo.organizationId, repo.id));
   const load = ctx.load ?? makeBlobLoader(imagePath(orgSlug, repo.name));
   const subject = await db.query.manifests.findFirst({
     where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, subjectDigest)),
@@ -856,6 +1006,7 @@ export async function verifyManifestSignatures(repo: RepoRow, subjectDigest: str
       kind: result.kind,
       status: result.status,
       keyId: result.keyId,
+      userKeyId: result.userKeyId,
       identity: result.identity,
       details: result.checks,
       checkedAt: new Date(),
@@ -892,7 +1043,7 @@ export async function reverifyRepository(repositoryId: string): Promise<{ subjec
   const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, repositoryId) });
   if (!repo) return { subjects: 0, signed: 0 };
   const orgSlug = await orgSlugOf(repo.organizationId);
-  const keys = await effectiveTrustedKeys(repo.organizationId, repo.id);
+  const keys = await effectiveVerificationKeys(repo.organizationId, repo.id);
   const load = makeBlobLoader(imagePath(orgSlug, repo.name));
   const subjects = await artifactSubjects(repo.id);
   let signed = 0;
@@ -938,7 +1089,7 @@ export async function onManifestPushed(repositoryPath: string, digest: string, t
   if (!row) return;
   const subject = row.subjectDigest ?? parseCosignTag(tag)?.digest ?? null;
   const ctx: VerifyContext = {
-    keys: await effectiveTrustedKeys(org.id, repo.id),
+    keys: await effectiveVerificationKeys(org.id, repo.id),
     orgSlug: org.slug,
     load: makeBlobLoader(repositoryPath),
   };
@@ -952,6 +1103,8 @@ export async function onManifestPushed(repositoryPath: string, digest: string, t
 export interface SignatureStatusView {
   status: SignatureStatus;
   keyName: string | null;
+  /** Owner of the personal key that verified it; null for organization / repository keys. */
+  signer: string | null;
   keyFingerprint: string | null;
   identity: string | null;
   issuer: string | null;
@@ -1010,7 +1163,10 @@ export interface AttestationView {
   sboms: SbomView[];
   provenance: ProvenanceView[];
   others: OtherArtifactView[];
+  /** Keys in scope: trusted keys of the organization and repository … */
   trustedKeys: number;
+  /** … and members' personal keys, when the organization trusts them. */
+  memberKeys: number;
   total: number;
 }
 
@@ -1032,7 +1188,7 @@ export async function getAttestationView(
     ...children.map((c) => ({ digest: c.digest!, label: platformLabel(c.platform) })),
   ];
   const digests = subjects.map((s) => s.digest);
-  const [artifacts, keys] = await Promise.all([discoverArtifacts(repo.id, digests), effectiveTrustedKeys(repo.organizationId, repo.id)]);
+  const [artifacts, keys] = await Promise.all([discoverArtifacts(repo.id, digests), effectiveVerificationKeys(repo.organizationId, repo.id)]);
   const load = makeBlobLoader(imagePath(orgSlug, repo.name));
 
   const loadRows = () =>
@@ -1054,22 +1210,33 @@ export async function getAttestationView(
     rows = await loadRows();
   }
 
+  // Keys that verified a row but are no longer in scope (removed, or the
+  // owner lost push access) are still named, so the status reads the same.
   const keyNames = new Map(keys.map((k) => [k.id, k]));
   for (const r of rows) {
     if (r.keyId && !keyNames.has(r.keyId)) {
       const k = await db.query.signingKeysTrusted.findFirst({ where: eq(signingKeysTrusted.id, r.keyId) });
-      if (k) keyNames.set(k.id, k);
+      if (k) keyNames.set(k.id, trustedVerificationKey(k));
+    }
+    if (r.userKeyId && !keyNames.has(r.userKeyId)) {
+      const k = await db.query.userSigningKeys.findFirst({ where: eq(userSigningKeys.id, r.userKeyId) });
+      if (k) {
+        const owner = await db.query.user.findFirst({ where: eq(user.id, k.userId), columns: { name: true } });
+        keyNames.set(k.id, userVerificationKey(k, owner?.name ?? "a former member"));
+      }
     }
   }
   const statusOf = (a: ArtifactRef): SignatureStatusView | null => {
     const r = rows.find((row) => row.signatureDigest === a.digest);
     if (!r) return null;
-    const key = r.keyId ? keyNames.get(r.keyId) : undefined;
+    const key = r.keyId ? keyNames.get(r.keyId) : r.userKeyId ? keyNames.get(r.userKeyId) : undefined;
     const checks = (r.details as SignatureCheck[] | null) ?? [];
     const keyless = checks.find((c) => c.status === "keyless");
+    const signer = key?.scope === "user" ? (key.signer ?? null) : (checks.find((c) => c.status === "verified")?.signer ?? null);
     return {
       status: r.status,
       keyName: key?.name ?? (r.status === "verified" ? "(removed)" : null),
+      signer,
       keyFingerprint: key?.fingerprint ?? null,
       identity: r.identity ?? keyless?.identity ?? null,
       issuer: keyless?.issuer ?? null,
@@ -1077,6 +1244,7 @@ export async function getAttestationView(
       description: describeSignatureStatus({
         status: r.status,
         keyName: key?.name ?? null,
+        signer,
         identity: r.identity ?? keyless?.identity ?? null,
         reason: checks.find((c) => c.reason)?.reason ?? null,
       }),
@@ -1084,7 +1252,16 @@ export async function getAttestationView(
     };
   };
 
-  const view: AttestationView = { subjects, signatures: [], sboms: [], provenance: [], others: [], trustedKeys: keys.length, total: artifacts.length };
+  const view: AttestationView = {
+    subjects,
+    signatures: [],
+    sboms: [],
+    provenance: [],
+    others: [],
+    trustedKeys: keys.filter((k) => k.scope === "trusted").length,
+    memberKeys: keys.filter((k) => k.scope === "user").length,
+    total: artifacts.length,
+  };
   for (const a of artifacts) {
     const info = infos.get(a.digest)!;
     const base: ArtifactBase = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { setOrgSignaturePolicy, setRepoSignaturePolicy, type SignaturePolicyResult } from "@/app/actions/signature-policy";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,12 @@ export function SignaturePolicyForm(
   );
   useActionToast(state, "Signature policy saved");
   const [mode, setMode] = useState<string>(props.scope === "repository" ? (props.value === null ? "" : props.value ? "on" : "off") : "");
-  const [checked, setChecked] = useState(props.scope === "organization" ? props.value : false);
+  // Uncontrolled checkbox with the saved value as its default: React resets
+  // the form when the action returns, and a controlled box would then show
+  // the stale default until the next render (see MemberKeysPolicyForm).
+  const orgValue = props.scope === "organization" ? props.value : false;
+  const [checked, setChecked] = useState(orgValue);
+  useEffect(() => setChecked(orgValue), [orgValue]);
   const effective = props.scope === "organization" ? checked : mode === "on" || (mode === "" && props.inherited);
   const noKeys = effective && props.keyCount === 0;
 
@@ -47,9 +52,10 @@ export function SignaturePolicyForm(
               <FieldAction>
                 <label className="flex items-center gap-2 py-2 text-sm text-ink">
                   <input
+                    key={String(orgValue)}
                     type="checkbox"
                     name="requireSignature"
-                    checked={checked}
+                    defaultChecked={orgValue}
                     onChange={(e) => setChecked(e.target.checked)}
                     className="size-4 accent-[var(--action)]"
                   />

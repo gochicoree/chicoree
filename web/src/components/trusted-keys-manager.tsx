@@ -144,7 +144,7 @@ export function TrustedKeysManager({
         title="Trusted signing keys"
         description={
           scope === "organization"
-            ? "Public keys whose cosign signatures count as verified in every repository of the organization. Paste the PEM of a cosign.pub (ECDSA P-256/P-384, Ed25519 or RSA). Signatures are re-checked whenever a key is added or removed."
+            ? "Public keys whose cosign signatures count as verified in every repository of the organization, on top of members' personal keys (see above). Paste the PEM of a cosign.pub (ECDSA P-256/P-384, Ed25519 or RSA). Signatures are re-checked whenever a key is added or removed."
             : "Keys trusted for this repository only, on top of the organization-wide ones. Paste the PEM of a cosign.pub (ECDSA P-256/P-384, Ed25519 or RSA)."
         }
       />

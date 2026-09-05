@@ -14,6 +14,7 @@ import { evictProxyTags } from "./proxy";
 import { notify } from "./notify";
 import { PAGE_SIZES, paginatedQuery } from "./paginate-shared";
 import { runRetention } from "./retention";
+import { reverifyOrganization } from "./signatures";
 import { runTokenExpiryReminders } from "./token-expiry";
 
 export interface JobDefinition {
@@ -178,6 +179,32 @@ JOBS["token-expiry"] = {
     "Emails the owner of every personal access token, and the managers of every organization whose service account, expires within the window — once per credential. Schedule it daily.",
   params: [{ name: "withinDays", description: "Warn about credentials expiring within this many days", default: "7" }],
   run: async (params) => runTokenExpiryReminders(Math.max(1, Math.min(365, Number(params.withinDays) || 7))),
+};
+
+JOBS["reverify-signatures"] = {
+  name: "reverify-signatures",
+  title: "Re-verify signatures",
+  tab: "Signatures",
+  description:
+    "Re-check every cosign signature and attestation against the trusted keys and members' personal keys, then refresh the signature pull blocks. Useful after keys or memberships changed outside the UI.",
+  params: [{ name: "organization", description: "Only this organization (slug); empty = every organization", default: "" }],
+  run: async (params) => {
+    const slug = (params.organization ?? "").trim();
+    const orgs = slug
+      ? await db.query.organization.findMany({ where: eq(organization.slug, slug), columns: { id: true, slug: true } })
+      : await db.query.organization.findMany({ columns: { id: true, slug: true } });
+    if (slug && orgs.length === 0) throw new Error(`unknown organization "${slug}"`);
+    let repositoriesChecked = 0;
+    let subjects = 0;
+    let signed = 0;
+    for (const o of orgs) {
+      const out = await reverifyOrganization(o.id);
+      repositoriesChecked += out.repositories;
+      subjects += out.subjects;
+      signed += out.signed;
+    }
+    return { organizations: orgs.length, repositories: repositoriesChecked, images: subjects, signedArtifacts: signed };
+  },
 };
 
 /** Jobs that make sense in this deployment (re-scanning needs a scanner backend). */
