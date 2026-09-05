@@ -44,7 +44,7 @@ export function NotificationsForm({ items, email }: { items: NotificationItem[];
         <CardHeader
           eyebrow="Email"
           title="Notifications"
-          description={`Sent to ${email} for the organizations you own or administer. Webhooks are configured per repository or organization and are not affected by these switches.`}
+          description={`Sent to ${email} for the organizations you own or administer.`}
         />
         <div className="divide-y divide-line">{orgItems.map(row)}</div>
         {accountItems.length > 0 && (

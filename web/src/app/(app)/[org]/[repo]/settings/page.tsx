@@ -16,7 +16,7 @@ export default async function RepoGeneralSettingsPage({ params }: { params: Prom
         fields={{ repositoryId: repo.id }}
         initial={repo.logo}
         title="Repository picture"
-        description="Shown in every repository listing, in search results and on this repository's page. Repositories do not inherit their organization's picture."
+        description="Shown wherever this repository appears."
       />
       <ReadmeEditor repositoryId={repo.id} readme={repo.readme} />
     </div>

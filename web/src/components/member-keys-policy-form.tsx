@@ -27,7 +27,7 @@ export function MemberKeysPolicyForm({ organizationId, value, memberKeyCount }: 
       <CardHeader
         eyebrow="Supply chain"
         title="Members' signing keys"
-        description="Whoever may push to a repository may also sign what they push: with this on, the personal keys members register under Settings → Signing keys verify signatures in this organization's repositories (owners, admins and members; instance administrators too). Switch it off to accept only the trusted keys listed below — for a release pipeline with one signing key, say."
+        description="Accept signatures made with the personal keys of members who can push. Switch it off to accept only the trusted keys below."
       />
       <CardBody>
         <form action={action} className="flex flex-wrap items-start gap-3">
@@ -54,7 +54,7 @@ export function MemberKeysPolicyForm({ organizationId, value, memberKeyCount }: 
           <p className="basis-full text-xs text-ink-3">
             {memberKeyCount === 0
               ? "No member has registered a personal key yet."
-              : `${memberKeyCount} personal key${memberKeyCount === 1 ? "" : "s"} registered by members who may push${checked ? "" : " (not trusted while this is off)"}.`}{" "}
+              : `${memberKeyCount} personal key${memberKeyCount === 1 ? "" : "s"} registered${checked ? "" : " (ignored while this is off)"}.`}{" "}
             Signatures are re-verified when the setting changes; a member who loses push access stops verifying at the next check.
           </p>
         </form>

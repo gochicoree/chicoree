@@ -56,7 +56,7 @@ export function OrgRenameForm({
         <CardHeader
           eyebrow="Rename"
           title="Change the organization slug"
-          description="The slug is the image namespace. Pulls of the old namespace are redirected; pushes to it are refused. Web links to the old slug redirect."
+          description="Pulls and links using the old slug keep working; pushes to it are refused."
         />
         <CardBody className="space-y-3">
           <div className="flex flex-wrap items-start gap-3">
@@ -84,7 +84,7 @@ export function OrgRenameForm({
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
           {formerSlugs.length > 0 && (
             <p className="text-xs text-ink-2">
-              Former slugs still redirecting here: <span className="font-mono">{formerSlugs.join(", ")}</span>. Creating an organization with one of them ends its redirect.
+              Former slugs still redirecting here: <span className="font-mono">{formerSlugs.join(", ")}</span>.
             </p>
           )}
         </CardBody>

@@ -272,7 +272,7 @@ function AcceptRiskModal({
         <input type="hidden" name="vulnerabilityId" value={finding.id} />
         <input type="hidden" name="package" value={onlyPackage ? finding.package : ""} />
         <input type="hidden" name="expiresInDays" value={expiry} />
-        <Field label="Scope" htmlFor="accept-scope" hint="Organization-wide exceptions cover every repository of the organization.">
+        <Field label="Scope" htmlFor="accept-scope">
           <Select
             id="accept-scope"
             name="scope"
@@ -291,10 +291,10 @@ function AcceptRiskModal({
             <span className="block text-xs text-ink-3">Unchecked: the vulnerability is accepted in any package.</span>
           </span>
         </label>
-        <Field label="Justification" htmlFor="accept-justification" hint="Why the risk is acceptable — not reachable, mitigated elsewhere, false positive… Shown next to the finding and recorded in the audit log.">
+        <Field label="Justification" htmlFor="accept-justification" hint="e.g. not reachable, mitigated elsewhere, false positive">
           <Textarea id="accept-justification" name="justification" required rows={3} placeholder="The vulnerable code path is not used by this image." />
         </Field>
-        <Field label="Expires" htmlFor="accept-expiry" hint="The finding counts again once the exception expires.">
+        <Field label="Expires" htmlFor="accept-expiry">
           <Select id="accept-expiry" value={expiry} onChange={setExpiry} options={EXPIRY_OPTIONS} />
         </Field>
         {state?.error && <p className="text-sm text-danger">{state.error}</p>}

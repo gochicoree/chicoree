@@ -66,7 +66,7 @@ function RemoveButton({ item }: { item: PersonalKeyItem }) {
         tone="danger"
         confirmLabel={busy ? "Removing…" : "Remove key"}
         title={`Remove key ${item.name}?`}
-        description="Signatures you made with this key stop verifying. Where signatures are required, images that carry no other trusted signature can no longer be pulled."
+        description="Signatures made with this key no longer count as verified. Images that require a signature may stop being pullable."
       />
     </>
   );
@@ -108,7 +108,7 @@ export function SigningKeysManager({
         <CardHeader
           eyebrow="Supply chain"
           title="Personal signing keys"
-          description="The cosign public keys that belong to you. A signature or attestation made with one of them counts as verified in every repository you may push to — as long as that organization trusts members' keys. A public key can belong to one account only."
+          description="Your cosign public keys. Signatures made with them count as verified in the repositories you can push to."
         />
         {keys.length > 0 ? (
           <div className="overflow-x-auto border-b border-line">
@@ -155,7 +155,7 @@ export function SigningKeysManager({
         <CardBody>
           <form ref={formRef} action={action} className="flex flex-col gap-3">
             <div className="sm:max-w-xs">
-              <Field label="Name" htmlFor="personal-key-name" hint="Shown next to your verified signatures, e.g. “laptop” or “yubikey”.">
+              <Field label="Name" htmlFor="personal-key-name" hint="e.g. laptop, yubikey">
                 <Input id="personal-key-name" name="name" required placeholder="laptop" maxLength={80} />
               </Field>
             </div>
@@ -185,8 +185,8 @@ export function SigningKeysManager({
           title={instanceAdmin ? "Every organization" : "Organizations you may push to"}
           description={
             instanceAdmin
-              ? "Instance administrators may push everywhere, so their keys verify in every organization that trusts members' keys."
-              : "Owners, admins and members may push; viewers' keys never count. Losing the role stops the key from verifying at the next check."
+              ? "As an administrator you can push everywhere, so your keys count in every organization that accepts members' keys."
+              : "Your keys count wherever you can push. Viewers' keys never count."
           }
         />
         <CardBody className="space-y-3 text-sm">
@@ -210,8 +210,7 @@ export function SigningKeysManager({
           )}
           {optedOut.length > 0 && trusting.length > 0 && (
             <p className="text-xs text-ink-3">
-              Organizations marked “own keys only” switched members&apos; keys off under Settings → Policies; their owners can add your key
-              as a trusted key instead.
+              Organizations marked “own keys only” do not accept members&apos; keys. Ask an owner to add yours as a trusted key.
             </p>
           )}
           <div className="space-y-2 pt-1">
@@ -219,8 +218,7 @@ export function SigningKeysManager({
             <CommandLine command={`cosign sign --key cosign.key ${registryHost}/<org>/<image>@sha256:…`} />
             <CommandLine command={`cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json ${registryHost}/<org>/<image>@sha256:…`} />
             <p className="text-xs text-ink-3">
-              Sign by digest, not by tag. cosign v3 needs <code className="font-mono">--use-signing-config=false --tlog-upload=false</code> for a
-              private key without the public transparency log.
+              Sign by digest, not by tag. With cosign v3 add <code className="font-mono">--use-signing-config=false --tlog-upload=false</code>.
             </p>
           </div>
         </CardBody>

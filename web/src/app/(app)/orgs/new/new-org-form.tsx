@@ -80,7 +80,7 @@ export function NewOrganizationForm() {
           <Field
             label="Slug"
             htmlFor="slug"
-            hint={`Images will live under ${slug || "<slug>"}/<repository>. Lowercase letters, digits, ._- separators.`}
+            hint={`Images will be named ${slug || "<slug>"}/<repository>. Lowercase letters, digits, ._-`}
           >
             <Input
               id="slug"
@@ -136,8 +136,8 @@ export function NewOrganizationForm() {
                   </Field>
                 )}
                 <p className="text-xs text-ink-2 sm:col-span-2">
-                  Example: <code className="font-mono">docker pull &lt;registry&gt;/{slug || "<slug>"}/{preset === "dockerhub" ? "nginx:1.27" : "<namespace>/<image>:<tag>"}</code>. Credentials and
-                  an allow-list can be added under Settings → Proxy.
+                  Example: <code className="font-mono">docker pull &lt;registry&gt;/{slug || "<slug>"}/{preset === "dockerhub" ? "nginx:1.27" : "<namespace>/<image>:<tag>"}</code>. Credentials
+                  can be added later under Settings → Proxy.
                 </p>
               </div>
             )}

@@ -59,7 +59,7 @@ export function OnboardingChecklist({ state, registryHost }: { state: Onboarding
       <CardHeader
         eyebrow="Getting started"
         title={`${done} of ${steps.length} steps done`}
-        description="Set up the registry for your first push. This card goes away once everything is ticked, or when you close it."
+        description="Everything you need for your first push."
         action={
           <form action={dismissOnboarding}>
             <button type="submit" aria-label="Dismiss getting started" data-onboarding-dismiss className={buttonClasses("ghost", "sm")}>

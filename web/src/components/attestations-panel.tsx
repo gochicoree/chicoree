@@ -164,16 +164,15 @@ export function AttestationsPanel({
       {view.total === 0 && (
         <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
           <p>
-            Sign the image or attach an SBOM / provenance with cosign or oras; everything attached to this digest shows up here.
-            {view.trustedKeys === 0 && view.memberKeys === 0 && " Add the signer's public key under Settings → Policies, or your own under Settings → Signing keys, so signatures verify."}
+            Sign the image or attach an SBOM with cosign or oras and it shows up here.
+            {view.trustedKeys === 0 && view.memberKeys === 0 && " Register your public key under Settings → Signing keys so signatures verify."}
           </p>
           <CommandLine command={`cosign sign --key cosign.key ${digestReference}`} />
           <CommandLine command={`cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json ${digestReference}`} />
           <CommandLine command={`oras attach --artifact-type application/spdx+json ${digestReference} sbom.spdx.json:application/spdx+json`} />
           <p className="text-xs text-ink-3">
-            Add <code className="font-mono">--allow-http-registry</code> for a registry without TLS. cosign v3 stores signatures as
-            Sigstore bundles through the referrers API; the classic <code className="font-mono">sha256-….sig</code> tags of cosign v2
-            and <code className="font-mono">cosign attach sbom</code> are read too.
+            Add <code className="font-mono">--allow-http-registry</code> for a registry without TLS. cosign v2 signatures and{" "}
+            <code className="font-mono">cosign attach sbom</code> work too.
           </p>
         </div>
       )}

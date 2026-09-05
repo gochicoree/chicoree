@@ -66,7 +66,7 @@ export function SecurityOverview({
           <CardHeader
             eyebrow="Repositories"
             title={`Top ${worst.length || 10} most affected`}
-            description="The repositories with the most severe open findings in tagged images — a shortlist, not every repository."
+            description="Repositories with the most severe open findings."
           />
           {worst.length === 0 ? (
             <p className="px-5 py-4 text-sm text-ink-3">No open findings in any tagged image.</p>
@@ -107,7 +107,7 @@ export function SecurityOverview({
           <CardHeader
             eyebrow="Pull policy"
             title={`Blocked images (${blockedState.total.toLocaleString("en-US")})`}
-            description="Manifests the registry refuses to serve until a re-scan, an exception or a policy change clears them."
+            description="Images that cannot be pulled until a re-scan, an accepted risk or a policy change clears them."
           />
           {blocked.length === 0 ? (
             <p className="px-5 py-4 text-sm text-ink-3">No image is blocked right now.</p>
@@ -155,7 +155,7 @@ export function SecurityOverview({
       </div>
       {totals.images.scanned === 0 && totals.images.unscanned > 0 && (
         <p className="text-xs text-ink-3">
-          <Badge>waiting</Badge> Images are scanned in the background after each push; totals appear once the first scans finish.
+          <Badge>waiting</Badge> Images are scanned after each push; totals appear once the first scans finish.
         </p>
       )}
     </div>

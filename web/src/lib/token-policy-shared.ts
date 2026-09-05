@@ -50,8 +50,8 @@ export function defaultExpiryChoice(policy: TokenExpiryPolicy): string {
 /** One-line explanation of the policy for the form, or "" when nothing applies. */
 export function describeExpiryPolicy(policy: TokenExpiryPolicy): string {
   const parts: string[] = [];
-  if (policy.maxTokenLifetimeDays > 0) parts.push(`this instance limits tokens to ${policy.maxTokenLifetimeDays} days`);
-  if (policy.requireTokenExpiry) parts.push("every token must have an expiry date");
+  if (policy.maxTokenLifetimeDays > 0) parts.push(`at most ${policy.maxTokenLifetimeDays} days`);
+  if (policy.requireTokenExpiry) parts.push("an expiry date is required");
   if (parts.length === 0) return "";
   const s = parts.join(" and ");
   return s.charAt(0).toUpperCase() + s.slice(1) + ".";

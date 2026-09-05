@@ -54,7 +54,7 @@ export function OrgGeneralForm({
           <Field
             label="Slug"
             htmlFor="org-slug"
-            hint="The slug is the image namespace and cannot be changed — existing image references would break."
+            hint="Part of every image name; use Rename to change it."
           >
             <Input id="org-slug" value={slug} disabled className="font-mono" />
           </Field>
@@ -91,7 +91,7 @@ export function OrgDeleteForm({ organizationId, slug }: { organizationId: string
       <CardHeader
         eyebrow="Danger"
         title="Delete this organization"
-        description="Removes the organization, every repository in it, and all image metadata. Blob content is reclaimed by the next garbage-collection run. This cannot be undone."
+        description="Deletes the organization and every repository in it. This cannot be undone."
       />
       <CardBody className="space-y-3">
         <Field label={`Type "${slug}" to confirm`} htmlFor="confirm-slug">

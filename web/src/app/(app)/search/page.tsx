@@ -41,15 +41,15 @@ export default async function SearchPage({
         title={q ? `Results for “${q}”` : "Search"}
         description={
           q
-            ? `${results.total} match${results.total === 1 ? "" : "es"} across repositories, tags, digests and organizations you can see.`
-            : "Find repositories by name or description, tags as org/repo:tag, images by digest prefix, and organizations."
+            ? `${results.total} match${results.total === 1 ? "" : "es"}.`
+            : "Find repositories, tags, images by digest, and organizations."
         }
       />
       <SearchBox defaultValue={q} size="lg" autoFocus={!q} className="mb-6" placeholder="Search images, tags, digests, organizations…" />
 
       {q && results.total === 0 && (
         <p className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-sm text-ink-3" data-search-empty>
-          Nothing matches “{q}”. Try a shorter name, an <code className="font-mono">org/repo:tag</code> reference or at least 12 hex characters of a digest.
+          Nothing matches “{q}”. Try a shorter name, <code className="font-mono">org/repo:tag</code> or the start of a digest.
         </p>
       )}
 
@@ -59,7 +59,7 @@ export default async function SearchPage({
             <CardHeader
               eyebrow="Content"
               title={`Digests (${results.digests.state.total.toLocaleString("en-US")})`}
-              description="Manifests whose digest starts with what you typed."
+              description="Digests starting with what you typed."
             />
             <ul data-search-group="digests">
               {results.digests.rows.map((d) => (
@@ -119,7 +119,7 @@ export default async function SearchPage({
             <CardHeader
               eyebrow="References"
               title={`Tags (${results.tags.state.total.toLocaleString("en-US")})`}
-              description="Narrow the repository with org/repo:tag."
+              description="Search org/repo:tag to narrow down."
             />
             <ul data-search-group="tags">
               {results.tags.rows.map((t) => (

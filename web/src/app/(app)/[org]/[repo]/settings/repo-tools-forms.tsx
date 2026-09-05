@@ -75,7 +75,7 @@ export function RepoRenameForm({
           description={
             proxy
               ? "Repositories in a proxy cache mirror upstream names and cannot be renamed."
-              : "Pulls of the old name are redirected to the new one; pushes to the old name are refused. Web links to the old name redirect."
+              : "Pulls and links using the old name keep working; pushes to it are refused."
           }
         />
         <CardBody className="space-y-3">
@@ -105,7 +105,7 @@ export function RepoRenameForm({
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
           {formerNames.length > 0 && (
             <p className="text-xs text-ink-2">
-              Former names still redirecting here: <span className="font-mono">{formerNames.join(", ")}</span>. Creating a repository with one of them ends its redirect.
+              Former names still redirecting here: <span className="font-mono">{formerNames.join(", ")}</span>.
             </p>
           )}
         </CardBody>
@@ -190,12 +190,12 @@ export function RepoTransferForm({
           description={
             proxy
               ? "Repositories in a proxy cache cannot be moved."
-              : "You need to be an owner or admin of both organizations. The target's repository and storage limits apply."
+              : "You need to be an owner or admin of both organizations."
           }
         />
         <CardBody className="space-y-3">
           {targets.length === 0 && !proxy ? (
-            <p className="text-sm text-ink-2">You don't manage another organization that can receive this repository.</p>
+            <p className="text-sm text-ink-2">You don't manage another organization to move it to.</p>
           ) : (
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-64 flex-1 sm:flex-none">

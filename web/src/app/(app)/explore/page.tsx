@@ -45,8 +45,8 @@ export default async function ExplorePage({ searchParams }: { searchParams: Prom
         title="Explore images"
         description={
           viewer.kind === "user"
-            ? "Every public repository on this registry, plus the private ones you have access to."
-            : "Every public repository on this registry."
+            ? "Public repositories, plus the private ones you can see."
+            : "Public repositories on this registry."
         }
       />
       <ExploreFilters value={{ q, org, visibility: visibility ?? "all", sort }} orgs={orgs} showVisibility={viewer.kind === "user"} />

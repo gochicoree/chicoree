@@ -15,7 +15,7 @@ export default async function OrgGeneralSettingsPage({ params }: { params: Promi
         fields={{ organizationId: org.id }}
         initial={org.logo}
         title="Organization picture"
-        description="Shown wherever this organization appears: the sidebar, the organization list, search results and its own page."
+        description="Shown wherever this organization appears."
       />
     </div>
   );

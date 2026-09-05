@@ -79,7 +79,7 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
         <CardHeader eyebrow="Destination" title="Where it goes" />
         <CardBody>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Repository name" htmlFor="name" hint={`Created as ${orgSlug === "library" ? "" : orgSlug + "/"}<name> if it doesn't exist.`}>
+            <Field label="Repository name" htmlFor="name" hint={`Created as ${orgSlug === "library" ? "" : orgSlug + "/"}<name> if needed.`}>
               <Input ref={nameRef} id="name" name="name" required className="font-mono" pattern="[a-z0-9]+([._\\-][a-z0-9]+)*" />
             </Field>
             <Field label="Visibility" htmlFor="visibility">

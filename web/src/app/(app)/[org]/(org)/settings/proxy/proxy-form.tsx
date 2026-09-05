@@ -77,7 +77,7 @@ export function ProxyForm({
   if (isLibrary) {
     return (
       <Card>
-        <CardHeader eyebrow="Proxy cache" title="Not available for the library organization" description="Top-level image names are owned by this instance; create a separate organization (for example “dockerhub”) to cache an upstream registry." />
+        <CardHeader eyebrow="Proxy cache" title="Not available for the library organization" description="Create a separate organization (for example “dockerhub”) to cache an upstream registry." />
       </Card>
     );
   }
@@ -88,7 +88,7 @@ export function ProxyForm({
         <CardHeader
           eyebrow="Proxy cache"
           title={proxy ? `Proxy cache of ${displayHost(proxy.upstreamUrl)}` : "Turn this organization into a proxy cache"}
-          description="Images pulled through this organization are fetched from the upstream registry on first use, stored here like a push (dedup, quotas, scanning and webhooks apply) and served from the cache afterwards. Nobody can push into a proxy organization."
+          description="Images are fetched from the upstream registry on first pull and served from here afterwards. Nobody can push into a proxy organization."
           action={
             proxy ? (
               <Badge tone={proxy.enabled ? "ok" : "neutral"}>{proxy.enabled ? "enabled" : "paused"}</Badge>
@@ -110,7 +110,7 @@ export function ProxyForm({
                   options={PROXY_PRESETS.map((p) => ({ value: p.value, label: p.label, description: p.url || "https://…" }))}
                 />
               </Field>
-              <Field label="Registry API URL" htmlFor="proxy-url" hint="Scheme and host of the distribution API (/v2/ is appended).">
+              <Field label="Registry API URL" htmlFor="proxy-url" hint="e.g. https://registry.example.com">
                 <Input
                   id="proxy-url"
                   name="upstreamUrl"
@@ -156,12 +156,12 @@ export function ProxyForm({
               <Field
                 label="Allowed images"
                 htmlFor="proxy-patterns"
-                hint="Globs on the upstream path, separated by spaces; * also matches slashes. Empty = everything. Example: library/* bitnami/*"
+                hint="Space-separated patterns, e.g. library/* bitnami/*. Empty allows everything."
               >
                 <Textarea id="proxy-patterns" name="allowedPatterns" defaultValue={proxy?.allowedPatterns ?? ""} className="font-mono min-h-16" placeholder="library/* bitnami/redis" />
               </Field>
               <div className="space-y-4">
-                <Field label="Tag freshness (seconds)" htmlFor="proxy-ttl" hint="How long a cached tag → digest mapping is trusted before the upstream is asked again with a HEAD request.">
+                <Field label="Tag freshness (seconds)" htmlFor="proxy-ttl" hint="How long a cached tag is used before checking upstream again.">
                   <Input id="proxy-ttl" name="tagTtlSeconds" type="number" min={0} max={2592000} defaultValue={proxy?.tagTtlSeconds ?? 300} className="font-mono" />
                 </Field>
                 <label className="flex items-start gap-2 text-sm text-ink-2">
@@ -204,8 +204,8 @@ export function ProxyForm({
           <CommandLine command={`docker pull ${registryHost}/${slug}/${example}`} />
           {dockerHub && <CommandLine command={`docker pull ${registryHost}/${slug}/bitnami/redis:7.4`} />}
           <p className="pt-1 text-xs text-ink-2">
-            Repositories are created on first pull with this organization&apos;s default visibility (Policies tab); make it public to allow
-            anonymous pulls as on the upstream. Tags nobody pulled for a while are removed by the <code className="font-mono">proxy-evict</code> job.
+            Repositories are created on first pull with this organization&apos;s default visibility. Tags nobody pulls for a while are
+            removed automatically.
           </p>
         </CardBody>
       </Card>

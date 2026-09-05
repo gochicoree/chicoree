@@ -38,7 +38,7 @@ export default async function SettingsPage() {
           initial={me?.image ?? null}
           eyebrow="Profile"
           title="Your avatar"
-          description="Shown next to your name in the sidebar, member lists, the activity feed and on the images you push."
+          description="Shown next to your name."
           submitLabel="Save avatar"
           removeLabel="Remove avatar"
         />

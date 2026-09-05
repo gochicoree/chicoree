@@ -17,7 +17,7 @@ export type SeveritySummary = Partial<Record<(typeof SEVERITIES)[number]["key"],
 
 /** Why a finding can lack a rating; shown wherever "unrated" appears. */
 export const UNRATED_HINT =
-  "No severity published by the source (Alpine's security database, for one, lists fixes without ratings). Unrated is not harmless.";
+  "The advisory source did not publish a severity. Unrated is not harmless.";
 
 export function totalFindings(summary: SeveritySummary | null | undefined): number {
   if (!summary) return 0;

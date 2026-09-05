@@ -85,8 +85,8 @@ export function DeleteTagButton({
         title={`Delete ${tag}?`}
         description={
           latestFollows
-            ? `Removes the tag; the image data stays until untagged manifests are pruned. "latest" currently points at this image and will move to the newest remaining tag.`
-            : "Removes the tag; the image data stays until untagged manifests are pruned."
+            ? `Removes the tag. "latest" points at this image and will move to the newest remaining tag.`
+            : "Removes the tag. The image stays until it is pruned."
         }
       />
     </>
@@ -176,8 +176,8 @@ export function DeleteManifestButton({
         title={`Delete image ${shortDigest}?`}
         description={
           tags.length > 0
-            ? "The manifest is removed from the registry together with every tag that points at it. Layer data stays until garbage collection runs."
-            : "The untagged manifest is removed from the registry. Layer data stays until garbage collection runs."
+            ? "Removes the image and every tag that points at it."
+            : "Removes the image."
         }
       >
         {tags.length > 0 && (

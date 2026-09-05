@@ -500,7 +500,7 @@ export default async function TagDetailPage({
           <CardHeader
             eyebrow="Attestations"
             title="Signatures & SBOMs"
-            description="Attached to the index itself and to each platform variant. A signature on the index covers its variants for the pull policy."
+            description="Attached to the image and to each platform variant."
           />
           <CardBody>{attestationsPanel}</CardBody>
         </Card>

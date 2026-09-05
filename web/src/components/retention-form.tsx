@@ -179,8 +179,8 @@ export function RetentionForm({
         title="Clean up old tags and images"
         description={
           scope === "organization"
-            ? "The default for every repository in the organization; a repository with its own policy replaces it entirely. Protected tags are never deleted. Applied by the retention job — run it from the admin Jobs page or on a schedule."
-            : "Replaces the organization's policy for this repository. Protected tags are never deleted. Applied by the retention job — run it from the admin Jobs page or on a schedule."
+            ? "Applies to every repository without a policy of its own. Protected tags are never deleted."
+            : "Replaces the organization's policy for this repository. Protected tags are never deleted."
         }
       />
       <CardBody className="space-y-4">
@@ -221,7 +221,7 @@ export function RetentionForm({
                   <span className="block text-xs text-ink-3">Only enabled policies are applied by the retention job; previews work either way.</span>
                 </span>
               </label>
-              <Field label="Keep the newest tags" htmlFor="retention-keep-last" hint="Number of most recently pushed tags that always stay.">
+              <Field label="Keep the newest tags" htmlFor="retention-keep-last" hint="How many recent tags always stay.">
                 <Input
                   id="retention-keep-last"
                   name="keepLast"
@@ -233,7 +233,7 @@ export function RetentionForm({
                   className="font-mono"
                 />
               </Field>
-              <Field label="Always keep tags matching" htmlFor="retention-keep-matching" hint="Space-separated patterns, * and ? wildcards.">
+              <Field label="Always keep tags matching" htmlFor="retention-keep-matching" hint="e.g. v* latest">
                 <Input
                   id="retention-keep-matching"
                   name="keepMatching"
@@ -245,7 +245,7 @@ export function RetentionForm({
               <Field
                 label="Delete tags older than (days)"
                 htmlFor="retention-older"
-                hint="Counted from the tag's last push. Empty with a keep count: everything beyond the newest tags goes."
+                hint="Counted from the tag's last push."
               >
                 <Input
                   id="retention-older"
@@ -261,7 +261,7 @@ export function RetentionForm({
               <Field
                 label="Delete untagged manifests after (days)"
                 htmlFor="retention-untagged"
-                hint="Images without a tag. Platform variants of an existing index and attached artifacts are skipped."
+                hint="Images without a tag. Parts of multi-arch images and attached artifacts are kept."
               >
                 <Input
                   id="retention-untagged"
@@ -323,14 +323,13 @@ export function RetentionForm({
         description={
           scope === "organization" ? (
             <>
-              Runs the <em>saved</em> organization policy now (repositories with their own policy use that), not a dry run: the tags and
-              untagged manifests it selects are deleted through the registry. Use Preview first to see what would go. Organization policy:{" "}
-              <strong>{savedSummary}</strong>.
+              Deletes the tags and untagged images selected by the <em>saved</em> policy of every repository. Use Preview first to see what would
+              go. Organization policy: <strong>{savedSummary}</strong>.
             </>
           ) : (
             <>
-              Runs the <em>saved</em> policy for this repository now, not a dry run: the tags and untagged manifests it selects are deleted
-              through the registry. Use Preview first to see what would go. Effective policy: <strong>{savedSummary}</strong>.
+              Deletes the tags and untagged images selected by the <em>saved</em> policy. Use Preview first to see what would go. Policy:{" "}
+              <strong>{savedSummary}</strong>.
             </>
           )
         }

@@ -24,7 +24,7 @@ export default async function NewRepositoryPage({
       <PageHeader
         eyebrow={ctx.org.name}
         title="New repository"
-        description="Start empty and push to it, or mirror a repository from another registry — the repository, the mirror and the first sync are set up together. Pushing to a new name also creates a repository automatically."
+        description="Start empty, or mirror a repository from another registry. Pushing to a new name also creates a repository."
       />
       <RepositorySetup
         organizationId={ctx.org.id}

@@ -47,7 +47,7 @@ export function RepoGeneralForm({
                 <Textarea id="description" name="description" defaultValue={description} />
               </Field>
             </div>
-            <Field label="Visibility" htmlFor="visibility" hint="Public repositories can be pulled by anyone without credentials.">
+            <Field label="Visibility" htmlFor="visibility" hint="Public repositories can be pulled by anyone.">
               <Select
                 id="visibility"
                 name="visibility"
@@ -77,7 +77,7 @@ export function RepoGeneralForm({
           formRef.current?.requestSubmit();
         }}
         title={`Make ${name} public?`}
-        description="Anyone on the internet will be able to pull every tag in this repository without signing in, and it will be listed on the Explore page. It also counts against the organization's public repository limit."
+        description="Anyone will be able to pull this repository without signing in, and it will appear on the Explore page."
         confirmLabel="Yes, make it public"
         tone="accent"
       />
@@ -93,7 +93,7 @@ export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; n
       <CardHeader
         eyebrow="Danger"
         title="Delete this repository"
-        description="Removes every tag, manifest and pull statistic. Layer content shared with other repositories is kept; unique content is reclaimed by garbage collection."
+        description="Deletes every tag and image in this repository. This cannot be undone."
       />
       <CardBody>
         <form action={deleteRepository} className="flex flex-wrap items-start gap-3">

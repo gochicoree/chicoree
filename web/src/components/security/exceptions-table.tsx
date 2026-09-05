@@ -56,11 +56,11 @@ export function ExceptionsTable({
       <CardHeader
         eyebrow="Accepted risks"
         title={`Exceptions (${pageState.total.toLocaleString("en-US")})`}
-        description="Vulnerabilities taken out of the pull policy with a justification. Findings stay visible in the reports, struck through."
+        description="Findings that no longer count against the pull policy."
       />
       {rows.length === 0 ? (
         <p className="px-5 py-4 text-sm text-ink-3">
-          No exceptions. Managers can accept a finding from the Vulnerabilities tab of any image.
+          No accepted risks. Accept a finding from the Vulnerabilities tab of an image.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -153,7 +153,7 @@ export function ExceptionsTable({
             action(fd);
           }}
           title={`Revoke ${revoking?.vulnerabilityId ?? ""}?`}
-          description="The finding counts against the pull policy again; images over the threshold are blocked within seconds."
+          description="The finding counts against the pull policy again."
           confirmLabel={pending ? "Revoking…" : "Revoke"}
           tone="danger"
           busy={pending}

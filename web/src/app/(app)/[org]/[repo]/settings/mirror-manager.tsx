@@ -128,7 +128,7 @@ export function MirrorManager({
       <CardHeader
         eyebrow="Mirror"
         title={mirror ? `Mirroring ${mirror.source}` : "Mirror another registry"}
-        description="Import matching tags from a source repository into this one. Run it manually, from the mirror-sync job, or via the jobs API on a schedule."
+        description="Import matching tags from another registry into this repository."
         action={
           mirror?.lastStatus && (
             <Badge tone={mirror.lastStatus === "succeeded" ? "ok" : "danger"}>
