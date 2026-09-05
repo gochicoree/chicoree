@@ -45,6 +45,7 @@ import { Badge } from "@/components/ui/badge";
 import { WRITER_ROLES } from "@/lib/org-roles";
 import { scanInProgress } from "@/lib/scanner-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
+import { getBrandingPlain } from "@/lib/branding";
 
 interface Descriptor {
   mediaType?: string;
@@ -225,6 +226,11 @@ export default async function TagDetailPage({
       configMediaType: payload.config?.mediaType ?? null,
     });
   const attestationItems = isAttestation ? attestationContents(payload) : [];
+  // Instance-wide switch (Administration → Branding): attestation entries stay out of the variants table unless wanted.
+  const showArtifacts = (await getBrandingPlain()).showArtifacts;
+  const isAttestationChild = (c: Descriptor) => c.annotations?.["vnd.docker.reference.type"] === "attestation-manifest";
+  const hiddenVariants = showArtifacts ? 0 : children.filter(isAttestationChild).length;
+  const visibleChildren = showArtifacts ? children : children.filter((c) => !isAttestationChild(c));
   // Provenance / SBOM BuildKit stored next to this image inside the index.
   const buildkit = !isIndex && !isArtifact ? await buildkitAttestationsFor(found.repo.id, digest) : [];
   // Findings (legacy Clair rows are normalised on first read) and the exceptions that may accept them.
@@ -546,7 +552,7 @@ export default async function TagDetailPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {children.map((child) => (
+                  {visibleChildren.map((child) => (
                     <tr key={child.digest} className="border-b border-line last:border-0">
                       <td className="py-2.5 pr-4 font-mono text-[13px]">
                         <Link
@@ -581,6 +587,12 @@ export default async function TagDetailPage({
                 </tbody>
               </table>
             </div>
+            {hiddenVariants > 0 && (
+              <p className="pt-2 text-xs text-ink-3">
+                {hiddenVariants} attestation {hiddenVariants === 1 ? "entry" : "entries"} (provenance / SBOM, not images) hidden — see the
+                Attestations tab, or show them under Administration → Branding.
+              </p>
+            )}
           </CardBody>
         </Card>
       ) : (

@@ -54,6 +54,17 @@ const untaggedSelect = sql`
 const untaggedWhere = (repoId: string) => sql`m.repository_id = ${repoId}
       AND NOT EXISTS (SELECT 1 FROM tags t WHERE t.repository_id = m.repository_id AND t.manifest_digest = m.digest)`;
 
+/** Attached artifacts (referrers) and BuildKit attestation entries — what the list hides unless the instance shows artifacts. */
+const untaggedArtifactWhere = sql`(m.subject_digest IS NOT NULL
+      OR (coalesce(m.config->>'os', '') = 'unknown'
+          AND EXISTS (SELECT 1 FROM manifest_refs mr WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest)))`;
+
+/** How many untagged artifacts the list leaves out when hiding them. */
+export async function countUntaggedArtifacts(repoId: string): Promise<number> {
+  const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM manifests m WHERE ${untaggedWhere(repoId)} AND ${untaggedArtifactWhere}`);
+  return Number(rows[0]?.n ?? 0);
+}
+
 function mapUntagged(rows: Record<string, unknown>[]): UntaggedManifest[] {
   return rows.map((r) => {
     const mediaType = r.media_type as string;
@@ -94,20 +105,21 @@ export async function listUntaggedManifests(repoId: string): Promise<UntaggedMan
 /** One page of the untagged manifests, newest first, plus how many there are. */
 export async function untaggedManifestsPage(
   repoId: string,
-  opts: { page?: number; pageSize?: number } = {},
+  opts: { page?: number; pageSize?: number; hideArtifacts?: boolean } = {},
 ): Promise<{ rows: UntaggedManifest[]; state: PageState }> {
+  const filter = opts.hideArtifacts ? sql` AND NOT ${untaggedArtifactWhere}` : sql``;
   return paginatedQuery<UntaggedManifest>({
     page: opts.page ?? 1,
     pageSize: opts.pageSize ?? PAGE_SIZES.untagged,
     count: async () => {
-      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM manifests m WHERE ${untaggedWhere(repoId)}`);
+      const { rows } = await db.execute(sql`SELECT count(*)::int AS n FROM manifests m WHERE ${untaggedWhere(repoId)}${filter}`);
       return Number(rows[0]?.n ?? 0);
     },
     rows: async (limit, offset) => {
       const { rows } = await db.execute(sql`
         SELECT ${untaggedSelect}
         FROM manifests m
-        WHERE ${untaggedWhere(repoId)}
+        WHERE ${untaggedWhere(repoId)}${filter}
         ORDER BY m.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`);
       return mapUntagged(rows as Record<string, unknown>[]);

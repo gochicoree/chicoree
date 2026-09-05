@@ -32,6 +32,14 @@ export interface BrandingSettings {
    * page renders that person.
    */
   gravatar: boolean;
+  /**
+   * List supply-chain artifacts next to images: cosign tag-convention tags
+   * (sha256-….sig / .att / .sbom), attached artifacts (referrers) in the
+   * untagged list and BuildKit attestation entries (unknown/unknown) in the
+   * untagged list and in an index's variants. Off by default — they are
+   * still reachable by URL and on the Attestations tab.
+   */
+  showArtifacts: boolean;
 }
 
 export const DEFAULT_BRANDING: BrandingSettings = {
@@ -41,6 +49,7 @@ export const DEFAULT_BRANDING: BrandingSettings = {
   accentColor: "",
   footerLinks: [],
   gravatar: false,
+  showArtifacts: false,
   announcement: { enabled: false, level: "info", text: "", dismissible: true },
 };
 

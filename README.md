@@ -511,7 +511,14 @@ the chicory mark), the accent colour, up to six footer links, and an
 announcement banner shown at the top of every page. `info` and `warning`
 banners can be dismissed (remembered per browser until the text changes),
 `danger` banners cannot. `INSTANCE_NAME` and `INSTANCE_TAGLINE` are the
-environment defaults; the page previews changes live. The logo is checked
+environment defaults; the page previews changes live. The same page holds
+two display switches: **Gravatar** (see [Pictures](#pictures)) and **Show
+signatures, SBOMs and attestation entries in lists** (`SHOW_ARTIFACTS`,
+off by default) — with it off, cosign's `sha256-….sig` / `.att` / `.sbom`
+tags stay out of tag lists, attached artifacts and BuildKit attestation
+entries out of the untagged list and an index's variants table, each with a
+one-line note saying how many are hidden; they remain on the Attestations
+tab and reachable by URL. The logo is checked
 exactly like the pictures of organizations, repositories and people — see
 [Pictures](#pictures).
 
@@ -1098,7 +1105,9 @@ provenance — on by default since Docker 24 / buildx 0.11 — or an SBOM
 (SLSA provenance, SPDX or CycloneDX SBOM, downloadable) and which variant
 it describes; the variant's page links back under *Build attestations*.
 Attestation entries are never scanned (the Re-scan button says so) and go
-with their index.
+with their index. Lists hide them, like signature tags and attached
+artifacts, unless *Administration → Branding → Show signatures, SBOMs and
+attestation entries* is on.
 
 The tag page's **Delete image** button removes the manifest by digest
 together with *every* tag pointing at it — the confirmation lists those
