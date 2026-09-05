@@ -7,21 +7,24 @@ import { RetentionForm } from "@/components/retention-form";
 import { TagRulesManager } from "@/components/tag-rules-manager";
 import { getRetentionPolicies, toSettings } from "@/lib/retention";
 import { listTagRules } from "@/lib/tag-rules";
-import { listTrustedKeys } from "@/lib/signatures";
+import { listMemberKeys, listTrustedKeys } from "@/lib/signatures";
 import { SignaturePolicyForm } from "@/components/signature-policy-form";
+import { MemberKeysPolicyForm } from "@/components/member-keys-policy-form";
 import { TrustedKeysManager } from "@/components/trusted-keys-manager";
 import { orgSettingsContext } from "../context";
 
 export default async function OrgPoliciesPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await orgSettingsContext(params);
-  const [settings, rules, retention, keys] = await Promise.all([
+  const [settings, rules, retention, keys, memberKeys] = await Promise.all([
     db.query.organizationSettings.findFirst({
       where: eq(organizationSettings.organizationId, org.id),
     }),
     listTagRules(org.id, null),
     getRetentionPolicies(org.id),
     listTrustedKeys(org.id, null),
+    listMemberKeys(org.id),
   ]);
+  const trustMemberKeys = settings?.trustMemberKeys ?? true;
   return (
     <div className="space-y-6">
       <DefaultVisibilityForm scope="organization" organizationId={org.id} value={settings?.defaultVisibility ?? null} />
@@ -31,7 +34,13 @@ export default async function OrgPoliciesPage({ params }: { params: Promise<{ or
         level={settings?.blockPullsAt ?? null}
         unrated={settings?.blockUnrated ?? false}
       />
-      <SignaturePolicyForm scope="organization" organizationId={org.id} value={settings?.requireSignature ?? false} keyCount={keys.length} />
+      <SignaturePolicyForm
+        scope="organization"
+        organizationId={org.id}
+        value={settings?.requireSignature ?? false}
+        keyCount={keys.length + (trustMemberKeys ? memberKeys.length : 0)}
+      />
+      <MemberKeysPolicyForm organizationId={org.id} value={trustMemberKeys} memberKeyCount={memberKeys.length} />
       <TrustedKeysManager
         scope="organization"
         organizationId={org.id}

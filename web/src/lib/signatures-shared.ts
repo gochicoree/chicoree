@@ -428,6 +428,10 @@ export interface SignatureCheck {
   format: ArtifactFormat;
   status: SignatureStatus;
   keyId?: string | null;
+  /** Set instead of keyId when a member's personal key verified the signature. */
+  userKeyId?: string | null;
+  /** Display name of the personal key's owner. */
+  signer?: string | null;
   keyName?: string | null;
   keyFingerprint?: string | null;
   /** Key fingerprint a Sigstore bundle hints at (hex), when present. */
@@ -459,11 +463,14 @@ export type ArtifactSummary =
 export function describeSignatureStatus(check: {
   status: SignatureStatus;
   keyName?: string | null;
+  /** Owner of the personal key that verified it, when it was not an organization / repository key. */
+  signer?: string | null;
   identity?: string | null;
   reason?: string | null;
 }): string {
   switch (check.status) {
     case "verified":
+      if (check.signer) return `verified by ${check.signer}'s key ${check.keyName ?? "(removed)"}`;
       return `verified by key ${check.keyName ?? "(removed)"}`;
     case "untrusted":
       return check.reason ? `unverified: ${check.reason}` : "unverified: no trusted key";

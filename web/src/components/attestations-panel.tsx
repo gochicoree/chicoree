@@ -138,7 +138,7 @@ export function AttestationsPanel({
         <p className="text-sm text-ink-2">
           {view.total === 0
             ? "Nothing is attached to this image."
-            : `${view.total} artifact${view.total === 1 ? "" : "s"} attached · ${verified} verified signature${verified === 1 ? "" : "s"} · ${view.trustedKeys} trusted key${view.trustedKeys === 1 ? "" : "s"} in scope`}
+            : `${view.total} artifact${view.total === 1 ? "" : "s"} attached · ${verified} verified signature${verified === 1 ? "" : "s"} · ${view.trustedKeys} trusted key${view.trustedKeys === 1 ? "" : "s"}${view.memberKeys > 0 ? ` + ${view.memberKeys} member key${view.memberKeys === 1 ? "" : "s"}` : ""} in scope`}
           {signaturesRequired && (
             <span className="text-ink-3"> · signatures are required by the pull policy</span>
           )}
@@ -146,12 +146,16 @@ export function AttestationsPanel({
         {canReverify && view.total > 0 && <ReverifyButton repositoryId={repositoryId} digest={digest} />}
       </div>
 
-      {view.trustedKeys === 0 && signed.some((s) => s.sig) && (
+      {view.trustedKeys === 0 && view.memberKeys === 0 && signed.some((s) => s.sig) && (
         <div className="rounded-xl border border-line bg-card-2 px-4 py-3 text-sm text-ink-2">
-          No trusted signing key is configured for this repository, so signatures show as unverified. Owners and admins can add the
-          signer&apos;s <code className="font-mono">cosign.pub</code> under{" "}
+          No signing key is in scope for this repository, so signatures show as unverified. Owners and admins can add the signer&apos;s{" "}
+          <code className="font-mono">cosign.pub</code> under{" "}
           <Link href={policyHref} className="underline hover:text-ink">
             Settings → Policies
+          </Link>
+          , or members who may push register their own key under{" "}
+          <Link href="/settings/signing-keys" className="underline hover:text-ink">
+            Settings → Signing keys
           </Link>
           .
         </div>
@@ -161,7 +165,7 @@ export function AttestationsPanel({
         <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
           <p>
             Sign the image or attach an SBOM / provenance with cosign or oras; everything attached to this digest shows up here.
-            {view.trustedKeys === 0 && " Add the signer's public key under Settings → Policies so signatures verify."}
+            {view.trustedKeys === 0 && view.memberKeys === 0 && " Add the signer's public key under Settings → Policies, or your own under Settings → Signing keys, so signatures verify."}
           </p>
           <CommandLine command={`cosign sign --key cosign.key ${digestReference}`} />
           <CommandLine command={`cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json ${digestReference}`} />

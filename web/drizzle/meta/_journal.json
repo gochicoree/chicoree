@@ -64,6 +64,13 @@
       "when": 1788601456961,
       "tag": "0008_repository_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788608125210,
+      "tag": "0009_personal_signing_keys",
+      "breakpoints": true
     }
   ]
 }
