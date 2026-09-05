@@ -10,7 +10,7 @@ import { StarCount } from "@/components/star-button";
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
   if (repos.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-card shadow-card">
+    <div className="overflow-x-auto rounded-xl border border-line bg-card shadow-card">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line text-left">

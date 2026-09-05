@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { organization, organizationProxies, repositories, tags } from "@/db/schema";
+import { organization, organizationProxies, repositories, tags, vulnerabilityScans } from "@/db/schema";
 import { getOrgRole, requireSession, getSession } from "@/lib/session";
 import { runScan } from "@/lib/scan";
 import { deleteTag as removeTag, type DeleteTagOutcome } from "@/lib/tag-admin";
@@ -15,6 +15,7 @@ import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { isValidRepoName, repoHref } from "@/lib/proxy-shared";
 import { recordAudit } from "@/lib/audit";
 import { clearRepositoryRedirects } from "@/lib/redirects";
+import { scanInProgress } from "@/lib/scanner-shared";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -153,6 +154,11 @@ export async function requestRescan(formData: FormData): Promise<void> {
   if (!repo) return;
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) return;
+
+  // Someone can still submit the form while a scan runs (an old page, or the
+  // button re-enabled by hand); queueing a second one would duplicate work.
+  const current = await db.query.vulnerabilityScans.findFirst({ where: eq(vulnerabilityScans.digest, digest) });
+  if (scanInProgress(current)) return;
 
   const path = `${org.slug}/${repo.name}`;
   await recordAudit({ action: "scan.request", organizationId: repo.organizationId, targetType: "manifest", targetId: digest, targetLabel: `${path}@${digest.slice(0, 19)}` });
