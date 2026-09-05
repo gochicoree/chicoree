@@ -82,6 +82,61 @@ export async function listUserOrgs(userId: string): Promise<OrgWithMeta[]> {
   }));
 }
 
+/**
+ * One page of the organizations a user belongs to, optionally filtered by
+ * name or slug. The card list at /orgs uses it; the sidebar uses the lighter
+ * listNavOrgs instead.
+ */
+export async function listUserOrgsPage(opts: {
+  userId: string;
+  query?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ rows: OrgWithMeta[]; state: PageState }> {
+  const term = (opts.query ?? "").trim();
+  const like = `%${term.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+  const filtered = term.length > 0;
+  return paginatedQuery<OrgWithMeta>({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? PAGE_SIZES.userOrganizations,
+    count: async () => {
+      const { rows } = await db.execute(sql`
+        SELECT count(*)::int AS n
+        FROM organization o JOIN member m ON m.organization_id = o.id
+        WHERE m.user_id = ${opts.userId}
+          ${filtered ? sql`AND (o.name ILIKE ${like} OR o.slug ILIKE ${like})` : sql``}`);
+      return Number(rows[0]?.n ?? 0);
+    },
+    rows: async (limit, offset) => {
+      const { rows } = await db.execute(sql`
+        SELECT o.id, o.name, o.slug, m.role,
+          (SELECT count(*)::int FROM repositories r WHERE r.organization_id = o.id) AS repo_count,
+          COALESCE((
+            SELECT sum(size)::bigint FROM (
+              SELECT DISTINCT b.digest, b.size
+              FROM blobs b
+              JOIN repository_blobs rb ON rb.blob_digest = b.digest
+              JOIN repositories r ON r.id = rb.repository_id
+              WHERE r.organization_id = o.id
+            ) t
+          ), 0) AS storage_bytes
+        FROM organization o JOIN member m ON m.organization_id = o.id
+        WHERE m.user_id = ${opts.userId}
+          ${filtered ? sql`AND (o.name ILIKE ${like} OR o.slug ILIKE ${like})` : sql``}
+        ORDER BY o.name
+        LIMIT ${limit} OFFSET ${offset}`);
+      return rows.map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        slug: r.slug as string,
+        role: r.role as string,
+        repoCount: Number(r.repo_count),
+        storageBytes: Number(r.storage_bytes),
+      }));
+    },
+  });
+}
+
 export interface RepoListItem {
   id: string;
   name: string;
