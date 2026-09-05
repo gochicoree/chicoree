@@ -36,13 +36,19 @@ export function MembersManager({
   selfUserId,
   members,
   invitations,
+  memberLimit = null,
+  seatsUsed = 0,
 }: {
   organizationId: string;
   canManage: boolean;
   selfUserId: string;
   members: MemberRow[];
   invitations: InvitationRow[];
+  /** Administrator-set cap on members; open invitations hold a seat. null = none. */
+  memberLimit?: number | null;
+  seatsUsed?: number;
 }) {
+  const full = memberLimit !== null && seatsUsed >= memberLimit;
   const router = useRouter();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
@@ -101,8 +107,20 @@ export function MembersManager({
             eyebrow="Access"
             title="Invite a member"
             description="Viewers pull. Members also push. Admins also manage the organization."
+            action={
+              memberLimit !== null ? (
+                <Badge tone={full ? "danger" : "neutral"}>
+                  {seatsUsed} of {memberLimit} members
+                </Badge>
+              ) : undefined
+            }
           />
           <CardBody>
+            {full && (
+              <p className="mb-3 text-sm text-ink-2">
+                The member limit is reached. Remove a member or cancel an invitation to invite someone else.
+              </p>
+            )}
             <form onSubmit={invite} className="flex flex-wrap items-center gap-2">
               <Input
                 type="email"
@@ -119,7 +137,7 @@ export function MembersManager({
                 aria-label="Role"
                 options={ASSIGNABLE_ROLES.map((r) => ({ value: r.value, label: r.label, description: r.description }))}
               />
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || full}>
                 <Mail className="size-4" /> Invite
               </Button>
             </form>

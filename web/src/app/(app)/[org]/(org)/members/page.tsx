@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { invitation } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
 import { listMembersWithUsers } from "@/lib/data";
+import { getOrgLimits } from "@/lib/quota";
 import { logoRef } from "@/lib/logo-shared";
 import { MembersManager } from "./members-manager";
 
@@ -14,10 +15,12 @@ export default async function MembersPage({ params }: { params: Promise<{ org: s
   if (!ctx.role) redirect(`/${slug}`);
   const session = await getSession();
 
-  const [members, invitations] = await Promise.all([
+  const [members, invitations, limits] = await Promise.all([
     listMembersWithUsers(ctx.org.id),
     db.query.invitation.findMany({ where: eq(invitation.organizationId, ctx.org.id) }),
+    getOrgLimits(ctx.org.id),
   ]);
+  const pending = invitations.filter((i) => i.status === "pending" && i.expiresAt.getTime() > Date.now());
 
   return (
     <MembersManager
@@ -35,6 +38,8 @@ export default async function MembersPage({ params }: { params: Promise<{ org: s
       invitations={invitations
         .filter((i) => i.status === "pending")
         .map((i) => ({ id: i.id, email: i.email, role: i.role ?? "member" }))}
+      memberLimit={limits.maxMembers}
+      seatsUsed={members.length + pending.length}
     />
   );
 }

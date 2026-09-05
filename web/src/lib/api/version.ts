@@ -20,6 +20,16 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-05.4",
+    changes: [
+      "Member limit: organizations can be capped at a number of members (Administration → Organizations → Limits, maxMembers); an open invitation holds a seat. Enforced when inviting, accepting an invitation, adding a member and on group-binding logins. GET /orgs/{org}/usage reports members and maxMembers.",
+      "Usage: GET /orgs/{org}/usage and the new GET /me/usage carry the month's traffic (pullBytes, redirectBytes, pushBytes, blobPulls, manifestPulls; ?month=YYYY-MM) and the label administrators gave the limits.",
+      "Administration: GET /users (exact email or search), GET /users/{userId}, GET /users/{userId}/organizations, GET /users/{userId}/usage; GET/PATCH/DELETE /orgs/{org}/limits and /users/{userId}/limits read, change and drop limits rows, including a label shown to the owner and an administrators-only note.",
+      "Default limits: Administration → Limits gives every new account and organization a limits row (DEFAULT_USER_MAX_ORGANIZATIONS, DEFAULT_USER_MAX_PUBLIC_REPOS, DEFAULT_USER_MAX_PRIVATE_REPOS, DEFAULT_USER_MAX_STORAGE_GIB, DEFAULT_ORG_MAX_PUBLIC_REPOS, DEFAULT_ORG_MAX_PRIVATE_REPOS, DEFAULT_ORG_MAX_STORAGE_GIB, DEFAULT_ORG_MAX_MEMBERS as defaults).",
+      "Account portal: Administration → Limits (PORTAL_URL, PORTAL_LABEL as defaults) adds a Manage button to the account and organization settings that opens the portal with a one-time token; the portal verifies it with POST /api/auth/one-time-token/verify.",
+    ],
+  },
+  {
     revision: "2026-09-05.3",
     changes: [
       "Retag: PUT /repos/{org}/{repo}/tags/{tag} points a tag at an image already in the repository.",

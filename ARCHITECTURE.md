@@ -201,7 +201,21 @@ through an old name get no grant at all.
   limits and every owner's account limits (`internal/store/quota.go`) and
   answers `403 DENIED` with the reason. The web app applies the same rules
   (`web/src/lib/quota.ts`) when repositories or organizations are created
-  through the UI.
+  through the UI or the REST API. `organization_limits.max_members` is
+  web-only: `checkMemberQuota` runs in the organization hooks
+  (`beforeCreateInvitation` counts open invitations as taken seats,
+  `beforeAcceptInvitation` / `beforeAddMember` count members), in
+  `POST /api/v1/orgs/{org}/invitations` and in `syncGroupBindings` (which
+  skips the membership and audits `org.member.limit`). Limits rows are
+  written through `web/src/lib/limits.ts` — admin screens, the
+  Administration endpoints of the API (`/orgs/{org}/limits`,
+  `/users/{userId}/limits`) and the sign-up / creation defaults
+  (`instance_settings` row `quotas`, applied in the user `create.after` and
+  `afterCreateOrganization` hooks and in `POST /api/v1/orgs`) — so audit
+  and quota warnings are uniform. Each row has a `label` the owner sees and
+  a `note` only administrators see. The `portal` settings row enables the
+  better-auth `oneTimeToken` plugin; the Manage button on the settings pages
+  generates a token and redirects to the portal with it.
 - **Manifests** are stored verbatim in Postgres (`manifests.payload`) —
   digests must verify byte-for-byte — together with parsed metadata
   (media type, config digest, subject digest for referrers) and an explicit

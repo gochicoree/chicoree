@@ -8,6 +8,9 @@ import { DefaultVisibilityForm } from "@/components/default-visibility-form";
 import { ArtifactVisibilityForm } from "@/components/artifact-visibility-form";
 import { LogoUploadCard } from "@/components/logo-upload";
 import { saveUserAvatar } from "@/app/actions/logos";
+import { PlanCard, showPlanCard } from "@/components/plan-card";
+import { getUserLimitsRow } from "@/lib/limits";
+import { getUserLimits, getUserUsage } from "@/lib/quota";
 import { db } from "@/db";
 import { user as userTable, userSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -19,12 +22,15 @@ export default async function SettingsPage() {
   const settings = await getInstanceSettings();
   const mine = await db.query.userSettings.findFirst({ where: eq(userSettings.userId, session.user.id) });
   const me = await db.query.user.findFirst({ where: eq(userTable.id, session.user.id) });
+  const [usage, limits, limitsRow] = await Promise.all([getUserUsage(session.user.id), getUserLimits(session.user.id), getUserLimitsRow(session.user.id)]);
+  const label = limitsRow?.label ?? "";
 
   return (
     <>
       <PageHeader eyebrow="Account" title="Settings" />
       <SettingsNav />
       <div className="space-y-6">
+        {showPlanCard(label, limits, settings.portal) && <PlanCard scope="user" label={label} usage={usage} limits={limits} portal={settings.portal} />}
         <ProfileDetailsForm
           name={session.user.name}
           email={session.user.email}

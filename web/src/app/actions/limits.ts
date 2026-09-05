@@ -1,13 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
-import { db } from "@/db";
-import { organizationLimits, userLimits } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { parseLimitField, parseStorageGiB } from "@/lib/quota";
-import { recordAudit } from "@/lib/audit";
-import { checkQuotaWarnings } from "@/lib/notify";
+import { writeOrgLimits, writeUserLimits } from "@/lib/limits";
 
 export interface LimitsActionResult {
   error?: string;
@@ -21,21 +17,20 @@ export async function setUserLimits(
   const session = await requireAdmin();
   const userId = String(formData.get("userId") ?? "");
   if (!userId) return { error: "Missing user." };
-  const values = {
-    maxOrganizations: parseLimitField(formData.get("maxOrganizations")),
-    maxPublicRepos: parseLimitField(formData.get("maxPublicRepos")),
-    maxPrivateRepos: parseLimitField(formData.get("maxPrivateRepos")),
-    maxStorageBytes: parseStorageGiB(formData.get("maxStorageGiB")),
-    note: String(formData.get("note") ?? "").trim(),
-    updatedAt: new Date(),
-    updatedBy: session.user.id,
-  };
-  await db
-    .insert(userLimits)
-    .values({ userId, ...values })
-    .onConflictDoUpdate({ target: userLimits.userId, set: values });
-  await recordAudit({ action: "admin.user.limits", targetType: "user", targetId: userId, details: { ...values, updatedAt: undefined, updatedBy: undefined } });
+  await writeUserLimits(
+    userId,
+    {
+      maxOrganizations: parseLimitField(formData.get("maxOrganizations")),
+      maxPublicRepos: parseLimitField(formData.get("maxPublicRepos")),
+      maxPrivateRepos: parseLimitField(formData.get("maxPrivateRepos")),
+      maxStorageBytes: parseStorageGiB(formData.get("maxStorageGiB")),
+      label: String(formData.get("label") ?? ""),
+      note: String(formData.get("note") ?? ""),
+    },
+    { updatedBy: session.user.id },
+  );
   revalidatePath(`/admin/users/${userId}`);
+  revalidatePath("/settings");
   return { saved: true };
 }
 
@@ -46,20 +41,18 @@ export async function setOrgLimits(
   const session = await requireAdmin();
   const organizationId = String(formData.get("organizationId") ?? "");
   if (!organizationId) return { error: "Missing organization." };
-  const values = {
-    maxPublicRepos: parseLimitField(formData.get("maxPublicRepos")),
-    maxPrivateRepos: parseLimitField(formData.get("maxPrivateRepos")),
-    maxStorageBytes: parseStorageGiB(formData.get("maxStorageGiB")),
-    note: String(formData.get("note") ?? "").trim(),
-    updatedAt: new Date(),
-    updatedBy: session.user.id,
-  };
-  await db
-    .insert(organizationLimits)
-    .values({ organizationId, ...values })
-    .onConflictDoUpdate({ target: organizationLimits.organizationId, set: values });
-  await recordAudit({ action: "admin.org.limits", organizationId, targetType: "organization", targetId: organizationId, details: { ...values, updatedAt: undefined, updatedBy: undefined } });
-  after(() => checkQuotaWarnings(organizationId).catch((err) => console.error("quota warning check failed:", err)));
+  await writeOrgLimits(
+    organizationId,
+    {
+      maxPublicRepos: parseLimitField(formData.get("maxPublicRepos")),
+      maxPrivateRepos: parseLimitField(formData.get("maxPrivateRepos")),
+      maxStorageBytes: parseStorageGiB(formData.get("maxStorageGiB")),
+      maxMembers: parseLimitField(formData.get("maxMembers")),
+      label: String(formData.get("label") ?? ""),
+      note: String(formData.get("note") ?? ""),
+    },
+    { updatedBy: session.user.id },
+  );
   revalidatePath(`/admin/organizations/${organizationId}`);
   return { saved: true };
 }

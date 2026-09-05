@@ -10,5 +10,5 @@ export default async function AdminUserLimits({ params }: { params: Promise<{ id
   const detail = await getAdminUserDetail(id);
   if (!detail) notFound();
   const row = await db.query.userLimits.findFirst({ where: eq(userLimits.userId, id) });
-  return <LimitsForm scope="user" targetId={detail.user.id} limits={detail.limits} note={row?.note ?? ""} />;
+  return <LimitsForm scope="user" targetId={detail.user.id} limits={detail.limits} label={row?.label ?? ""} note={row?.note ?? ""} />;
 }

@@ -8,7 +8,7 @@ import { instanceSettings } from "@/db/schema";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { env } from "./env";
 
-export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding" | "ratelimit" | "scanner";
+export type SettingsSection = "smtp" | "github" | "google" | "oidc" | "ldap" | "bindings" | "metrics" | "access" | "branding" | "ratelimit" | "scanner" | "quotas" | "portal";
 export type SettingsSource = "database" | "environment" | "none";
 
 // Sign-up controls and branding: shapes live in the *-shared modules so client
@@ -16,7 +16,9 @@ export type SettingsSource = "database" | "environment" | "none";
 import { DEFAULT_ACCESS, normalizeLocalSignInPath, type AccessSettings } from "./access-shared";
 import { DEFAULT_BRANDING, type BrandingSettings } from "./branding-shared";
 import type { ScannerSettings } from "./scanner-shared";
+import { DEFAULT_PORTAL, DEFAULT_QUOTAS, type PortalSettings, type QuotaDefaults } from "./quota-shared";
 export type { AccessSettings } from "./access-shared";
+export type { PortalSettings, QuotaDefaults } from "./quota-shared";
 export type { BrandingSettings } from "./branding-shared";
 export type { ScannerSettings } from "./scanner-shared";
 
@@ -102,6 +104,10 @@ export interface EffectiveSettings {
   ratelimit: RateLimitSettings;
   /** Vulnerability scanner backend (Administration → Scanning). */
   scanner: ScannerSettings;
+  /** Limits every new account / organization starts with (Administration → Limits). */
+  quotas: QuotaDefaults;
+  /** External account portal linked from the account and organization settings. */
+  portal: PortalSettings;
   sources: Record<SettingsSection, SettingsSource>;
   /** Changes whenever a section is saved; consumers cache on it. */
   version: number;
@@ -120,6 +126,8 @@ const SECRET_FIELDS: Record<SettingsSection, string[]> = {
   branding: [],
   ratelimit: [],
   scanner: [],
+  quotas: [],
+  portal: [],
 };
 
 function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
@@ -195,6 +203,22 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       trivyServerUrl: env.trivyServerUrl,
       trivyTimeoutSeconds: env.trivyTimeoutSeconds,
     },
+    quotas: {
+      ...DEFAULT_QUOTAS,
+      user: {
+        maxOrganizations: env.defaultUserMaxOrganizations,
+        maxPublicRepos: env.defaultUserMaxPublicRepos,
+        maxPrivateRepos: env.defaultUserMaxPrivateRepos,
+        maxStorageBytes: env.defaultUserMaxStorageBytes,
+      },
+      organization: {
+        maxPublicRepos: env.defaultOrgMaxPublicRepos,
+        maxPrivateRepos: env.defaultOrgMaxPrivateRepos,
+        maxStorageBytes: env.defaultOrgMaxStorageBytes,
+        maxMembers: env.defaultOrgMaxMembers,
+      },
+    },
+    portal: { ...DEFAULT_PORTAL, url: env.portalUrl, label: env.portalLabel },
   };
 }
 
@@ -230,6 +254,10 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
       return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated || !!process.env.RATE_LIMIT_API_ANONYMOUS || !!process.env.RATE_LIMIT_API_AUTHENTICATED;
     case "scanner":
       return !!process.env.SCANNER || !!d.scanner.clairUrl;
+    case "quotas":
+      return Object.keys(process.env).some((k) => k.startsWith("DEFAULT_USER_MAX_") || k.startsWith("DEFAULT_ORG_MAX_"));
+    case "portal":
+      return !!d.portal.url;
   }
 }
 
@@ -255,7 +283,7 @@ async function loadSettings(): Promise<EffectiveSettings> {
   const sources = {} as Record<SettingsSection, SettingsSource>;
   const merged: Record<string, unknown> = {};
   let version = 0;
-  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit", "scanner"] as SettingsSection[]) {
+  for (const section of ["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit", "scanner", "quotas", "portal"] as SettingsSection[]) {
     const row = stored.get(section);
     if (row) {
       version = Math.max(version, row.updatedAt.getTime());
