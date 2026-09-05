@@ -303,11 +303,15 @@ export default async function RepoPage({
           <CardHeader
             eyebrow="Untagged"
             title={`Untagged manifests (${untagged.state.total.toLocaleString("en-US")})`}
-            description="Images no tag points at: old versions of re-pointed tags, platform variants of a multi-arch image, or attached artifacts."
+            description="Images no tag points at: old versions of re-pointed tags, members of a multi-arch index, or attached artifacts."
           />
           {untagged.state.total === 0 ? (
             <CardBody>
-              <p className="text-sm text-ink-3">Every manifest in this repository has a tag.</p>
+              <p className="text-sm text-ink-3">
+                {hiddenUntagged > 0
+                  ? "Nothing loose: every untagged manifest here belongs to an index or is attached to an image."
+                  : "Every manifest in this repository has a tag."}
+              </p>
             </CardBody>
           ) : (
             <div className="overflow-x-auto">
@@ -377,7 +381,7 @@ export default async function RepoPage({
               </table>
             </div>
           )}
-          {hiddenNote(hiddenUntagged, hiddenUntagged === 1 ? "attestation entry or attached artifact" : "attestation entries and attached artifacts")}
+          {hiddenNote(hiddenUntagged, hiddenUntagged === 1 ? "index member or attached artifact" : "index members and attached artifacts")}
           <PaginationFooter
             state={untagged.state}
             noun="manifests"

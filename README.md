@@ -513,13 +513,16 @@ banners can be dismissed (remembered per browser until the text changes),
 `danger` banners cannot. `INSTANCE_NAME` and `INSTANCE_TAGLINE` are the
 environment defaults; the page previews changes live. The same page holds
 two display switches: **Gravatar** (see [Pictures](#pictures)) and **Show
-signatures, SBOMs and attestation entries in lists** (`SHOW_ARTIFACTS`,
-off by default) — with it off, cosign's `sha256-….sig` / `.att` / `.sbom`
-tags stay out of tag lists, attached artifacts and BuildKit attestation
-entries out of the untagged list and an index's variants table, each with a
-one-line note saying how many are hidden; they remain on the Attestations
-tab and reachable by URL. That is only the default: every user overrides
-it for themselves under *Settings → Display* (follow the instance, show,
+index members and artifacts in lists** (`SHOW_ARTIFACTS`, off by default).
+With it off, the untagged list leaves out every manifest that belongs to a
+multi-arch index that still exists (platform variants as well as BuildKit
+attestation entries) and every attached artifact, tag lists leave out
+cosign's `sha256-….sig` / `.att` / `.sbom` tags, and variants tables leave
+out attestation entries — each with a one-line note saying how many are
+hidden. None of them can be deleted on its own, and all remain on the index
+page, on the Attestations tab and reachable by URL, so what is left in the
+untagged list is what is really loose. That is only the default: every
+user overrides it under *Settings → Display* (follow the instance, show,
 or hide); anonymous visitors see the instance default. The logo is checked
 exactly like the pictures of organizations, repositories and people — see
 [Pictures](#pictures).
@@ -1107,10 +1110,10 @@ provenance — on by default since Docker 24 / buildx 0.11 — or an SBOM
 (SLSA provenance, SPDX or CycloneDX SBOM, downloadable) and which variant
 it describes; the variant's page links back under *Build attestations*.
 Attestation entries are never scanned (the Re-scan button says so) and go
-with their index. Lists hide them, like signature tags and attached
-artifacts, unless the viewer turned them on under *Settings → Display* or
-the instance default (*Administration → Branding → Show signatures, SBOMs
-and attestation entries*) is on.
+with their index. The untagged list hides them together with the other
+index members and attached artifacts unless the viewer turned them on under
+*Settings → Display* or the instance default (*Administration → Branding →
+Show index members and artifacts*) is on.
 
 The tag page's **Delete image** button removes the manifest by digest
 together with *every* tag pointing at it — the confirmation lists those
