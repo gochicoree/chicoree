@@ -297,4 +297,11 @@ export const env = {
   get rateLimitTrustedProxies() {
     return process.env.RATE_LIMIT_TRUSTED_PROXIES ?? "";
   },
+  // REST API request limits ("<count>/<window>"; empty = unlimited), defaults for the admin panel.
+  get rateLimitApiAnonymous() {
+    return process.env.RATE_LIMIT_API_ANONYMOUS ?? "120/1m";
+  },
+  get rateLimitApiAuthenticated() {
+    return process.env.RATE_LIMIT_API_AUTHENTICATED ?? "1200/1m";
+  },
 };

@@ -26,6 +26,7 @@ const ERROR_CODES: [string, number, string][] = [
   ["not_found", 404, "The organization, repository, tag or image does not exist — or is not visible to the caller."],
   ["conflict", 409, "The registry's state refuses the change: a name is taken, a tag is protected, an index member cannot go alone, a scan is already running."],
   ["unprocessable", 422, "The body is well-formed but a value is not acceptable (name rules, quotas, missing fields)."],
+  ["rate_limited", 429, "Too many requests in the current window; `Retry-After` says when to try again."],
   ["api_disabled", 403, "An administrator switched the API off (*Administration → Auth providers → Access*, or `API_ENABLED=false`); every endpoint answers this until it is on again."],
   ["internal", 500, "Something failed on the server; the details are in the web app's log."],
 ];
@@ -56,6 +57,7 @@ function jsonBlock(value: unknown): string {
 
 function endpointSection(e: ApiEndpoint, o: DocsOptions): string {
   const facts = [
+    e.deprecated ? `**Deprecated since ${e.deprecated.since}${e.deprecated.sunset ? `, sunset ${e.deprecated.sunset}` : ""}**${e.deprecated.replacement ? ` — use ${e.deprecated.replacement}` : ""}${e.deprecated.note ? ` — ${e.deprecated.note}` : ""}` : "",
     `**Who:** ${ACCESS_LABELS[e.access]}`,
     `**Service accounts:** ${e.serviceAccounts ? "yes" : "no"}`,
     e.write ? "**Write:** needs a read & write token" : "**Write:** no",
@@ -181,6 +183,8 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - Every response carries \`X-Api-Version: ${API_VERSION}\` and \`X-Api-Revision: ${API_REVISION}\`, and \`Cache-Control: private, no-store\`.
 - Changes made through the API are audited like changes made in the app, with \`"via": "api"\` in the entry's details.
 - Unknown paths under \`${API_BASE}\` answer a JSON \`404\`; an unsupported method answers \`405\`.
+- **Rate limits.** Requests are counted per credential (per address without one) in fixed windows set by the administrators (*Administration → Rate limits*, defaults \`RATE_LIMIT_API_AUTHENTICATED=1200/1m\` and \`RATE_LIMIT_API_ANONYMOUS=120/1m\`; instance administrators are exempt). Every answer carries \`X-RateLimit-Limit\`, \`X-RateLimit-Remaining\` and \`X-RateLimit-Reset\` (epoch seconds); over the limit the API answers \`429 rate_limited\` with \`Retry-After\`.
+- **Deprecations.** An endpoint that is going away is announced first: its responses carry a \`Deprecation\` header (and \`Sunset\` once a date is set) with a \`Link\` to this documentation, the reference marks it, and it stays for at least one more revision. Watch the changelog for \`Removed:\` lines.
 
 ## Errors
 

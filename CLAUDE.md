@@ -17,7 +17,12 @@ removed, update the API in the same change**:
    `web/src/lib/api/version.ts` — or start a new revision (`YYYY-MM-DD.n`)
    when the previous one is already released. Prefix removals with
    `Removed:` and breaking changes with `Breaking:`.
-4. Run `npm run api:docs` in `web/` to regenerate `API.md`, then
+4. Never remove or rename an endpoint or a response field outright: set
+   `deprecated: { since, sunset?, replacement? }` on the catalog entry first
+   (responses then carry `Deprecation`/`Sunset` headers and the docs warn),
+   ship at least one revision that way, and remove it in a later revision
+   with a `Removed:` changelog line.
+5. Run `npm run api:docs` in `web/` to regenerate `API.md`, then
    `npm run lint` (typecheck + `api:check`, which fails on undocumented
    routes, orphaned catalog entries or a stale `API.md`).
 

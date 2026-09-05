@@ -385,6 +385,12 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
                 <Badge tone="neutral" title={ACCESS_LABELS[selected.access]}>
                   {ACCESS_LABELS[selected.access].split(" (")[0]}
                 </Badge>
+                {selected.deprecated && (
+                  <Badge tone="danger" title={selected.deprecated.note ?? selected.deprecated.replacement}>
+                    deprecated since {selected.deprecated.since}
+                    {selected.deprecated.sunset ? `, sunset ${selected.deprecated.sunset}` : ""}
+                  </Badge>
+                )}
                 {selected.write && <Badge tone="accent">read &amp; write token</Badge>}
                 {selected.serviceAccounts && <Badge tone="neutral">service accounts</Badge>}
                 {selected.paginated && <Badge tone="neutral">paginated</Badge>}

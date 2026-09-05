@@ -41,10 +41,10 @@ function ResetButton() {
 }
 
 /** Live reading of a limit field: the sentence the value means, or the problem. */
-function LimitHint({ value }: { value: string }) {
+function LimitHint({ value, noun = "pulls" }: { value: string; noun?: string }) {
   const parsed = parseRateLimit(value);
   if (parsed.error) return <span className="text-danger">{parsed.error}</span>;
-  return <span>{describeRateLimit(parsed.limit)}</span>;
+  return <span>{describeRateLimit(parsed.limit, noun)}</span>;
 }
 
 export function RateLimitForm({ values, source }: { values: RateLimitSettings; source: SettingsSource }) {
@@ -52,6 +52,8 @@ export function RateLimitForm({ values, source }: { values: RateLimitSettings; s
   useResultToast(state);
   const [anonymous, setAnonymous] = useState(values.anonymous);
   const [authenticated, setAuthenticated] = useState(values.authenticated);
+  const [apiAnonymous, setApiAnonymous] = useState(values.apiAnonymous);
+  const [apiAuthenticated, setApiAuthenticated] = useState(values.apiAuthenticated);
 
   return (
     <div className="space-y-6">
@@ -113,6 +115,23 @@ export function RateLimitForm({ values, source }: { values: RateLimitSettings; s
                 />
               </Field>
             </div>
+            <fieldset className="sm:col-span-2">
+              <legend className="mb-2 text-[13px] font-medium text-ink">REST API requests</legend>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Without credentials" htmlFor="rl-api-anonymous">
+                  <Input id="rl-api-anonymous" name="apiAnonymous" value={apiAnonymous} onChange={(e) => setApiAnonymous(e.target.value)} placeholder="120/1m" className="font-mono" autoComplete="off" />
+                  <p className="mt-1.5 text-xs text-ink-2">
+                    Per client IP address · <LimitHint value={apiAnonymous} noun="requests" />
+                  </p>
+                </Field>
+                <Field label="With a token or session" htmlFor="rl-api-authenticated">
+                  <Input id="rl-api-authenticated" name="apiAuthenticated" value={apiAuthenticated} onChange={(e) => setApiAuthenticated(e.target.value)} placeholder="1200/1m" className="font-mono" autoComplete="off" />
+                  <p className="mt-1.5 text-xs text-ink-2">
+                    Per user, service account or CI identity · <LimitHint value={apiAuthenticated} noun="requests" />
+                  </p>
+                </Field>
+              </div>
+            </fieldset>
             <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
               <Button type="submit" disabled={saving}>
                 <Gauge className="size-4" /> Save rate limits
@@ -142,6 +161,16 @@ export function RateLimitForm({ values, source }: { values: RateLimitSettings; s
               <span className="font-mono text-[13px] text-ink">RateLimit-Reset</span> (seconds); over the limit the registry
               answers <span className="font-mono text-[13px] text-ink">429 TOOMANYREQUESTS</span> with{" "}
               <span className="font-mono text-[13px] text-ink">Retry-After</span>.
+            </p>
+            <p>
+              The REST API has its own counters, shared by every web replica through the database: a client over its
+              limit gets <span className="font-mono text-[13px] text-ink">429 rate_limited</span> with{" "}
+              <span className="font-mono text-[13px] text-ink">Retry-After</span>, and every answer carries{" "}
+              <span className="font-mono text-[13px] text-ink">X-RateLimit-Limit</span>,{" "}
+              <span className="font-mono text-[13px] text-ink">X-RateLimit-Remaining</span> and{" "}
+              <span className="font-mono text-[13px] text-ink">X-RateLimit-Reset</span>. Defaults come from{" "}
+              <span className="font-mono text-[13px] text-ink">RATE_LIMIT_API_ANONYMOUS</span> and{" "}
+              <span className="font-mono text-[13px] text-ink">RATE_LIMIT_API_AUTHENTICATED</span>.
             </p>
             <p>
               Instance administrators, the web app&apos;s own reads, mirrors and proxy caches are never limited. The

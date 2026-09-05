@@ -1105,6 +1105,23 @@ The management API lives in `web/src/app/api/v1/**/route.ts` on top of
   config, layers, variants, scan, signature and block) and the row → JSON
   mappers whose field names are the contract.
 
+- `rate-limit.ts` / `stats.ts` / `match.ts` — fixed-window request limits
+  counted in `rate_limit_counters` under an `api|` key prefix (shared with
+  registryd's pull limits, so every replica sees one budget; administrators
+  exempt), request counters buffered per process and flushed to
+  `api_request_stats` for `chicoree_api_requests_total`, and the request →
+  catalog matcher that labels metrics and emits `Deprecation` / `Sunset` /
+  `Link` headers for entries with `deprecated` set.
+- `scan-gate.ts`, `copy.ts`, `webhooks.ts`, `service-accounts.ts` — the
+  pipeline-facing operations (wait for a scan and judge it, promote an image,
+  manage hooks and service accounts) built on the same libraries as the UI.
+- `lib/ci-auth.ts` — keyless CI: verifies a workflow's OIDC token against
+  its issuer's JWKS (only issuers in `ci_identities_trusted` are contacted),
+  matches issuer + subject pattern, and mints `chc_ci_` HMAC JWTs (key
+  derived from `AUTH_SECRET`, ≤ 1 h) that the API and the docker token
+  endpoint resolve to a service-account-shaped caller (`sa:ci:<identity>`
+  as registry subject). Deleting the identity revokes its tokens.
+
 Writes reuse the libraries the server actions use (`lib/tag-admin.ts`,
 `lib/manifests.ts`, `lib/rescan.ts`, quotas, redirects, audit) so the API
 and the UI cannot diverge in behaviour; API changes are audited with the

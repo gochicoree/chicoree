@@ -82,6 +82,10 @@ export interface RateLimitSettings {
   authenticated: string;
   /** CIDRs / addresses whose X-Forwarded-For header is trusted. */
   trustedProxies: string;
+  /** REST API requests per client address without credentials ("<count>/<window>", empty = unlimited). */
+  apiAnonymous: string;
+  /** REST API requests per user, service account or CI identity. */
+  apiAuthenticated: string;
 }
 
 export interface EffectiveSettings {
@@ -182,6 +186,8 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       anonymous: env.rateLimitAnonymous,
       authenticated: env.rateLimitAuthenticated,
       trustedProxies: env.rateLimitTrustedProxies,
+      apiAnonymous: env.rateLimitApiAnonymous,
+      apiAuthenticated: env.rateLimitApiAuthenticated,
     },
     scanner: {
       backend: env.scanner,
@@ -221,7 +227,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
     case "branding":
       return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE || !!process.env.GRAVATAR || !!process.env.SHOW_ARTIFACTS;
     case "ratelimit":
-      return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated;
+      return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated || !!process.env.RATE_LIMIT_API_ANONYMOUS || !!process.env.RATE_LIMIT_API_AUTHENTICATED;
     case "scanner":
       return !!process.env.SCANNER || !!d.scanner.clairUrl;
   }
