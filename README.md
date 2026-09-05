@@ -545,6 +545,15 @@ backend with its options:
 | `s3` | `S3_BUCKET`*, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE`, `S3_REDIRECT_GET`, `S3_PRESIGN_EXPIRY` |
 | `bunny` | `BUNNY_STORAGE_ZONE`*, `BUNNY_ACCESS_KEY`*, `BUNNY_REGION` (`ny`, `la`, `sg`, `se`, `br`, `jh`, `syd`, `uk`; empty = Falkenstein), `BUNNY_ENDPOINT`, `BUNNY_CDN_URL` + `BUNNY_CDN_TOKEN_KEY` (signed pull-zone redirects), `BUNNY_PRESIGN_EXPIRY` |
 
+**Switching backends.** Blob rows in the database say *that* a blob exists,
+the storage driver says *where*. Changing `STORAGE_DRIVER` on an instance that
+already holds images therefore needs the `blobs/` tree copied to the new
+backend first (every driver uses the same `blobs/sha256/<xx>/<digest>` layout,
+so a plain file copy or an S3/Edge-Storage upload of that tree is enough);
+otherwise pushes of known layers are deduplicated against the database and
+pulls answer 404 for blobs the new backend never received. Keep the old copy
+until a pull of every repository has been checked.
+
 Adding a backend is one Go package: implement `storage.Driver`, call
 `storage.Register` in `init()`, and blank-import it from
 `registryd/cmd/registryd/main.go`.
