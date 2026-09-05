@@ -62,7 +62,7 @@ export default async function ApiDocsPage() {
             content: (
               <Card>
                 <CardBody>
-                  <article className="markdown" dangerouslySetInnerHTML={{ __html: guide }} />
+                  <article className="markdown [&_pre]:whitespace-pre-wrap [&_pre]:[overflow-wrap:anywhere]" dangerouslySetInnerHTML={{ __html: guide }} />
                 </CardBody>
               </Card>
             ),
