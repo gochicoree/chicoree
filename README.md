@@ -105,6 +105,8 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Sign-up controls | *Administration → Auth providers → Access*; `SIGNUP_MODE`, `SIGNUP_ALLOWED_DOMAINS`, `ORG_CREATION` as defaults — see [Sign-up controls](#sign-up-controls) |
 | Access token policy | *Administration → Auth providers → Access*; `TOKEN_MAX_LIFETIME_DAYS`, `TOKEN_REQUIRE_EXPIRY` as defaults — see [Access token policy](#access-token-policy) |
 | REST API | *Administration → Auth providers → Access*; `API_ENABLED=false` as default switches `/api/v1` off — see [REST API](#rest-api) |
+| Default limits | *Administration → Limits*; `DEFAULT_USER_MAX_*`, `DEFAULT_ORG_MAX_*` as defaults for new accounts and organizations — see [Limits](#limits) |
+| Account portal | *Administration → Limits*; `PORTAL_URL`, `PORTAL_LABEL` as defaults — see [Account portal](#account-portal) |
 | Token signing keys | *Administration → Signing keys*; `TOKEN_KEY_RELOAD_INTERVAL` (default `60s`) and `TOKEN_KEY_DROP_WINDOW` (default `10m`) on `registryd` — see [Signing-key rotation](#signing-key-rotation) |
 | Upload staging | `STORAGE_STAGING=local\|shared` and `UPLOAD_SESSION_TTL` (default `24h`) on `registryd` — see [Running several registryd replicas](#running-several-registryd-replicas) |
 | Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE` as defaults — see [Branding](#branding) |
@@ -1494,6 +1496,51 @@ error from registry: organization quota exceeded: 8 of 8 private repositories us
 Set them under *Administration → Users / Organizations*, where usage is shown
 against each limit. Owners and admins are emailed when an organization reaches
 80 % or 95 % of a limit — see [Notifications](#notifications).
+
+**Members.** An organization can also be capped at a number of members (any
+role). An open invitation holds a seat until it is accepted or cancelled, so
+inviting is refused when members plus open invitations would reach the limit;
+accepting and group-binding logins are refused when the members alone have.
+The members page shows *n of m members* and disables inviting when full.
+
+**Defaults for new accounts and organizations.** *Administration → Limits*
+gives every account that signs up and every organization that is created a
+limits row with the values set there (administrators are exempt; existing rows
+are untouched). `DEFAULT_USER_MAX_ORGANIZATIONS`, `DEFAULT_USER_MAX_PUBLIC_REPOS`,
+`DEFAULT_USER_MAX_PRIVATE_REPOS`, `DEFAULT_USER_MAX_STORAGE_GIB`,
+`DEFAULT_ORG_MAX_PUBLIC_REPOS`, `DEFAULT_ORG_MAX_PRIVATE_REPOS`,
+`DEFAULT_ORG_MAX_STORAGE_GIB` and `DEFAULT_ORG_MAX_MEMBERS` are the environment
+defaults for that section. Without defaults, accounts and organizations stay
+unlimited until an administrator sets limits by hand — as before.
+
+**Label.** Each limits row carries a label ("Team", say) that owners see next
+to their usage on *Settings* and *Organization → Settings*, and a note only
+administrators see. The [REST API](#rest-api) reads and writes limits rows
+(`GET/PATCH/DELETE /api/v1/orgs/{org}/limits`, `/api/v1/users/{userId}/limits`),
+looks accounts up (`GET /api/v1/users?email=…`) and reports usage with the
+month's traffic (`GET /api/v1/orgs/{org}/usage`, `GET /api/v1/me/usage`), so
+an external system can drive limits.
+
+### Account portal
+
+*Administration → Limits → Account portal* (`PORTAL_URL`, `PORTAL_LABEL` as
+defaults) links an external service where people manage their account — a
+billing portal, a company directory. With a URL set, *Settings* and
+*Organization → Settings* show a **Manage** button next to the usage. It asks
+the registry for a one-time sign-in token (valid three minutes) and opens the
+portal as `<url>?token=…` — plus `&organization=<slug>` from an organization's
+settings. The portal exchanges the token server-side:
+
+```
+POST https://registry.example.com/api/auth/one-time-token/verify
+Content-Type: application/json
+
+{ "token": "…" }
+```
+
+The answer carries the session and the user (id, email, name), so the portal
+knows who arrived without a second login. The token endpoint is only
+registered while a portal URL is configured.
 
 ## Rate limits
 

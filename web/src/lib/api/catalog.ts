@@ -71,9 +71,9 @@ export interface ApiEndpoint {
   };
 }
 
-export type ApiGroup = "General" | "Organizations" | "Repositories" | "Tags" | "Images" | "Security" | "Search" | "Account";
+export type ApiGroup = "General" | "Organizations" | "Repositories" | "Tags" | "Images" | "Security" | "Search" | "Account" | "Administration";
 
-export const API_GROUPS: ApiGroup[] = ["General", "Organizations", "Repositories", "Tags", "Images", "Security", "Search", "Account"];
+export const API_GROUPS: ApiGroup[] = ["General", "Organizations", "Repositories", "Tags", "Images", "Security", "Search", "Account", "Administration"];
 
 const PAGE_PARAMS: ApiParam[] = [
   { name: "page", in: "query", type: "integer", description: "Page number, from 1." },
@@ -81,6 +81,51 @@ const PAGE_PARAMS: ApiParam[] = [
 ];
 
 const ORG_PARAM: ApiParam = { name: "org", in: "path", type: "string", required: true, description: "Organization slug. Top-level images live in `library`." };
+const USER_PARAM: ApiParam = { name: "userId", in: "path", type: "string", required: true, description: "The user's id (from `GET /users` or `GET /me`)." };
+const MONTH_PARAM: ApiParam = { name: "month", in: "query", type: "string", description: "Calendar month of the traffic figures, `YYYY-MM` in UTC (default: the current month)." };
+const TRAFFIC_EXAMPLE = { month: "2026-09", from: "2026-09-01", to: "2026-10-01", pullBytes: 734003200, redirectBytes: 4194304000, pushBytes: 268435456, blobPulls: 812, manifestPulls: 1290 };
+const ORG_USAGE_EXAMPLE = {
+  organization: "acme",
+  usage: { publicRepositories: 2, privateRepositories: 10, storageBytes: 12884901888, members: 4 },
+  limits: { maxPublicRepositories: null, maxPrivateRepositories: 20, maxStorageBytes: 53687091200, maxMembers: 5 },
+  percent: { publicRepositories: null, privateRepositories: 50, storage: 24, members: 80 },
+  label: "Team",
+  traffic: TRAFFIC_EXAMPLE,
+};
+const USER_USAGE_EXAMPLE = {
+  user: "u_7f…",
+  usage: { organizations: 2, publicRepositories: 3, privateRepositories: 12, storageBytes: 21474836480, members: 6 },
+  limits: { maxOrganizations: null, maxPublicRepositories: null, maxPrivateRepositories: null, maxStorageBytes: 107374182400 },
+  percent: { organizations: null, publicRepositories: null, privateRepositories: null, storage: 20 },
+  label: "Pro",
+  traffic: TRAFFIC_EXAMPLE,
+};
+const ORG_LIMITS_EXAMPLE = {
+  organization: "acme",
+  configured: true,
+  limits: { maxPublicRepositories: null, maxPrivateRepositories: 20, maxStorageBytes: 53687091200, maxMembers: 5 },
+  label: "Team",
+  note: "5 seats since 2026-09",
+  updatedAt: "2026-09-05T09:00:00.000Z",
+  updatedBy: "u_admin…",
+};
+const USER_LIMITS_EXAMPLE = {
+  user: "u_7f…",
+  configured: true,
+  limits: { maxOrganizations: null, maxPublicRepositories: null, maxPrivateRepositories: null, maxStorageBytes: 107374182400 },
+  label: "Pro",
+  note: "",
+  updatedAt: "2026-09-05T09:00:00.000Z",
+  updatedBy: "u_admin…",
+};
+const USER_EXAMPLE = { id: "u_7f…", name: "Jo Doe", email: "jo@example.com", role: "user", emailVerified: true, twoFactorEnabled: false, banned: false, createdAt: "2026-08-30T08:00:00.000Z" };
+const LIMIT_BODY_COMMON: ApiParam[] = [
+  { name: "maxPublicRepositories", in: "body", type: "integer | null", description: "null lifts the limit." },
+  { name: "maxPrivateRepositories", in: "body", type: "integer | null", description: "null lifts the limit." },
+  { name: "maxStorageBytes", in: "body", type: "integer | null", description: "Deduplicated bytes; null lifts the limit." },
+  { name: "label", in: "body", type: "string", description: "Shown to the owner next to their usage (a plan name, say); at most 80 characters, empty hides it." },
+  { name: "note", in: "body", type: "string", description: "For administrators only." },
+];
 const REPO_PARAM: ApiParam = {
   name: "repo",
   in: "path",
@@ -426,9 +471,11 @@ export const API_CATALOG: ApiEndpoint[] = [
     path: "/orgs/{org}/usage",
     group: "Organizations",
     summary: "Usage against limits",
+    description:
+      "Repositories, storage and members against the organization's limits (null = unlimited), the label administrators gave the limits (a plan name, say) and the month's traffic: `pullBytes` served by the registry itself, `redirectBytes` handed to the storage backend or CDN, `pushBytes` received.",
     access: "manager",
-    params: [ORG_PARAM],
-    example: { organization: "acme", usage: { publicRepositories: 2, privateRepositories: 10, storageBytes: 12884901888 }, limits: { maxPublicRepositories: null, maxPrivateRepositories: 20, maxStorageBytes: 53687091200 }, percent: { publicRepositories: null, privateRepositories: 50, storage: 24 } },
+    params: [ORG_PARAM, MONTH_PARAM],
+    example: ORG_USAGE_EXAMPLE,
     since: "2026-09-05.3",
   },
   {
@@ -1121,6 +1168,138 @@ export const API_CATALOG: ApiEndpoint[] = [
     params: [{ name: "limit", in: "query", type: "integer", description: "At most this many, 1–200 (default 50)." }],
     example: { items: [{ ...REPO_EXAMPLE, starredAt: "2026-09-03T12:00:00.000Z" }], total: 1 },
     since: "2026-09-05.1",
+  },
+  {
+    method: "GET",
+    path: "/me/usage",
+    group: "Account",
+    summary: "My usage against my limits",
+    description: "Everything the caller owns, summed across the organizations where they are an owner, against their account limits; with the month's traffic and the label administrators gave the account (a plan name, say).",
+    access: "user",
+    params: [MONTH_PARAM],
+    example: USER_USAGE_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+
+  // --- Administration -----------------------------------------------------
+  {
+    method: "GET",
+    path: "/users",
+    group: "Administration",
+    summary: "List users",
+    description: "Accounts on this instance. `email` finds one address exactly (case-insensitive); `q` searches names and addresses. Read-only tokens may read.",
+    access: "admin",
+    paginated: true,
+    params: [
+      { name: "email", in: "query", type: "string", description: "Exact email address." },
+      { name: "q", in: "query", type: "string", description: "Substring of the name or email." },
+      ...PAGE_PARAMS,
+    ],
+    example: { items: [USER_EXAMPLE], page: 1, perPage: 50, total: 1, pages: 1 },
+    since: "2026-09-05.4",
+  },
+  {
+    method: "GET",
+    path: "/users/{userId}",
+    group: "Administration",
+    summary: "User details",
+    description: "The account with how many organizations it owns and belongs to, and the label of its limits.",
+    access: "admin",
+    params: [USER_PARAM],
+    example: { ...USER_EXAMPLE, organizations: { owned: 1, memberships: 3 }, accessTokens: 2, label: "Pro" },
+    since: "2026-09-05.4",
+  },
+  {
+    method: "GET",
+    path: "/users/{userId}/organizations",
+    group: "Administration",
+    summary: "A user's organizations",
+    description: "Every organization the account belongs to, with its role there and the organization's size and limits label.",
+    access: "admin",
+    params: [USER_PARAM],
+    example: { user: "u_7f…", items: [{ id: "9a1c…", slug: "acme", name: "Acme", role: "owner", memberCount: 4, repositoryCount: 12, storageBytes: 12884901888, label: "Team" }], total: 1 },
+    since: "2026-09-05.4",
+  },
+  {
+    method: "GET",
+    path: "/users/{userId}/usage",
+    group: "Administration",
+    summary: "A user's usage against their limits",
+    description: "Like `GET /me/usage`, for any account.",
+    access: "admin",
+    params: [USER_PARAM, MONTH_PARAM],
+    example: USER_USAGE_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+  {
+    method: "GET",
+    path: "/users/{userId}/limits",
+    group: "Administration",
+    summary: "Account limits",
+    description: "The account's limits row: caps on everything the user owns, summed across their organizations. `configured` is false when there is no row (unlimited).",
+    access: "admin",
+    params: [USER_PARAM],
+    example: USER_LIMITS_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+  {
+    method: "PATCH",
+    path: "/users/{userId}/limits",
+    group: "Administration",
+    summary: "Change account limits",
+    description: "Send only the fields to change; null lifts a limit. Creates the row when there is none. The same rules registryd enforces at push time apply from the next request.",
+    access: "admin",
+    write: true,
+    params: [USER_PARAM, { name: "maxOrganizations", in: "body", type: "integer | null", description: "Organizations the user may own; null lifts the limit." }, ...LIMIT_BODY_COMMON],
+    example: USER_LIMITS_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+  {
+    method: "DELETE",
+    path: "/users/{userId}/limits",
+    group: "Administration",
+    summary: "Remove account limits",
+    description: "Drops the row: the account is unlimited again. `removed` is false when there was none.",
+    access: "admin",
+    write: true,
+    params: [USER_PARAM],
+    example: { user: "u_7f…", removed: true },
+    since: "2026-09-05.4",
+  },
+  {
+    method: "GET",
+    path: "/orgs/{org}/limits",
+    group: "Administration",
+    summary: "Organization limits",
+    description: "The organization's limits row. Owner-level account limits apply on top; `configured` is false when there is no row.",
+    access: "admin",
+    params: [ORG_PARAM],
+    example: ORG_LIMITS_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+  {
+    method: "PATCH",
+    path: "/orgs/{org}/limits",
+    group: "Administration",
+    summary: "Change organization limits",
+    description: "Send only the fields to change; null lifts a limit. Creates the row when there is none. `maxMembers` counts every role; an open invitation holds a seat until it is accepted or cancelled.",
+    access: "admin",
+    write: true,
+    params: [ORG_PARAM, ...LIMIT_BODY_COMMON, { name: "maxMembers", in: "body", type: "integer | null", description: "At least 1; null lifts the limit." }],
+    example: ORG_LIMITS_EXAMPLE,
+    since: "2026-09-05.4",
+  },
+  {
+    method: "DELETE",
+    path: "/orgs/{org}/limits",
+    group: "Administration",
+    summary: "Remove organization limits",
+    description: "Drops the row; only the owners' account limits remain. `removed` is false when there was none.",
+    access: "admin",
+    write: true,
+    params: [ORG_PARAM],
+    example: { organization: "acme", removed: true },
+    since: "2026-09-05.4",
   },
 ];
 

@@ -13,11 +13,14 @@ export function LimitsForm({
   scope,
   targetId,
   limits,
+  label,
   note,
 }: {
   scope: "user" | "organization";
   targetId: string;
   limits: Limits;
+  /** Shown to the owner next to their usage (a plan name, say). */
+  label: string;
   note: string;
 }) {
   const [state, action, pending] = useActionState<LimitsActionResult | null, FormData>(
@@ -84,9 +87,26 @@ export function LimitsForm({
               defaultValue={gib}
             />
           </Field>
-          <div className="sm:col-span-2 lg:col-span-4">
+          {scope === "organization" && (
+            <Field label="Members" htmlFor="maxMembers" hint="Open invitations count">
+              <Input
+                id="maxMembers"
+                name="maxMembers"
+                type="number"
+                min={1}
+                placeholder="unlimited"
+                defaultValue={limits.maxMembers ?? ""}
+              />
+            </Field>
+          )}
+          <div className="sm:col-span-2">
+            <Field label="Label" htmlFor="limits-label" hint={scope === "user" ? "Shown to the user next to their usage" : "Shown to owners and admins next to the usage"}>
+              <Input id="limits-label" name="label" defaultValue={label} maxLength={80} placeholder="e.g. Team" />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
             <Field label="Note" htmlFor="limits-note" hint="Internal, shown only to admins">
-              <Input id="limits-note" name="note" defaultValue={note} placeholder="e.g. free tier" />
+              <Input id="limits-note" name="note" defaultValue={note} placeholder="e.g. raised after ticket #123" />
             </Field>
           </div>
           <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-4">

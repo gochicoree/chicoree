@@ -89,6 +89,20 @@ export function stringField(body: Record<string, unknown>, key: string, maxLengt
   return v.trim();
 }
 
+/**
+ * A whole-number field that may be null: absent → undefined, null → null,
+ * a non-negative integer → the number; anything else is an error.
+ */
+export function nullableIntField(body: Record<string, unknown>, key: string, opts: { min?: number; max?: number } = {}): number | null | undefined {
+  const v = body[key];
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const min = opts.min ?? 0;
+  const max = opts.max ?? Number.MAX_SAFE_INTEGER;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) throw unprocessable(`"${key}" must be a whole number${min > 0 ? ` of at least ${min}` : ""} or null.`);
+  return v;
+}
+
 export function enumField<T extends string>(body: Record<string, unknown>, key: string, values: readonly T[]): T | undefined {
   const v = body[key];
   if (v === undefined || v === null) return undefined;

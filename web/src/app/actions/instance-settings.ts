@@ -16,6 +16,8 @@ import { parseGroupBindings } from "@/lib/group-bindings";
 import { testLdapConnection } from "@/lib/ldap";
 import { recordAudit } from "@/lib/audit";
 import { parseRateLimit, parseTrustedProxies } from "@/lib/rate-limit-shared";
+import { parseLimitField, parseStorageGiB } from "@/lib/quota";
+import { normalizePortalUrl, type QuotaDefaults } from "@/lib/quota-shared";
 
 export interface SettingsResult {
   error?: string;
@@ -33,6 +35,7 @@ async function done(section: SettingsSection): Promise<SettingsResult> {
   revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
   revalidatePath("/admin/settings/limits");
+  revalidatePath("/admin/settings/quotas");
   return { saved: true, message: `${section} settings saved` };
 }
 
@@ -162,7 +165,7 @@ export async function saveGroupBindings(_prev: SettingsResult | null, fd: FormDa
 export async function resetSection(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
   await requireAdmin();
   const section = str(fd, "section") as SettingsSection;
-  if (!["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit"].includes(section)) return { error: "Unknown section." };
+  if (!["smtp", "github", "google", "oidc", "ldap", "bindings", "metrics", "access", "branding", "ratelimit", "quotas", "portal"].includes(section)) return { error: "Unknown section." };
   await resetSettingsSection(section);
   await recordAudit({ action: "settings.reset", targetType: "settings", targetId: section, targetLabel: section });
   revalidatePath("/admin/auth", "layout");
@@ -170,7 +173,47 @@ export async function resetSection(_prev: SettingsResult | null, fd: FormData): 
   revalidatePath("/admin/metrics");
   revalidatePath("/sign-in");
   revalidatePath("/admin/settings/limits");
+  revalidatePath("/admin/settings/quotas");
   return { saved: true, message: "Reverted to the environment configuration" };
+}
+
+/** Limits every new account and organization starts with; existing rows are untouched. */
+export async function saveQuotaDefaults(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
+  await requireAdmin();
+  const num = (key: string) => parseLimitField(fd.get(key));
+  const gib = (key: string) => parseStorageGiB(fd.get(key));
+  const members = num("orgMaxMembers");
+  if (members !== null && members < 1) return { error: "The member limit must be at least 1 (the owner)." };
+  const quotas: QuotaDefaults = {
+    user: {
+      maxOrganizations: num("userMaxOrganizations"),
+      maxPublicRepos: num("userMaxPublicRepos"),
+      maxPrivateRepos: num("userMaxPrivateRepos"),
+      maxStorageBytes: gib("userMaxStorageGiB"),
+    },
+    organization: {
+      maxPublicRepos: num("orgMaxPublicRepos"),
+      maxPrivateRepos: num("orgMaxPrivateRepos"),
+      maxStorageBytes: gib("orgMaxStorageGiB"),
+      maxMembers: members,
+    },
+  };
+  await saveSettingsSection("quotas", quotas as unknown as Record<string, unknown>);
+  const result = await done("quotas");
+  result.message = "Default limits saved; they apply to accounts and organizations created from now on";
+  return result;
+}
+
+/** The external account portal linked from the account and organization settings. */
+export async function savePortalSettings(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
+  await requireAdmin();
+  const url = normalizePortalUrl(str(fd, "url"));
+  if (url.error) return { error: url.error };
+  const label = str(fd, "label").slice(0, 40);
+  await saveSettingsSection("portal", { url: url.url, label });
+  const result = await done("portal");
+  result.message = url.url ? "Account portal saved" : "Account portal link removed";
+  return result;
 }
 
 export async function saveMetricsSettings(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {

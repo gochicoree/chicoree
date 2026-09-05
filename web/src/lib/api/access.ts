@@ -202,8 +202,9 @@ export function requireOrgWriter(c: ApiCaller, a: OrgAccess, what = "create repo
   if (!a.role || !WRITER_ROLES.includes(a.role)) denial(c, what);
 }
 
-export function requireInstanceAdmin(c: ApiCaller, what = "do that"): void {
+/** Instance administrators only; a read-only token passes when `read` is set (GETs). */
+export function requireInstanceAdmin(c: ApiCaller, what = "do that", opts: { read?: boolean } = {}): void {
   if (c.kind !== "user") throw forbidden(`Only instance administrators can ${what}.`);
-  if (c.caller.patScope === "read") denial(c, what);
+  if (!opts.read && c.caller.patScope === "read") denial(c, what);
   if (!c.caller.isAdmin) throw forbidden(`Only instance administrators can ${what}.`);
 }

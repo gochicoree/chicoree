@@ -6,6 +6,7 @@ import {
   emailOTP,
   genericOAuth,
   magicLink,
+  oneTimeToken,
   organization,
   twoFactor,
 } from "better-auth/plugins";
@@ -18,7 +19,8 @@ import { env } from "./env";
 import { buttonHtml, codeHtml, mailLayout, sendMail } from "./email";
 import { sendInvitationMail } from "./invitation-mail";
 import { orgAccessControl, orgRoles } from "./org-roles";
-import { checkOrgCreationQuota } from "./quota";
+import { checkMemberQuota, checkOrgCreationQuota } from "./quota";
+import { applyDefaultOrgLimits, applyDefaultUserLimits } from "./limits";
 import { ensureLibraryOrg, LIBRARY_SLUG } from "./library";
 import { ldap } from "./auth-ldap";
 import { enforceLocalSignIn } from "./auth-access";
@@ -203,6 +205,8 @@ function buildAuth(settings: EffectiveSettings) {
         // Administrators own the "library" organization (top-level images).
         after: async (user, context) => {
           if (user.role === "admin") await ensureLibraryOrg(user.id);
+          // Everyone else starts with the instance's default limits (Administration → Limits).
+          else await applyDefaultUserLimits(user.id, settings.quotas);
           await auditUserCreated(user, context);
         },
       },
@@ -258,6 +262,27 @@ function buildAuth(settings: EffectiveSettings) {
       // be valid OCI path components.
       organizationHooks: {
         ...auditOrganizationHooks,
+        afterCreateOrganization: async (data) => {
+          await auditOrganizationHooks.afterCreateOrganization(data);
+          await applyDefaultOrgLimits(data.organization.id, settings.quotas);
+        },
+        // Member limit (Administration → Organizations → Limits). An open
+        // invitation holds a seat: inviting counts pending invitations,
+        // accepting one or adding a member directly counts members only.
+        beforeCreateInvitation: async ({ invitation, organization }) => {
+          const full = await checkMemberQuota(organization.id, { includePending: true, orgLabel: organization.name });
+          if (full) throw new APIError("FORBIDDEN", { message: full });
+          return { data: invitation };
+        },
+        beforeAcceptInvitation: async ({ organization }) => {
+          const full = await checkMemberQuota(organization.id, { orgLabel: organization.name });
+          if (full) throw new APIError("FORBIDDEN", { message: full });
+        },
+        beforeAddMember: async ({ member, organization }) => {
+          const full = await checkMemberQuota(organization.id, { orgLabel: organization.name });
+          if (full) throw new APIError("FORBIDDEN", { message: full });
+          return { data: member };
+        },
         // Members' personal signing keys count only while they may push:
         // a removal or role change re-verifies the organization's signatures
         // (in the background — it can touch every repository).
@@ -311,6 +336,12 @@ function buildAuth(settings: EffectiveSettings) {
         },
       },
     }),
+    // Hands a signed-in user over to the account portal (Administration →
+    // Limits): the Manage button fetches a short-lived token, the portal
+    // verifies it server-side against /api/auth/one-time-token/verify.
+    // Browsers may only ask for tokens while a portal is configured (the
+    // plugin list must stay a fixed tuple for better-auth's type inference).
+    oneTimeToken({ expiresIn: 3, disableClientRequest: !settings.portal.url }),
     twoFactor({
       issuer: `${brand} Registry`,
       otpOptions: {

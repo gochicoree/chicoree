@@ -143,6 +143,31 @@ async function run() {
   await expect("admin: org policies", "GET", `/orgs/${SLUG}/policies`, 200, { token: A });
   await expect("admin: repo policies", "GET", `/repos/${SLUG}/app/policies`, 200, { token: A, verify: (b) => (isObj(b) && b.blockPullsAt === "inherit") || "shape" });
 
+  // limits, usage and user lookups (Administration)
+  await expect("outsider: org limits → 403", "GET", `/orgs/${SLUG}/limits`, 403, { token: U });
+  await expect("read token: org limits readable", "GET", `/orgs/${SLUG}/limits`, 200, { token: R, verify: (b) => (isObj(b) && b.configured === false) || "shape" });
+  await expect("read token: patch limits → 403", "PATCH", `/orgs/${SLUG}/limits`, 403, { token: R, body: { maxMembers: 1 } });
+  await expect("org limits patch", "PATCH", `/orgs/${SLUG}/limits`, 200, { token: A, body: { maxMembers: 1, maxPrivateRepositories: 5, label: "Smoke plan" }, verify: (b) => (isObj(b) && (b.limits as { maxMembers: number }).maxMembers === 1 && b.label === "Smoke plan") || "not applied" });
+  await expect("org limits: member count 0 → 422", "PATCH", `/orgs/${SLUG}/limits`, 422, { token: A, body: { maxMembers: 0 } });
+  await expect("invitation blocked by member limit", "POST", `/orgs/${SLUG}/invitations`, 403, { token: A, body: { email: `smoke-blocked-${RUN}@example.com` } });
+  await expect("org usage: members, label, traffic", "GET", `/orgs/${SLUG}/usage`, 200, { token: A, verify: (b) => (isObj(b) && (b.usage as { members: number }).members === 1 && (b.limits as { maxMembers: number }).maxMembers === 1 && b.label === "Smoke plan" && isObj(b.traffic) && /^\d{4}-\d{2}$/.test((b.traffic as { month: string }).month)) || "shape" });
+  await expect("org usage: month filter", "GET", `/orgs/${SLUG}/usage?month=2026-01`, 200, { token: A, verify: (b) => (isObj(b) && (b.traffic as { from: string }).from === "2026-01-01") || "wrong month" });
+  await expect("org usage: bad month → 422", "GET", `/orgs/${SLUG}/usage?month=2026-13`, 422, { token: A });
+  await expect("org limits delete", "DELETE", `/orgs/${SLUG}/limits`, 200, { token: A, verify: (b) => (isObj(b) && b.removed === true) || "not removed" });
+  await expect("org limits delete again → removed=false", "DELETE", `/orgs/${SLUG}/limits`, 200, { token: A, verify: (b) => (isObj(b) && b.removed === false) || "shape" });
+  await expect("outsider: users → 403", "GET", "/users", 403, { token: U });
+  await expect("users by email", "GET", `/users?email=SMOKE-USER-${RUN}@example.com`, 200, { token: A, verify: (b) => (isObj(b) && b.total === 1 && (b.items as { id: string }[])[0].id === userId) || "not found" });
+  await expect("users search", "GET", `/users?q=${encodeURIComponent(`-${RUN}@example.com`)}`, 200, { token: A, verify: (b) => (isObj(b) && b.total === 2) || "expected 2" });
+  await expect("user detail", "GET", `/users/${userId}`, 200, { token: A, verify: (b) => (isObj(b) && b.email === `smoke-user-${RUN}@example.com` && isObj(b.organizations)) || "shape" });
+  await expect("unknown user → 404", "GET", `/users/no-such-${RUN}`, 404, { token: A });
+  await expect("user limits patch", "PATCH", `/users/${userId}/limits`, 200, { token: A, body: { maxOrganizations: 1, maxStorageBytes: 1073741824, label: "Free" }, verify: (b) => (isObj(b) && (b.limits as { maxOrganizations: number }).maxOrganizations === 1 && b.configured === true) || "not applied" });
+  await expect("user limits: bad type → 422", "PATCH", `/users/${userId}/limits`, 422, { token: A, body: { maxOrganizations: "many" } });
+  await expect("user usage", "GET", `/users/${userId}/usage`, 200, { token: A, verify: (b) => (isObj(b) && (b.limits as { maxOrganizations: number }).maxOrganizations === 1 && b.label === "Free" && isObj(b.traffic)) || "shape" });
+  await expect("user organizations", "GET", `/users/${adminId}/organizations`, 200, { token: A, verify: (b) => (isObj(b) && (b.total as number) >= 1 && (b.items as { role: string }[]).some((o) => o.role === "owner")) || "shape" });
+  await expect("me usage (user token)", "GET", "/me/usage", 200, { token: U, verify: (b) => (isObj(b) && b.user === userId && (b.usage as { organizations: number }).organizations === 0) || "shape" });
+  await expect("sa: me usage → 403", "GET", "/me/usage", 403, { token: SA });
+  await expect("user limits delete", "DELETE", `/users/${userId}/limits`, 200, { token: A, verify: (b) => (isObj(b) && b.removed === true) || "not removed" });
+
   // conditional requests
   const first = await expect("etag on GET", "GET", `/orgs/${SLUG}`, 200, { token: A, verify: (_b, r) => (r.headers.get("etag") ?? "").startsWith('W/"') || "no ETag" });
   await expect("If-None-Match → 304", "GET", `/orgs/${SLUG}`, 304, { token: A, headers: { "If-None-Match": first.headers.get("etag") ?? "" } });
