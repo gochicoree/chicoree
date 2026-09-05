@@ -19,7 +19,7 @@ import { RuleBadges } from "@/components/tag-rules-manager";
 import { imageReference } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { decodeRepoParam, displayHost, isDockerHubUrl, proxyUpstreamPath, repoHref } from "@/lib/proxy-shared";
-import { describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
+import { describeIndexChild, describeMediaType, untaggedManifestsPage } from "@/lib/manifests";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { DeleteManifestButton, DeleteTagButton } from "./tag-actions";
 import { after } from "next/server";
@@ -236,7 +236,7 @@ export default async function RepoPage({
                     </td>
                     {scanning && (
                       <td className="px-4 py-3">
-                        <SeverityChips summary={tag.scanSummary} status={tag.isIndex ? "index" : tag.scanStatus} />
+                        <SeverityChips summary={tag.scanSummary} status={tag.scanStatus} />
                       </td>
                     )}
                     <td className="hidden px-4 py-3 text-right text-[13px] text-ink-2 sm:table-cell">
@@ -295,9 +295,7 @@ export default async function RepoPage({
                 </thead>
                 <tbody>
                   {untagged.rows.map((m) => {
-                    const blocked = m.isChild
-                      ? "Platform variant of a multi-arch index that still exists; delete the index instead."
-                      : null;
+                    const blocked = m.isChild ? describeIndexChild(m) : null;
                     return (
                       <tr key={m.digest} className="border-b border-line last:border-0 hover:bg-card-2">
                         <td className="px-4 py-3 sm:px-5">
@@ -306,8 +304,10 @@ export default async function RepoPage({
                           </Link>
                           <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
                             {m.isChild && (
-                              <Badge tone="info" title="Referenced by a multi-arch index in this repository">
-                                <Layers className="size-3" /> index child
+                              <Badge tone="info" title={describeIndexChild(m)}>
+                                <Layers className="size-3" />
+                                {m.isAttestation ? "attestation" : "variant"}
+                                {m.parentTags.length > 0 ? ` of ${m.parentTags.slice(0, 2).join(", ")}${m.parentTags.length > 2 ? ", …" : ""}` : " of an index"}
                               </Badge>
                             )}
                             {m.isReferrer && (
@@ -324,9 +324,11 @@ export default async function RepoPage({
                           <div className="mt-0.5 text-xs text-ink-3 sm:hidden">pushed {relativeTime(m.pushedAt)}</div>
                         </td>
                         <td className="px-4 py-3 text-[13px] text-ink-2">
-                          {describeMediaType(m.mediaType, m.artifactType)}
+                          {m.isAttestation ? "BuildKit attestation" : describeMediaType(m.mediaType, m.artifactType)}
                           {m.isIndex ? (
                             <span className="ml-2 rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">multi-arch</span>
+                          ) : m.isAttestation ? (
+                            <span className="ml-2 text-xs text-ink-3">provenance / SBOM, not an image</span>
                           ) : (
                             m.platform && <span className="ml-2 font-mono text-xs text-ink-3">{m.platform}</span>
                           )}

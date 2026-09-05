@@ -28,8 +28,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ repo
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const raw = req.nextUrl.searchParams.get("raw") === "1";
-  const download = await resolveArtifactDownload(repo, org.slug, digest, raw);
+  const blob = req.nextUrl.searchParams.get("blob");
+  if (blob && !/^sha256:[a-f0-9]{64}$/.test(blob)) return NextResponse.json({ error: "invalid blob digest" }, { status: 400 });
+  // A named layer is always served byte for byte.
+  const raw = req.nextUrl.searchParams.get("raw") === "1" || !!blob;
+  const download = await resolveArtifactDownload(repo, org.slug, digest, raw, blob);
   if (!download) return NextResponse.json({ error: "artifact not found" }, { status: 404 });
   const headers: Record<string, string> = {
     "content-type": download.mediaType,

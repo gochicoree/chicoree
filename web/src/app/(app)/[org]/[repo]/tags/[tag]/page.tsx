@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
-import { ArrowLeft, GitCompareArrows, RotateCw } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, Layers } from "lucide-react";
 import { db } from "@/db";
 import { organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
 import { getOrgContext, getSession } from "@/lib/session";
@@ -12,7 +12,6 @@ import { formatBytes, formatDate, relativeTime } from "@/lib/format";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoVersionOf, userLogoVersion } from "@/lib/logo";
 import { logoRef, type LogoRef } from "@/lib/logo-shared";
-import { requestRescan } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CommandLine, Digest } from "@/components/ui/copy";
 import { Tabs } from "@/components/ui/tabs";
@@ -26,7 +25,9 @@ import { loadExceptionRules, manifestBlockReason } from "@/lib/pull-policy";
 import { getScanner } from "@/lib/scanners";
 import { ensureFindings } from "@/lib/scan";
 import { reportKind } from "@/lib/scanners/normalize";
-import { manifestDeleteBlocker } from "@/lib/manifests";
+import { attestationContents, buildkitAttestationsFor, indexMemberships, manifestDeleteBlocker } from "@/lib/manifests";
+import { looksLikeArtifact } from "@/lib/signatures-shared";
+import { RescanButton } from "./rescan-button";
 import { effectiveTagRules, tagFlags } from "@/lib/tag-rules";
 import { RuleBadges } from "@/components/tag-rules-manager";
 import { DeleteManifestButton } from "../../tag-actions";
@@ -50,6 +51,7 @@ interface Descriptor {
   digest?: string;
   size?: number;
   platform?: { os?: string; architecture?: string; variant?: string };
+  annotations?: Record<string, string>;
 }
 
 interface ImageConfig {
@@ -142,6 +144,7 @@ export default async function TagDetailPage({
     config?: Descriptor;
     layers?: Descriptor[];
     manifests?: Descriptor[];
+    subject?: Descriptor;
     annotations?: Record<string, string>;
   };
   try {
@@ -207,6 +210,23 @@ export default async function TagDetailPage({
   const rules = await effectiveTagRules(found.repo.organizationId, found.repo.id);
   const flags = isDigestRef ? null : tagFlags(rules, reference);
   const deletion = canManage ? await manifestDeleteBlocker(found.repo, digest) : null;
+  // Index children get an explanation of what they are and who holds them
+  // (the delete button alone only says "no").
+  const memberships = isIndex ? [] : await indexMemberships(found.repo.id, digest);
+  const membership = memberships[0] ?? null;
+  const isAttestation = !!membership?.attestation;
+  // Signatures, SBOMs, attestations: no filesystem, so no scan — the button says so instead of doing nothing.
+  const isArtifact =
+    !isIndex &&
+    looksLikeArtifact({
+      hasSubject: !!payload.subject,
+      tags: isDigestRef ? [] : [reference],
+      layerMediaTypes: layers.map((l) => l.mediaType ?? ""),
+      configMediaType: payload.config?.mediaType ?? null,
+    });
+  const attestationItems = isAttestation ? attestationContents(payload) : [];
+  // Provenance / SBOM BuildKit stored next to this image inside the index.
+  const buildkit = !isIndex && !isArtifact ? await buildkitAttestationsFor(found.repo.id, digest) : [];
   // Findings (legacy Clair rows are normalised on first read) and the exceptions that may accept them.
   const findings = scan?.status === "scanned" ? await ensureFindings(scan) : [];
   const exceptionRules = scanning
@@ -248,10 +268,33 @@ export default async function TagDetailPage({
   const metaItems: [string, React.ReactNode][] = [
     ["Digest", <Digest key="d" digest={digest} length={20} />],
     ["Media type", <span key="mt" className="break-all font-mono text-[13px]">{manifest.mediaType}</span>],
-    ...(config?.os
-      ? ([["Platform", `${config.os}/${config.architecture ?? "?"}`]] as [string, React.ReactNode][])
-      : []),
+    ...(isAttestation
+      ? ([["Platform", "none — attestation entry (unknown/unknown)"]] as [string, React.ReactNode][])
+      : config?.os
+        ? ([["Platform", `${config.os}/${config.architecture ?? "?"}`]] as [string, React.ReactNode][])
+        : []),
     ...(isIndex ? ([["Variants", String(children.length)]] as [string, React.ReactNode][]) : []),
+    ...(buildkit.length > 0
+      ? ([
+          [
+            "Build attestations",
+            <span key="bk" className="inline-flex flex-wrap items-center gap-1.5">
+              {buildkit.flatMap((b) =>
+                (b.contents.length > 0 ? b.contents : [{ digest: "", size: 0, predicateType: null, subkind: null, label: "attestation" }]).map((c, i) => (
+                  <Link
+                    key={`${b.digest}-${i}`}
+                    href={`${base}/tags/${encodeURIComponent(b.digest)}`}
+                    className="underline hover:text-ink"
+                    title={`Stored by docker buildx in the index entry ${b.digest.slice(7, 19)}`}
+                  >
+                    {c.label}
+                  </Link>
+                )),
+              )}
+            </span>,
+          ],
+        ] as [string, React.ReactNode][])
+      : []),
     ...(!isIndex
       ? ([["Total size", formatBytes(totalSize)]] as [string, React.ReactNode][])
       : []),
@@ -315,20 +358,18 @@ export default async function TagDetailPage({
               <GitCompareArrows className="size-3.5" /> Compare
             </Link>
             {canRescan && (
-              <form action={requestRescan}>
-                <input type="hidden" name="repositoryId" value={found.repo.id} />
-                <input type="hidden" name="digest" value={digest} />
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  size="sm"
-                  disabled={rescanRunning}
-                  title={rescanRunning ? "A scan of this image is already running; the result appears here when it finishes." : undefined}
-                >
-                  <RotateCw className={`size-3.5${rescanRunning ? " animate-spin" : ""}`} />
-                  {rescanRunning ? "Scanning…" : "Re-scan"}
-                </Button>
-              </form>
+              <RescanButton
+                repositoryId={found.repo.id}
+                digest={digest}
+                running={rescanRunning}
+                disabledReason={
+                  isArtifact
+                    ? isAttestation
+                      ? "Not scanned: an attestation entry carries no software, only provenance / SBOM documents."
+                      : "Not scanned: this manifest carries no filesystem (a signature, SBOM or attestation)."
+                    : null
+                }
+              />
             )}
             {moveTargets.length > 0 && (
               <MoveImageButton
@@ -356,6 +397,100 @@ export default async function TagDetailPage({
           </div>
         </div>
       </div>
+
+      {membership && (
+        <div className="flex items-start gap-3 rounded-xl border border-line bg-card-2 px-4 py-3 text-sm text-ink-2">
+          <Layers className="mt-0.5 size-4 shrink-0 text-ink-3" />
+          <div className="min-w-0 space-y-1.5">
+            <div className="font-medium text-ink">
+              {isAttestation
+                ? "This is not an image: it is a BuildKit attestation entry of a multi-arch index."
+                : `This is the ${membership.platform ?? "platform"} variant of a multi-arch index.`}
+            </div>
+            <p>
+              {isAttestation ? (
+                <>
+                  <code className="font-mono">docker buildx</code> stores the attestations it generates as an extra entry of the index, with the
+                  placeholder platform <span className="font-mono">unknown/unknown</span>
+                  {membership.attestation?.referenceDigest && (
+                    <>
+                      , describing the variant{" "}
+                      <Link href={`${base}/tags/${encodeURIComponent(membership.attestation.referenceDigest)}`} className="font-mono underline hover:text-ink">
+                        {membership.attestation.referenceDigest.slice(7, 19)}
+                      </Link>
+                    </>
+                  )}
+                  . It appears whenever a build records provenance — on by default since Docker 24 / buildx 0.11 — or an SBOM (
+                  <code className="font-mono">--sbom=true</code>); images built with plain <code className="font-mono">docker build</code> or with{" "}
+                  <code className="font-mono">--provenance=false</code> have no such entry. <code className="font-mono">docker pull</code> never fetches
+                  it by itself; <code className="font-mono">docker buildx imagetools inspect</code> and <code className="font-mono">docker sbom</code>{" "}
+                  read it.
+                </>
+              ) : (
+                <>
+                  Pulling the index on a {membership.platform ?? "matching"} machine fetches exactly this image.
+                </>
+              )}
+            </p>
+            {isAttestation && (
+              <p>
+                <span className="font-medium text-ink">This entry contains:</span>{" "}
+                {attestationItems.length === 0
+                  ? "nothing readable (no in-toto statements)."
+                  : attestationItems.map((c, i) => (
+                      <span key={c.digest}>
+                        {i > 0 && ", "}
+                        <a
+                          href={`/api/artifacts/${found.repo.id}/${encodeURIComponent(digest)}?blob=${encodeURIComponent(c.digest)}`}
+                          className="underline hover:text-ink"
+                          title={c.predicateType ?? undefined}
+                        >
+                          {c.label}
+                        </a>{" "}
+                        <span className="text-ink-3">({formatBytes(c.size)})</span>
+                      </span>
+                    ))}
+                {attestationItems.length > 0 && !attestationItems.some((c) => c.subkind === "spdx" || c.subkind === "cyclonedx") && (
+                  <span className="text-ink-3">
+                    {" "}
+                    — no SBOM: the build did not pass <code className="font-mono">--sbom=true</code>.
+                  </span>
+                )}
+              </p>
+            )}
+            <p>
+              It belongs to{" "}
+              {memberships.map((m, i) => (
+                <span key={m.parentDigest}>
+                  {i > 0 && ", "}
+                  {m.parentTags.length > 0 ? (
+                    m.parentTags.map((t, j) => (
+                      <span key={t}>
+                        {j > 0 && ", "}
+                        <Link href={`${base}/tags/${encodeURIComponent(t)}`} className="font-mono underline hover:text-ink">
+                          {repoName}:{t}
+                        </Link>
+                      </span>
+                    ))
+                  ) : (
+                    <Link href={`${base}/tags/${encodeURIComponent(m.parentDigest)}`} className="font-mono underline hover:text-ink">
+                      {repoName}@{m.parentDigest.slice(7, 19)}
+                    </Link>
+                  )}
+                </span>
+              ))}
+              {memberships.length === 1 && memberships[0].parentTags.length === 0 && " (an untagged index)"}, so it cannot be deleted on its own:
+              removing it would break that index. Delete the {memberships.some((m) => m.parentTags.length > 0) ? "tag or the index" : "index"} and the
+              next <em>prune untagged</em> run (or a retention policy) removes this entry; garbage collection reclaims its bytes.
+            </p>
+            {isAttestation && (
+              <p className="text-ink-3">
+                To build without attestation entries: <code className="font-mono">docker buildx build --provenance=false --sbom=false …</code>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {blocked && (
         <div className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
@@ -418,8 +553,17 @@ export default async function TagDetailPage({
                           href={`${base}/tags/${encodeURIComponent(child.digest ?? "")}`}
                           className="font-medium text-ink hover:underline"
                         >
-                          {child.platform ? `${child.platform.os}/${child.platform.architecture}${child.platform.variant ? `/${child.platform.variant}` : ""}` : "unknown"}
+                          {child.annotations?.["vnd.docker.reference.type"] === "attestation-manifest"
+                            ? `attestations for ${child.annotations["vnd.docker.reference.digest"]?.slice(7, 19) ?? "a variant"}`
+                            : child.platform
+                              ? `${child.platform.os}/${child.platform.architecture}${child.platform.variant ? `/${child.platform.variant}` : ""}`
+                              : "unknown"}
                         </Link>
+                        {child.annotations?.["vnd.docker.reference.type"] === "attestation-manifest" && (
+                          <span className="ml-2 font-sans text-xs text-ink-3" title="A BuildKit attestation entry (provenance / SBOM), not an image">
+                            not an image
+                          </span>
+                        )}
                       </td>
                       <td className="hidden px-4 py-2.5 sm:table-cell">
                         <Digest digest={child.digest ?? ""} />

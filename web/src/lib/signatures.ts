@@ -1507,11 +1507,13 @@ export async function resolveArtifactDownload(
   orgSlug: string,
   digest: string,
   raw: boolean,
+  /** A specific layer of the manifest (BuildKit attestation entries hold one statement per layer); default: the first. */
+  blobDigest?: string | null,
 ): Promise<ArtifactDownload | null> {
   const row = await db.query.manifests.findFirst({ where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, digest)) });
   if (!row) return null;
   const parsed = parseArtifactManifest(row.payload);
-  const layer = parsed.layers?.[0];
+  const layer = blobDigest ? parsed.layers?.find((l) => l.digest === blobDigest) : parsed.layers?.[0];
   if (!layer?.digest) return null;
   const cached = await db.query.manifestArtifacts.findFirst({
     where: and(eq(manifestArtifacts.repositoryId, repo.id), eq(manifestArtifacts.digest, digest)),

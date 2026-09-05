@@ -357,9 +357,16 @@ export async function listRepoTags(
     WHERE t.repository_id = ${repoId}
     ORDER BY t.updated_at DESC
     LIMIT ${limit} OFFSET ${offset}`);
+      // Indexes are never scanned themselves; their tag shows the variants'
+      // results rolled up (worst case wins, counts added).
+      const indexDigests = rows
+        .filter((r) => /index|list/.test(String(r.media_type ?? "")))
+        .map((r) => r.manifest_digest as string);
+      const rollups = await indexScanRollups(repoId, indexDigests);
       return rows.map((r) => {
         const mediaType = r.media_type as string | null;
         const isIndex = !!mediaType && (mediaType.includes("index") || mediaType.includes("list"));
+        const rollup = isIndex ? rollups.get(r.manifest_digest as string) : undefined;
         return {
           name: r.name as string,
           manifestDigest: r.manifest_digest as string,
@@ -368,8 +375,8 @@ export async function listRepoTags(
           isIndex,
           sizeBytes: r.content_bytes != null ? Number(r.content_bytes) : null,
           layerCount: r.ref_count != null ? Math.max(Number(r.ref_count) - 1, 0) : null,
-          scanStatus: (r.scan_status as string) ?? null,
-          scanSummary: (r.scan_summary as SeveritySummary) ?? null,
+          scanStatus: rollup ? rollup.status : ((r.scan_status as string) ?? null),
+          scanSummary: rollup ? rollup.summary : ((r.scan_summary as SeveritySummary) ?? null),
           blocked: (r.blocked as string | null) ?? null,
           proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
           signed: Boolean(r.signed),
@@ -377,6 +384,64 @@ export async function listRepoTags(
       });
     },
   });
+}
+
+export interface IndexScanRollup {
+  /** scanned when every image variant is scanned; pending while one still runs; failed when none succeeded; null when nothing was scanned yet. */
+  status: "scanned" | "pending" | "failed" | null;
+  /** Findings of every scanned variant added up (null until one is scanned). */
+  summary: SeveritySummary | null;
+  scanned: number;
+  variants: number;
+}
+
+/**
+ * Roll the scans of an index's platform variants up into one status and
+ * summary per index. BuildKit attestation entries (platform unknown) and
+ * other artifacts are not variants and are left out.
+ */
+export async function indexScanRollups(repoId: string, indexDigests: string[]): Promise<Map<string, IndexScanRollup>> {
+  const out = new Map<string, IndexScanRollup>();
+  if (indexDigests.length === 0) return out;
+  const { rows } = await db.execute(sql`
+    SELECT mr.manifest_digest AS parent, c.digest AS child, vs.status, vs.summary
+    FROM manifest_refs mr
+    JOIN manifests c ON c.repository_id = mr.repository_id AND c.digest = mr.ref_digest
+    LEFT JOIN vulnerability_scans vs ON vs.digest = c.digest
+    WHERE mr.repository_id = ${repoId}
+      AND mr.manifest_digest IN (${sql.join(
+        indexDigests.map((d) => sql`${d}`),
+        sql`, `,
+      )})
+      AND c.media_type NOT LIKE '%index%' AND c.media_type NOT LIKE '%list%'
+      AND c.subject_digest IS NULL
+      AND coalesce(c.config->>'os', '') <> 'unknown'`);
+  const byParent = new Map<string, { status: string | null; summary: SeveritySummary | null }[]>();
+  for (const r of rows) {
+    const list = byParent.get(String(r.parent)) ?? [];
+    list.push({ status: (r.status as string | null) ?? null, summary: (r.summary as SeveritySummary | null) ?? null });
+    byParent.set(String(r.parent), list);
+  }
+  for (const [parent, variants] of byParent) {
+    const scanned = variants.filter((v) => v.status === "scanned");
+    let summary: SeveritySummary | null = null;
+    if (scanned.length > 0) {
+      const totals: Record<string, number> = {};
+      for (const v of scanned) {
+        for (const [k, n] of Object.entries(v.summary ?? {})) totals[k] = (totals[k] ?? 0) + Number(n ?? 0);
+      }
+      summary = totals as SeveritySummary;
+    }
+    const status: IndexScanRollup["status"] = variants.some((v) => v.status === "pending" || v.status === "indexing")
+      ? "pending"
+      : scanned.length > 0
+        ? "scanned"
+        : variants.some((v) => v.status === "failed")
+          ? "failed"
+          : null;
+    out.set(parent, { status, summary, scanned: scanned.length, variants: variants.length });
+  }
+  return out;
 }
 
 export async function getManifestWithScan(repoId: string, digest: string) {

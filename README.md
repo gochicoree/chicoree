@@ -1078,10 +1078,27 @@ reclaimed by the next garbage collection.
 
 The repository page lists every **untagged manifest** — short digest
 (copyable), media type and platform, size, when it was pushed, and badges for
-*index child* (a platform variant of a multi-arch index in the repository),
-*referrer* (attached to another image) and *N attached*. Owners and admins
-can delete an untagged image by digest from there; platform variants of an
-index that still exists are refused (delete the index instead).
+*variant of `<tag>`* (a platform variant of a multi-arch index in the
+repository), *attestation of `<tag>`* (see below), *referrer* (attached to
+another image) and *N attached*. Owners and admins can delete an untagged
+image by digest from there; members of an index that still exists are
+refused — deleting one would break the index — and the page names the
+index and its tags: delete the tag or the index and the next
+*prune-untagged* run (or a retention policy) removes the member.
+
+**`unknown/unknown` entries.** `docker buildx` stores the provenance and
+SBOM attestations it generates as an extra entry of the image index, with
+the placeholder platform `unknown/unknown` and the annotation
+`vnd.docker.reference.type: attestation-manifest`. It is not an image:
+`docker pull` never fetches it, `docker buildx imagetools inspect` and
+`docker sbom` read it. The entry appears whenever a build records
+provenance — on by default since Docker 24 / buildx 0.11 — or an SBOM
+(`--sbom=true`); images built with plain `docker build` or with
+`--provenance=false --sbom=false` have none. Its page says what it holds
+(SLSA provenance, SPDX or CycloneDX SBOM, downloadable) and which variant
+it describes; the variant's page links back under *Build attestations*.
+Attestation entries are never scanned (the Re-scan button says so) and go
+with their index.
 
 The tag page's **Delete image** button removes the manifest by digest
 together with *every* tag pointing at it — the confirmation lists those
