@@ -26,6 +26,11 @@ export const API_CHANGELOG: ApiChange[] = [
       "Promote: POST …/tags/{tag}/copy and POST …/manifests/{digest}/copy copy an image (with variants and attached artifacts) into another repository, creating it when missing.",
       "Scan gate: GET …/manifests/{digest}/scan waits for a running scan and judges it against a threshold (wait, fail_on, unrated); POST …/scan accepts the same parameters to queue and wait in one call.",
       "A composite GitHub Action, .github/actions/scan-gate, fails a job on the gate's verdict.",
+      "Organizations: create, rename and delete; usage against limits; policies (default visibility, pull policy, signature policy, member keys) to read and change.",
+      "Service accounts: list, create (secret returned once), details, delete and rotate.",
+      "Members and invitations: change roles, remove members, list, create and cancel invitations.",
+      "Webhooks: list, create, read, update, delete and test, for organizations and repositories.",
+      "Repository policies: read the effective pull and signature policy, change the overrides.",
     ],
   },
   {

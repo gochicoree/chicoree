@@ -1,24 +1,14 @@
 "use server";
 
-import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { organization, repositories, repositoryWebhooks, tags } from "@/db/schema";
+import { organization, repositories, repositoryWebhooks } from "@/db/schema";
 import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES } from "@/lib/org-roles";
 import { encryptSecret } from "@/lib/crypto";
 import { recordAudit } from "@/lib/audit";
-import { env } from "@/lib/env";
-import {
-  buildPushPayload,
-  countWebhooks,
-  deliverWebhook,
-  findScopedWebhook,
-  maxWebhooks,
-  resolveActor,
-  type WebhookEnvelope,
-} from "@/lib/webhooks";
+import { countWebhooks, findScopedWebhook, maxWebhooks, sendTestDelivery } from "@/lib/webhooks";
 import { eventsForScope, isWebhookEvent, isWebhookFormat, type WebhookScope } from "@/lib/webhooks-shared";
 
 export interface WebhookResult {
@@ -195,65 +185,8 @@ export async function testWebhook(_prev: WebhookResult | null, formData: FormDat
   const hook = await findScopedWebhook(ctx.scope, id);
   if (!hook) return { error: "Webhook not found." };
   const session = await requireSession();
-  const actor = `user:${session.user.id}`;
-
-  let repo = ctx.repo;
-  let latest: { name: string; manifestDigest: string } | null = null;
-  if (repo) {
-    latest =
-      (await db.query.tags.findFirst({
-        where: eq(tags.repositoryId, repo.id),
-        orderBy: [desc(tags.updatedAt)],
-      })) ?? null;
-  } else {
-    const [row] = await db
-      .select({ name: tags.name, manifestDigest: tags.manifestDigest, repositoryId: tags.repositoryId })
-      .from(tags)
-      .innerJoin(repositories, eq(repositories.id, tags.repositoryId))
-      .where(eq(repositories.organizationId, ctx.org.id))
-      .orderBy(desc(tags.updatedAt))
-      .limit(1);
-    if (row) {
-      latest = row;
-      repo = (await db.query.repositories.findFirst({ where: eq(repositories.id, row.repositoryId) })) ?? null;
-    } else {
-      repo = (await db.query.repositories.findFirst({ where: eq(repositories.organizationId, ctx.org.id) })) ?? null;
-    }
-  }
-
-  let payload: WebhookEnvelope | null = null;
-  if (repo) {
-    const built = await buildPushPayload(
-      ctx.org.slug,
-      repo.name,
-      latest?.manifestDigest ?? "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-      latest?.name ?? "test",
-      actor,
-      "test",
-    );
-    payload = built?.payload ?? null;
-  }
-  payload ??= {
-    event: "test",
-    deliveryId: randomUUID(),
-    timestamp: new Date().toISOString(),
-    registry: env.registryHost,
-    repository: null,
-    organization: { slug: ctx.org.slug, name: ctx.org.name },
-    tag: null,
-    image: null,
-    actor: await resolveActor(actor),
-  } as WebhookEnvelope;
-
-  await deliverWebhook(hook, payload);
-  const refreshed = await db.query.repositoryWebhooks.findFirst({ where: eq(repositoryWebhooks.id, hook.id) });
-  await recordAudit({ action: "webhook.test", organizationId: ctx.org.id, targetType: "webhook", targetId: hook.id, targetLabel: `${scopeLabel(ctx)} · ${hook.name}`, details: { status: refreshed?.lastStatus ?? null } });
+  const tested = await sendTestDelivery(ctx.org, ctx.repo, hook, `user:${session.user.id}`);
+  await recordAudit({ action: "webhook.test", organizationId: ctx.org.id, targetType: "webhook", targetId: hook.id, targetLabel: `${scopeLabel(ctx)} · ${hook.name}`, details: { status: tested.status } });
   revalidatePath(ctx.path);
-  return {
-    tested: {
-      ok: !!refreshed?.lastStatus && refreshed.lastStatus >= 200 && refreshed.lastStatus < 300,
-      status: refreshed?.lastStatus ?? null,
-      error: refreshed?.lastError ?? null,
-    },
-  };
+  return { tested };
 }

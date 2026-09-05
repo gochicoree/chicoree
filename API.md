@@ -85,6 +85,28 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | [`POST /api/v1/orgs/{org}/repos`](#post-orgs-org-repos) | Create a repository | organization owners, admins and members |
 | [`GET /api/v1/orgs/{org}/members`](#get-orgs-org-members) | List members | organization members |
 | [`GET /api/v1/orgs/{org}/audit`](#get-orgs-org-audit) | Organization audit log | organization owners and admins |
+| [`POST /api/v1/orgs`](#post-orgs) | Create an organization | a signed-in user or personal access token |
+| [`PATCH /api/v1/orgs/{org}`](#patch-orgs-org) | Rename an organization | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}`](#delete-orgs-org) | Delete an organization | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/usage`](#get-orgs-org-usage) | Usage against limits | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/policies`](#get-orgs-org-policies) | Organization policies | organization members |
+| [`PATCH /api/v1/orgs/{org}/policies`](#patch-orgs-org-policies) | Change organization policies | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/service-accounts`](#get-orgs-org-service-accounts) | List service accounts | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/service-accounts`](#post-orgs-org-service-accounts) | Create a service account | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/service-accounts/{id}`](#get-orgs-org-service-accounts-id) | Service account details | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/service-accounts/{id}`](#delete-orgs-org-service-accounts-id) | Delete a service account | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/service-accounts/{id}/rotate`](#post-orgs-org-service-accounts-id-rotate) | Rotate a service account's secret | organization owners and admins |
+| [`PATCH /api/v1/orgs/{org}/members/{userId}`](#patch-orgs-org-members-userId) | Change a member's role | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/members/{userId}`](#delete-orgs-org-members-userId) | Remove a member | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/invitations`](#get-orgs-org-invitations) | List pending invitations | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/invitations`](#post-orgs-org-invitations) | Invite someone by email | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/invitations/{id}`](#delete-orgs-org-invitations-id) | Cancel an invitation | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/webhooks`](#get-orgs-org-webhooks) | List organization webhooks | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/webhooks`](#post-orgs-org-webhooks) | Create a organization webhook | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/webhooks/{id}`](#get-orgs-org-webhooks-id) | Organization webhook details | organization owners and admins |
+| [`PATCH /api/v1/orgs/{org}/webhooks/{id}`](#patch-orgs-org-webhooks-id) | Update a organization webhook | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/webhooks/{id}`](#delete-orgs-org-webhooks-id) | Delete a organization webhook | organization owners and admins |
+| [`POST /api/v1/orgs/{org}/webhooks/{id}/test`](#post-orgs-org-webhooks-id-test) | Send a test delivery | organization owners and admins |
 
 **Repositories**
 
@@ -93,6 +115,14 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | [`GET /api/v1/repos/{org}/{repo}`](#get-repos-org-repo) | Repository details | anyone |
 | [`PATCH /api/v1/repos/{org}/{repo}`](#patch-repos-org-repo) | Update a repository | organization owners and admins |
 | [`DELETE /api/v1/repos/{org}/{repo}`](#delete-repos-org-repo) | Delete a repository | organization owners and admins |
+| [`GET /api/v1/repos/{org}/{repo}/policies`](#get-repos-org-repo-policies) | Repository policies | anyone |
+| [`PATCH /api/v1/repos/{org}/{repo}/policies`](#patch-repos-org-repo-policies) | Change repository policies | organization owners and admins |
+| [`GET /api/v1/repos/{org}/{repo}/webhooks`](#get-repos-org-repo-webhooks) | List repository webhooks | organization owners and admins |
+| [`POST /api/v1/repos/{org}/{repo}/webhooks`](#post-repos-org-repo-webhooks) | Create a repository webhook | organization owners and admins |
+| [`GET /api/v1/repos/{org}/{repo}/webhooks/{id}`](#get-repos-org-repo-webhooks-id) | Repository webhook details | organization owners and admins |
+| [`PATCH /api/v1/repos/{org}/{repo}/webhooks/{id}`](#patch-repos-org-repo-webhooks-id) | Update a repository webhook | organization owners and admins |
+| [`DELETE /api/v1/repos/{org}/{repo}/webhooks/{id}`](#delete-repos-org-repo-webhooks-id) | Delete a repository webhook | organization owners and admins |
+| [`POST /api/v1/repos/{org}/{repo}/webhooks/{id}/test`](#post-repos-org-repo-webhooks-id-test) | Send a test delivery | organization owners and admins |
 | [`PUT /api/v1/repos/{org}/{repo}/star`](#put-repos-org-repo-star) | Star a repository | a signed-in user or personal access token |
 | [`DELETE /api/v1/repos/{org}/{repo}/star`](#delete-repos-org-repo-star) | Unstar a repository | a signed-in user or personal access token |
 
@@ -509,6 +539,772 @@ curl -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/orgs/acme/audit"
 ~~~
 
+### <a id="post-orgs"></a>`POST /api/v1/orgs`
+
+Create an organization — The caller becomes its owner. Subject to the instance's organization-creation policy and the caller's limits; slugs become image namespaces.
+
+**Who:** a signed-in user or personal access token · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `slug` | body | string | yes | Lowercase letters, digits and single ._- separators; the image namespace. |
+| `name` | body | string |  | Display name; defaults to the slug. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "9a1c…",
+  "slug": "acme",
+  "name": "Acme",
+  "role": "owner",
+  "repositoryCount": 0,
+  "proxy": false,
+  "createdAt": "2026-09-01T10:12:00.000Z",
+  "url": "https://registry.example.com/acme",
+  "memberCount": 1,
+  "storageBytes": 0
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"slug":"…","name":"api"}' \
+  "https://registry.example.com/api/v1/orgs"
+~~~
+
+### <a id="patch-orgs-org"></a>`PATCH /api/v1/orgs/{org}`
+
+Rename an organization — Changes the display name (the slug is changed in the app, which sets up redirects).
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `name` | body | string | yes | New display name. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "9a1c…",
+  "slug": "acme",
+  "name": "Acme Corp",
+  "role": "admin",
+  "repositoryCount": 12,
+  "proxy": false,
+  "createdAt": "2026-09-01T10:12:00.000Z",
+  "url": "https://registry.example.com/acme",
+  "memberCount": 5,
+  "storageBytes": 12884901888
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api"}' \
+  "https://registry.example.com/api/v1/orgs/acme"
+~~~
+
+### <a id="delete-orgs-org"></a>`DELETE /api/v1/orgs/{org}`
+
+Delete an organization — Owners only. Removes every repository, member, invitation and service account; blob data is reclaimed by garbage collection. The library organization cannot be deleted.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": "acme"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme"
+~~~
+
+### <a id="get-orgs-org-usage"></a>`GET /api/v1/orgs/{org}/usage`
+
+Usage against limits.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "organization": "acme",
+  "usage": {
+    "publicRepositories": 2,
+    "privateRepositories": 10,
+    "storageBytes": 12884901888
+  },
+  "limits": {
+    "maxPublicRepositories": null,
+    "maxPrivateRepositories": 20,
+    "maxStorageBytes": 53687091200
+  },
+  "percent": {
+    "publicRepositories": null,
+    "privateRepositories": 50,
+    "storage": 24
+  }
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/usage"
+~~~
+
+### <a id="get-orgs-org-policies"></a>`GET /api/v1/orgs/{org}/policies`
+
+Organization policies — Default visibility for new repositories, the vulnerability pull policy, the signature policy and whether members' personal signing keys are trusted.
+
+**Who:** organization members · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "defaultVisibility": "private",
+  "pullPolicy": {
+    "blockPullsAt": "high",
+    "blockUnrated": false
+  },
+  "requireSignature": false,
+  "trustMemberKeys": true
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/policies"
+~~~
+
+### <a id="patch-orgs-org-policies"></a>`PATCH /api/v1/orgs/{org}/policies`
+
+Change organization policies — Send only the fields to change. Pull and signature changes recompute which images are blocked; changing trustMemberKeys re-verifies every signature.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `defaultVisibility` | body | public \| private \| null |  | null = each pusher's own default. |
+| `blockPullsAt` | body | critical \| high \| medium \| low \| null |  | Block pulls of images with findings at this severity or above; null = never. |
+| `blockUnrated` | body | boolean |  | Count findings without a rating. |
+| `requireSignature` | body | boolean |  | Block pulls of unsigned images. |
+| `trustMemberKeys` | body | boolean |  | Members' personal signing keys count as trusted. |
+
+Response `200`:
+
+~~~json
+{
+  "defaultVisibility": "private",
+  "pullPolicy": {
+    "blockPullsAt": "critical",
+    "blockUnrated": true
+  },
+  "requireSignature": true,
+  "trustMemberKeys": true
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"defaultVisibility":"…","blockPullsAt":"…","blockUnrated":true,"requireSignature":true,"trustMemberKeys":true}' \
+  "https://registry.example.com/api/v1/orgs/acme/policies"
+~~~
+
+### <a id="get-orgs-org-service-accounts"></a>`GET /api/v1/orgs/{org}/service-accounts`
+
+List service accounts.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "sa_4b…",
+      "name": "ci-deploy",
+      "description": "GitHub Actions",
+      "permission": "push",
+      "tokenPrefix": "chc_sa_ab12cd…",
+      "repositories": null,
+      "createdAt": "2026-09-01T10:00:00.000Z",
+      "expiresAt": "2026-12-01T10:00:00.000Z",
+      "lastUsedAt": "2026-09-05T08:41:00.000Z",
+      "lastUsedIp": "10.0.0.9"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/service-accounts"
+~~~
+
+### <a id="post-orgs-org-service-accounts"></a>`POST /api/v1/orgs/{org}/service-accounts`
+
+Create a service account — The secret is in the answer once and never again. Expiry follows the instance's token policy.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `name` | body | string | yes | Lowercase letters, digits and single ._- separators; unique in the organization. |
+| `description` | body | string |  | Shown in the list. |
+| `permission` | body | pull \| push \| admin |  | Default pull; admin adds delete. |
+| `expiresInDays` | body | integer |  | Lifetime in days; omit both expiry fields for never (when the policy allows). |
+| `expiresAt` | body | date |  | Alternative to expiresInDays: an ISO date. |
+| `repositories` | body | string[] |  | Limit to these repository names; omit for every repository. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "sa_4b…",
+  "name": "ci-deploy",
+  "description": "GitHub Actions",
+  "permission": "push",
+  "tokenPrefix": "chc_sa_ab12cd…",
+  "repositories": null,
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "expiresAt": "2026-12-01T10:00:00.000Z",
+  "lastUsedAt": "2026-09-05T08:41:00.000Z",
+  "lastUsedIp": "10.0.0.9",
+  "secret": "chc_sa_ab12cd…full-secret"
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","description":"The public API server","permission":"…","expiresInDays":1,"expiresAt":"…","repositories":"…"}' \
+  "https://registry.example.com/api/v1/orgs/acme/service-accounts"
+~~~
+
+### <a id="get-orgs-org-service-accounts-id"></a>`GET /api/v1/orgs/{org}/service-accounts/{id}`
+
+Service account details.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Service account id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "sa_4b…",
+  "name": "ci-deploy",
+  "description": "GitHub Actions",
+  "permission": "push",
+  "tokenPrefix": "chc_sa_ab12cd…",
+  "repositories": null,
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "expiresAt": "2026-12-01T10:00:00.000Z",
+  "lastUsedAt": "2026-09-05T08:41:00.000Z",
+  "lastUsedIp": "10.0.0.9"
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/service-accounts/{id}"
+~~~
+
+### <a id="delete-orgs-org-service-accounts-id"></a>`DELETE /api/v1/orgs/{org}/service-accounts/{id}`
+
+Delete a service account.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Service account id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": "sa_4b…",
+  "name": "ci-deploy"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/service-accounts/{id}"
+~~~
+
+### <a id="post-orgs-org-service-accounts-id-rotate"></a>`POST /api/v1/orgs/{org}/service-accounts/{id}/rotate`
+
+Rotate a service account's secret — Same id, name, permission and repositories; the old secret stops working at once. The lifetime restarts from now under the policy.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Service account id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "sa_4b…",
+  "name": "ci-deploy",
+  "description": "GitHub Actions",
+  "permission": "push",
+  "tokenPrefix": "chc_sa_ab12cd…",
+  "repositories": null,
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "expiresAt": "2026-12-01T10:00:00.000Z",
+  "lastUsedAt": "2026-09-05T08:41:00.000Z",
+  "lastUsedIp": "10.0.0.9",
+  "secret": "chc_sa_ef34gh…new-secret"
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/service-accounts/{id}/rotate"
+~~~
+
+### <a id="patch-orgs-org-members-userId"></a>`PATCH /api/v1/orgs/{org}/members/{userId}`
+
+Change a member's role — Owners and admins; only owners (or instance administrators) may make or unmake owners, and the last owner cannot be demoted.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `userId` | path | string | yes | The member's user id. |
+| `role` | body | owner \| admin \| member \| viewer | yes | New role. |
+
+Response `200`:
+
+~~~json
+{
+  "userId": "u_7f…",
+  "name": "Jo Doe",
+  "email": "jo@example.com",
+  "role": "admin",
+  "joinedAt": "2026-08-02T09:00:00.000Z"
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"role":"…"}' \
+  "https://registry.example.com/api/v1/orgs/acme/members/{userId}"
+~~~
+
+### <a id="delete-orgs-org-members-userId"></a>`DELETE /api/v1/orgs/{org}/members/{userId}`
+
+Remove a member — The last owner cannot be removed.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `userId` | path | string | yes | The member's user id. |
+
+Response `200`:
+
+~~~json
+{
+  "removed": "u_7f…",
+  "email": "jo@example.com"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/members/{userId}"
+~~~
+
+### <a id="get-orgs-org-invitations"></a>`GET /api/v1/orgs/{org}/invitations`
+
+List pending invitations.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "inv_2e…",
+      "email": "new@example.com",
+      "role": "member",
+      "status": "pending",
+      "expiresAt": "2026-09-07T09:00:00.000Z",
+      "createdAt": "2026-09-05T09:00:00.000Z",
+      "inviterId": "u_7f…"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/invitations"
+~~~
+
+### <a id="post-orgs-org-invitations"></a>`POST /api/v1/orgs/{org}/invitations`
+
+Invite someone by email — Sends the invitation email when mail is configured (`emailSent` says whether it went out); `acceptUrl` can be handed over by other means. Invitations expire after 48 hours.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `email` | body | string | yes | Address to invite. |
+| `role` | body | owner \| admin \| member \| viewer |  | Default member; owner needs an owner. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "inv_2e…",
+  "email": "new@example.com",
+  "role": "member",
+  "status": "pending",
+  "expiresAt": "2026-09-07T09:00:00.000Z",
+  "createdAt": "2026-09-05T09:00:00.000Z",
+  "inviterId": "u_7f…",
+  "emailSent": true,
+  "acceptUrl": "https://registry.example.com/accept-invitation/inv_2e…"
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"email":"…","role":"…"}' \
+  "https://registry.example.com/api/v1/orgs/acme/invitations"
+~~~
+
+### <a id="delete-orgs-org-invitations-id"></a>`DELETE /api/v1/orgs/{org}/invitations/{id}`
+
+Cancel an invitation.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Invitation id. |
+
+Response `200`:
+
+~~~json
+{
+  "canceled": "inv_2e…",
+  "email": "new@example.com"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/invitations/{id}"
+~~~
+
+### <a id="get-orgs-org-webhooks"></a>`GET /api/v1/orgs/{org}/webhooks`
+
+List organization webhooks — Organization-wide hooks apply to every repository.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "wh_9c…",
+      "name": "deploy",
+      "url": "https://ci.example.com/hooks/registry",
+      "method": "POST",
+      "format": "json",
+      "headers": {},
+      "authType": "bearer",
+      "authHeaderName": null,
+      "hasAuthSecret": true,
+      "hasSigningSecret": true,
+      "events": [
+        "push",
+        "scan.completed"
+      ],
+      "enabled": true,
+      "lastStatus": 200,
+      "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+      "lastError": null
+    }
+  ],
+  "total": 1,
+  "max": 10
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks"
+~~~
+
+### <a id="post-orgs-org-webhooks"></a>`POST /api/v1/orgs/{org}/webhooks`
+
+Create a organization webhook.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `name` | body | string | yes | Up to 64 characters. |
+| `url` | body | string | yes | http(s) URL the payload is sent to. |
+| `events` | body | string[] | yes | Event names to subscribe to (see the webhooks documentation); at least one. |
+| `format` | body | json \| slack \| discord \| teams \| text |  | Payload shape; default json. |
+| `method` | body | POST \| PUT \| PATCH |  | JSON receivers only; chat formats always POST. |
+| `headers` | body | object |  | Extra request headers, name → value. |
+| `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
+| `authHeaderName` | body | string |  | Header name for authType header. |
+| `authSecret` | body | string \| null |  | Stored encrypted, never returned. Omit to keep, null to clear. |
+| `signingSecret` | body | string \| null |  | HMAC signing secret for the X-Chicoree-Signature header. Omit to keep, null to clear. |
+| `enabled` | body | boolean |  | Default true. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": []
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks"
+~~~
+
+### <a id="get-orgs-org-webhooks-id"></a>`GET /api/v1/orgs/{org}/webhooks/{id}`
+
+Organization webhook details — With the last deliveries.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": [
+    {
+      "id": "d_1",
+      "event": "push",
+      "ok": true,
+      "statusCode": 200,
+      "attempts": 1,
+      "durationMs": 120,
+      "error": null,
+      "createdAt": "2026-09-05T08:41:20.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks/{id}"
+~~~
+
+### <a id="patch-orgs-org-webhooks-id"></a>`PATCH /api/v1/orgs/{org}/webhooks/{id}`
+
+Update a organization webhook — Omitted fields keep their value.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Webhook id. |
+| `name` | body | string |  | Up to 64 characters. |
+| `url` | body | string |  | http(s) URL the payload is sent to. |
+| `events` | body | string[] |  | Event names to subscribe to (see the webhooks documentation); at least one. |
+| `format` | body | json \| slack \| discord \| teams \| text |  | Payload shape; default json. |
+| `method` | body | POST \| PUT \| PATCH |  | JSON receivers only; chat formats always POST. |
+| `headers` | body | object |  | Extra request headers, name → value. |
+| `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
+| `authHeaderName` | body | string |  | Header name for authType header. |
+| `authSecret` | body | string \| null |  | Stored encrypted, never returned. Omit to keep, null to clear. |
+| `signingSecret` | body | string \| null |  | HMAC signing secret for the X-Chicoree-Signature header. Omit to keep, null to clear. |
+| `enabled` | body | boolean |  | Default true. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": []
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks/{id}"
+~~~
+
+### <a id="delete-orgs-org-webhooks-id"></a>`DELETE /api/v1/orgs/{org}/webhooks/{id}`
+
+Delete a organization webhook.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": "wh_9c…"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks/{id}"
+~~~
+
+### <a id="post-orgs-org-webhooks-id-test"></a>`POST /api/v1/orgs/{org}/webhooks/{id}/test`
+
+Send a test delivery — A push-shaped payload built from the most recent tag; the answer is what the receiver said.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "ok": true,
+  "status": 200,
+  "error": null
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/webhooks/{id}/test"
+~~~
+
 ## Repositories
 
 
@@ -625,6 +1421,339 @@ Response `200`:
 ~~~sh
 curl -X DELETE -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/repos/acme/api"
+~~~
+
+### <a id="get-repos-org-repo-policies"></a>`GET /api/v1/repos/{org}/{repo}/policies`
+
+Repository policies — The repository's overrides (`inherit` = the organization's setting) and what applies after folding them in.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+
+Response `200`:
+
+~~~json
+{
+  "blockPullsAt": "inherit",
+  "blockUnrated": null,
+  "requireSignature": "inherit",
+  "effective": {
+    "pullPolicy": {
+      "level": "high",
+      "unrated": false
+    },
+    "requireSignature": false
+  }
+}
+~~~
+
+~~~sh
+curl \
+  "https://registry.example.com/api/v1/repos/acme/api/policies"
+~~~
+
+### <a id="patch-repos-org-repo-policies"></a>`PATCH /api/v1/repos/{org}/{repo}/policies`
+
+Change repository policies — Send only the fields to change; blocked images are recomputed and `blocked` says how many there are now.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `blockPullsAt` | body | inherit \| off \| critical \| high \| medium \| low |  | Override of the pull policy. |
+| `blockUnrated` | body | boolean \| null |  | Override for unrated findings; null inherits. |
+| `requireSignature` | body | inherit \| boolean |  | Override of the signature policy. |
+
+Response `200`:
+
+~~~json
+{
+  "blockPullsAt": "critical",
+  "blockUnrated": true,
+  "requireSignature": "inherit",
+  "effective": {
+    "pullPolicy": {
+      "level": "critical",
+      "unrated": true
+    },
+    "requireSignature": false
+  },
+  "blocked": 2
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"blockPullsAt":"…","blockUnrated":"…","requireSignature":"…"}' \
+  "https://registry.example.com/api/v1/repos/acme/api/policies"
+~~~
+
+### <a id="get-repos-org-repo-webhooks"></a>`GET /api/v1/repos/{org}/{repo}/webhooks`
+
+List repository webhooks — The repository's own hooks; organization-wide ones are listed on the organization.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "wh_9c…",
+      "name": "deploy",
+      "url": "https://ci.example.com/hooks/registry",
+      "method": "POST",
+      "format": "json",
+      "headers": {},
+      "authType": "bearer",
+      "authHeaderName": null,
+      "hasAuthSecret": true,
+      "hasSigningSecret": true,
+      "events": [
+        "push",
+        "scan.completed"
+      ],
+      "enabled": true,
+      "lastStatus": 200,
+      "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+      "lastError": null
+    }
+  ],
+  "total": 1,
+  "max": 5
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks"
+~~~
+
+### <a id="post-repos-org-repo-webhooks"></a>`POST /api/v1/repos/{org}/{repo}/webhooks`
+
+Create a repository webhook.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `name` | body | string | yes | Up to 64 characters. |
+| `url` | body | string | yes | http(s) URL the payload is sent to. |
+| `events` | body | string[] | yes | Event names to subscribe to (see the webhooks documentation); at least one. |
+| `format` | body | json \| slack \| discord \| teams \| text |  | Payload shape; default json. |
+| `method` | body | POST \| PUT \| PATCH |  | JSON receivers only; chat formats always POST. |
+| `headers` | body | object |  | Extra request headers, name → value. |
+| `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
+| `authHeaderName` | body | string |  | Header name for authType header. |
+| `authSecret` | body | string \| null |  | Stored encrypted, never returned. Omit to keep, null to clear. |
+| `signingSecret` | body | string \| null |  | HMAC signing secret for the X-Chicoree-Signature header. Omit to keep, null to clear. |
+| `enabled` | body | boolean |  | Default true. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": []
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks"
+~~~
+
+### <a id="get-repos-org-repo-webhooks-id"></a>`GET /api/v1/repos/{org}/{repo}/webhooks/{id}`
+
+Repository webhook details — With the last deliveries.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": [
+    {
+      "id": "d_1",
+      "event": "push",
+      "ok": true,
+      "statusCode": 200,
+      "attempts": 1,
+      "durationMs": 120,
+      "error": null,
+      "createdAt": "2026-09-05T08:41:20.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks/{id}"
+~~~
+
+### <a id="patch-repos-org-repo-webhooks-id"></a>`PATCH /api/v1/repos/{org}/{repo}/webhooks/{id}`
+
+Update a repository webhook — Omitted fields keep their value.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `id` | path | string | yes | Webhook id. |
+| `name` | body | string |  | Up to 64 characters. |
+| `url` | body | string |  | http(s) URL the payload is sent to. |
+| `events` | body | string[] |  | Event names to subscribe to (see the webhooks documentation); at least one. |
+| `format` | body | json \| slack \| discord \| teams \| text |  | Payload shape; default json. |
+| `method` | body | POST \| PUT \| PATCH |  | JSON receivers only; chat formats always POST. |
+| `headers` | body | object |  | Extra request headers, name → value. |
+| `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
+| `authHeaderName` | body | string |  | Header name for authType header. |
+| `authSecret` | body | string \| null |  | Stored encrypted, never returned. Omit to keep, null to clear. |
+| `signingSecret` | body | string \| null |  | HMAC signing secret for the X-Chicoree-Signature header. Omit to keep, null to clear. |
+| `enabled` | body | boolean |  | Default true. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "wh_9c…",
+  "name": "deploy",
+  "url": "https://ci.example.com/hooks/registry",
+  "method": "POST",
+  "format": "json",
+  "headers": {},
+  "authType": "bearer",
+  "authHeaderName": null,
+  "hasAuthSecret": true,
+  "hasSigningSecret": true,
+  "events": [
+    "push",
+    "scan.completed"
+  ],
+  "enabled": true,
+  "lastStatus": 200,
+  "lastDeliveredAt": "2026-09-05T08:41:20.000Z",
+  "lastError": null,
+  "deliveries": []
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks/{id}"
+~~~
+
+### <a id="delete-repos-org-repo-webhooks-id"></a>`DELETE /api/v1/repos/{org}/{repo}/webhooks/{id}`
+
+Delete a repository webhook.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": "wh_9c…"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks/{id}"
+~~~
+
+### <a id="post-repos-org-repo-webhooks-id-test"></a>`POST /api/v1/repos/{org}/{repo}/webhooks/{id}/test`
+
+Send a test delivery — A push-shaped payload built from the most recent tag; the answer is what the receiver said.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-05.3
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `id` | path | string | yes | Webhook id. |
+
+Response `200`:
+
+~~~json
+{
+  "ok": true,
+  "status": 200,
+  "error": null
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/webhooks/{id}/test"
 ~~~
 
 ### <a id="put-repos-org-repo-star"></a>`PUT /api/v1/repos/{org}/{repo}/star`
@@ -1500,6 +2629,11 @@ This API follows the registry's features: whenever a feature is added, changed o
 - Promote: POST …/tags/{tag}/copy and POST …/manifests/{digest}/copy copy an image (with variants and attached artifacts) into another repository, creating it when missing.
 - Scan gate: GET …/manifests/{digest}/scan waits for a running scan and judges it against a threshold (wait, fail_on, unrated); POST …/scan accepts the same parameters to queue and wait in one call.
 - A composite GitHub Action, .github/actions/scan-gate, fails a job on the gate's verdict.
+- Organizations: create, rename and delete; usage against limits; policies (default visibility, pull policy, signature policy, member keys) to read and change.
+- Service accounts: list, create (secret returned once), details, delete and rotate.
+- Members and invitations: change roles, remove members, list, create and cancel invitations.
+- Webhooks: list, create, read, update, delete and test, for organizations and repositories.
+- Repository policies: read the effective pull and signature policy, change the overrides.
 
 ### 2026-09-05.2
 

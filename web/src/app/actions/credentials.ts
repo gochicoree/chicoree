@@ -8,7 +8,7 @@ import { generateSecret, PAT_PREFIX, SA_PREFIX } from "@/lib/secrets";
 import { getOrgRole, requireAdmin, requireSession } from "@/lib/session";
 import { recordAudit } from "@/lib/audit";
 import { getInstanceSettings } from "@/lib/instance-settings";
-import { normalizeRestriction, resolveExpiry, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
+import { normalizeRestriction, replacementExpiry, resolveExpiry, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -123,27 +123,6 @@ export async function rotateServiceAccount(
   const org = await db.query.organization.findFirst({ where: eq(organization.id, sa.organizationId) });
   revalidatePath(`/${org?.slug}/service-accounts`);
   return { secret, name: sa.name, id: sa.id };
-}
-
-/**
- * Expiry for a rotated credential: keep the original lifetime (expires − created)
- * counted from now, capped by the current policy; "never" stays "never" unless
- * the policy now requires an expiry, in which case the cap (or one year) applies.
- */
-function replacementExpiry(
-  createdAt: Date,
-  expiresAt: Date | null,
-  policy: TokenExpiryPolicy,
-  now: Date = new Date(),
-): { expiresAt: Date | null } | { error: string } {
-  const capDays = policy.maxTokenLifetimeDays > 0 ? policy.maxTokenLifetimeDays : null;
-  if (!expiresAt) {
-    if (!policy.requireTokenExpiry) return { expiresAt: null };
-    return resolveExpiry(String(capDays ?? 365), "", policy, now);
-  }
-  const lifetimeDays = Math.max(1, Math.round((expiresAt.getTime() - createdAt.getTime()) / 86_400_000));
-  const days = capDays ? Math.min(lifetimeDays, capDays) : lifetimeDays;
-  return resolveExpiry(String(days), "", policy, now);
 }
 
 // --- Personal access tokens (per user, for docker login) ---

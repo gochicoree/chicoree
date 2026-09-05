@@ -16,6 +16,7 @@ import { db } from "@/db";
 import { organization as organizationTable, user as userTable } from "@/db/schema";
 import { env } from "./env";
 import { buttonHtml, codeHtml, mailLayout, sendMail } from "./email";
+import { sendInvitationMail } from "./invitation-mail";
 import { orgAccessControl, orgRoles } from "./org-roles";
 import { checkOrgCreationQuota } from "./quota";
 import { ensureLibraryOrg, LIBRARY_SLUG } from "./library";
@@ -33,7 +34,7 @@ import { clearOrganizationRedirect } from "./redirects";
  * membership change; loaded lazily so the auth module does not pull the
  * supply-chain code (and its dependencies) into every request.
  */
-function reverifyAfterMembershipChange(organizationId: string): void {
+export function reverifyAfterMembershipChange(organizationId: string): void {
   void (async () => {
     const { listMemberKeys, orgTrustsMemberKeys, reverifyOrganization } = await import("./signatures");
     if (!(await orgTrustsMemberKeys(organizationId))) return;
@@ -244,16 +245,13 @@ function buildAuth(settings: EffectiveSettings) {
       ac: orgAccessControl,
       roles: orgRoles,
       sendInvitationEmail: async (data) => {
-        const url = `${env.appUrl}/accept-invitation/${data.id}`;
-        await sendMail({
-          to: data.email,
-          subject: `Join ${data.organization.name} on ${brand}`,
-          text: `${data.inviter.user.name} invited you to the ${data.organization.name} organization: ${url}`,
-          html: mailLayout(
-            `Join ${data.organization.name}`,
-            `<p>${data.inviter.user.name} (${data.inviter.user.email}) invited you to the <strong>${data.organization.name}</strong> organization.</p><p>${buttonHtml(url, "Accept invitation")}</p>`,
-            brand,
-          ),
+        await sendInvitationMail({
+          invitationId: data.id,
+          email: data.email,
+          organizationName: data.organization.name,
+          inviterName: data.inviter.user.name,
+          inviterEmail: data.inviter.user.email,
+          brand,
         });
       },
       // Org slugs double as registry namespaces (<slug>/<repo>), so they must
