@@ -71,6 +71,13 @@
       "when": 1788608125210,
       "tag": "0009_personal_signing_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788619974692,
+      "tag": "0010_outbox_login_throttle_chat_webhooks_keyless_identities",
+      "breakpoints": true
     }
   ]
 }

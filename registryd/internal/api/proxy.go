@@ -428,7 +428,7 @@ func (s *Server) storeProxiedManifest(ctx context.Context, rc *reqCtx, px *proxy
 		RepositoryID: repo.ID, Type: "push", ActorType: "proxy",
 		ManifestDigest: m.Digest, Tag: tag,
 	})
-	s.notifier.Notify(hooks.Event{
+	s.emit(ctx, hooks.Event{
 		Type: "manifest.push", Repository: rc.org + "/" + rc.repo, Digest: m.Digest, Tag: tag,
 		MediaType: parsed.MediaType, Actor: "proxy",
 	})

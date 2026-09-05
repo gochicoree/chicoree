@@ -337,6 +337,26 @@ func (s *Server) handleBase(w http.ResponseWriter, r *http.Request) {
 }
 
 // recordEvent persists an event without blocking the request path.
+// emit records a registry event durably (registry_event_outbox) and then
+// notifies the web app. The outbox insert is synchronous so the row exists
+// before the client gets its response; the HTTP notification stays the
+// fast path and the outbox the safety net. A missing outbox table (web app
+// not yet migrated) only costs the durability, not the notification.
+func (s *Server) emit(ctx context.Context, e hooks.Event) {
+	if s.store != nil {
+		id, err := s.store.EnqueueEvent(ctx, store.OutboxEvent{
+			Type: e.Type, Repository: e.Repository, Digest: e.Digest, Tag: e.Tag, Tags: e.Tags,
+			MediaType: e.MediaType, Actor: e.Actor,
+		})
+		if err != nil {
+			slog.Warn("event outbox insert failed; delivering without durability", "type", e.Type, "repository", e.Repository, "err", err)
+		} else {
+			e.ID = id
+		}
+	}
+	s.notifier.Notify(e)
+}
+
 func (s *Server) recordEvent(e *store.Event) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

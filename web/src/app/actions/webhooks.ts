@@ -19,7 +19,7 @@ import {
   resolveActor,
   type WebhookEnvelope,
 } from "@/lib/webhooks";
-import { eventsForScope, isWebhookEvent, type WebhookScope } from "@/lib/webhooks-shared";
+import { eventsForScope, isWebhookEvent, isWebhookFormat, type WebhookScope } from "@/lib/webhooks-shared";
 
 export interface WebhookResult {
   error?: string;
@@ -91,7 +91,9 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const url = String(formData.get("url") ?? "").trim();
-  const method = String(formData.get("method") ?? "POST");
+  const format = String(formData.get("format") ?? "json");
+  // Chat services accept POST only; the method field is for JSON receivers.
+  const method = format === "json" ? String(formData.get("method") ?? "POST") : "POST";
   const authType = String(formData.get("authType") ?? "none");
   const authHeaderName = String(formData.get("authHeaderName") ?? "").trim();
   const authSecretRaw = String(formData.get("authSecret") ?? "");
@@ -107,6 +109,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
     return { error: "Enter a valid URL." };
   }
   if (!["http:", "https:"].includes(parsedUrl.protocol)) return { error: "Webhook URLs must be http(s)." };
+  if (!isWebhookFormat(format)) return { error: "Invalid format." };
   if (!["POST", "PUT", "PATCH"].includes(method)) return { error: "Invalid method." };
   if (!["none", "bearer", "basic", "header"].includes(authType)) return { error: "Invalid authentication type." };
   if (authType === "header" && !/^[A-Za-z0-9-]+$/.test(authHeaderName)) return { error: "Enter a valid header name." };
@@ -116,6 +119,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
     name,
     url,
     method: method as "POST" | "PUT" | "PATCH",
+    format,
     headers: parseHeaders(String(formData.get("headers") ?? "")),
     authType: authType as "none" | "bearer" | "basic" | "header",
     authHeaderName: authType === "header" ? authHeaderName : null,
@@ -151,7 +155,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
       createdBy: session.user.id,
     });
   }
-  await recordAudit({ action: id ? "webhook.update" : "webhook.create", organizationId: ctx.org.id, targetType: "webhook", targetId: id || null, targetLabel: `${scopeLabel(ctx)} · ${name}`, details: { scope: scope.kind, url, method, authType, events: base.events } });
+  await recordAudit({ action: id ? "webhook.update" : "webhook.create", organizationId: ctx.org.id, targetType: "webhook", targetId: id || null, targetLabel: `${scopeLabel(ctx)} · ${name}`, details: { scope: scope.kind, url, method, format, authType, events: base.events } });
   revalidatePath(ctx.path);
   return { saved: true };
 }

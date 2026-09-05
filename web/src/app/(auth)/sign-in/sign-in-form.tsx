@@ -16,6 +16,7 @@ export function SignInForm({
   signUp = { mode: "open", invitationId: "" },
   local = { mode: "everyone" },
   next = "/dashboard",
+  initialNotice = null,
 }: {
   providers: {
     github: boolean;
@@ -36,6 +37,8 @@ export function SignInForm({
   local?: { mode: "everyone" | "hidden" | "off"; slug?: string };
   /** Same-origin path to land on afterwards (e.g. an invitation). */
   next?: string;
+  /** A message to show above the form, e.g. after the account was deleted. */
+  initialNotice?: string | null;
 }) {
   const router = useRouter();
   const callbackURL = next;
@@ -47,7 +50,7 @@ export function SignInForm({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(initialNotice);
   const [busy, setBusy] = useState(false);
 
   async function withBusy(fn: () => Promise<void>) {
@@ -73,7 +76,9 @@ export function SignInForm({
       if (mode !== "ldap") await unlockLocal();
       if (mode === "password") {
         const { error } = await authClient.signIn.email({ email, password, callbackURL });
-        if (error) setError(error.message ?? "Sign-in failed");
+        if (error?.code === "EMAIL_NOT_VERIFIED") {
+          setError(`Verify your email address first. We just sent a new link to ${email}.`);
+        } else if (error) setError(error.message ?? "Sign-in failed");
         else router.push(callbackURL);
       } else if (mode === "ldap") {
         // Custom endpoint from the server-side ldap plugin; the two-factor

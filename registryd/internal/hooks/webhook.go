@@ -14,8 +14,12 @@ import (
 	"time"
 )
 
-// Event is the payload POSTed to the web app.
+// Event is the payload POSTed to the web app. ID is the row of the
+// registry_event_outbox table the event was recorded in (0 when the outbox
+// insert failed); the web app claims that row before acting so the event is
+// handled exactly once whether it arrives here or through the outbox drain.
 type Event struct {
+	ID         int64  `json:"id,omitempty"`
 	Type       string `json:"type"` // "manifest.push" | "manifest.delete"
 	Repository string `json:"repository"`
 	Digest     string `json:"digest"`
@@ -28,6 +32,8 @@ type Event struct {
 }
 
 // Notifier posts signed events; deliveries are fire-and-forget with retries.
+// Durability comes from the outbox (store.EnqueueEvent): a delivery that
+// never lands is picked up by the web app's scheduler from the table.
 type Notifier struct {
 	url    string
 	secret []byte

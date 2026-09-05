@@ -18,11 +18,13 @@ import {
   organization,
   organizationSettings,
   repositories,
+  signingIdentitiesTrusted,
   signingKeysTrusted,
   tags,
   user,
   userSigningKeys,
 } from "@/db/schema";
+import { legacyDsseBundle, legacyMessageBundle, verifyKeylessBundle } from "./sigstore";
 import { imagePath, splitImagePath } from "./library";
 import { WRITER_ROLES } from "./org-roles";
 import { refreshRepositoryBlocks } from "./pull-policy";
@@ -30,6 +32,8 @@ import { effectiveSignaturePolicy } from "./pull-policy-shared";
 import { fetchBlobBytes } from "./registry-client";
 import {
   ANNOTATION_CERTIFICATE,
+  ANNOTATION_CHAIN,
+  ANNOTATION_REKOR_BUNDLE,
   ANNOTATION_SIGNATURE,
   COSIGN_TAG_SUFFIXES,
   classifyArtifact,
@@ -59,11 +63,13 @@ import {
 export * from "./signatures-shared";
 
 export type TrustedKeyRow = typeof signingKeysTrusted.$inferSelect;
+export type TrustedIdentityRow = typeof signingIdentitiesTrusted.$inferSelect;
 export type UserKeyRow = typeof userSigningKeys.$inferSelect;
 export type SignatureRow = typeof manifestSignatures.$inferSelect;
 type RepoRow = typeof repositories.$inferSelect;
 
 export const MAX_TRUSTED_KEYS_PER_SCOPE = 50;
+export const MAX_TRUSTED_IDENTITIES_PER_SCOPE = 50;
 export const MAX_USER_SIGNING_KEYS = 10;
 
 /**
@@ -330,6 +336,83 @@ export async function effectiveVerificationKeys(organizationId: string, reposito
     orgTrustsMemberKeys(organizationId).then((on) => (on ? listMemberKeys(organizationId) : [])),
   ]);
   return [...trusted.map(trustedVerificationKey), ...memberKeys.map((k) => userVerificationKey(k, k.userName))];
+}
+
+// --- Trusted keyless identities --------------------------------------------------------------
+
+/** Identities defined at exactly one scope: a repository, or the organization (repositoryId null). */
+export async function listTrustedIdentities(organizationId: string, repositoryId: string | null): Promise<TrustedIdentityRow[]> {
+  return db.query.signingIdentitiesTrusted.findMany({
+    where: and(
+      eq(signingIdentitiesTrusted.organizationId, organizationId),
+      repositoryId ? eq(signingIdentitiesTrusted.repositoryId, repositoryId) : isNull(signingIdentitiesTrusted.repositoryId),
+    ),
+    orderBy: (t, { asc }) => [asc(t.name)],
+  });
+}
+
+/** Identities trusted for a repository: its own plus the organization's. */
+export async function effectiveTrustedIdentities(organizationId: string, repositoryId: string): Promise<TrustedIdentityRow[]> {
+  return db.query.signingIdentitiesTrusted.findMany({
+    where: and(
+      eq(signingIdentitiesTrusted.organizationId, organizationId),
+      or(isNull(signingIdentitiesTrusted.repositoryId), eq(signingIdentitiesTrusted.repositoryId, repositoryId)),
+    ),
+    orderBy: (t, { asc }) => [asc(t.name)],
+  });
+}
+
+/** Glob match for identity subjects: `*` matches anything, everything else is literal. */
+export function subjectMatches(pattern: string, subject: string): boolean {
+  const re = new RegExp("^" + pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+  return re.test(subject);
+}
+
+/** The first trusted identity a chain-verified certificate satisfies. */
+export function matchTrustedIdentity(
+  identities: TrustedIdentityRow[],
+  issuer: string | null | undefined,
+  subject: string | null | undefined,
+): TrustedIdentityRow | null {
+  if (!issuer || !subject) return null;
+  // A certificate may carry several SANs, joined with ", " by certificateIdentity.
+  const subjects = subject.split(/,\s*/).filter(Boolean);
+  for (const id of identities) {
+    if (id.issuer !== issuer) continue;
+    if (subjects.some((s) => subjectMatches(id.subject, s))) return id;
+  }
+  return null;
+}
+
+/** Validate and store a trusted identity; throws a user-facing message. */
+export async function addTrustedIdentity(input: {
+  organizationId: string;
+  repositoryId: string | null;
+  name: string;
+  issuer: string;
+  subject: string;
+  createdBy: string;
+}): Promise<TrustedIdentityRow> {
+  const name = input.name.trim();
+  const issuer = input.issuer.trim();
+  const subject = input.subject.trim();
+  if (!name || name.length > 80) throw new Error("Give the identity a name (up to 80 characters).");
+  if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(issuer) || issuer.length > 200) throw new Error("The issuer must be an https:// URL, exactly as it appears in the certificate.");
+  if (!subject || subject.length > 500) throw new Error("Enter the subject: an email address or a workflow URI (* matches anything).");
+  if (subject === "*") throw new Error("A subject of just * would trust everyone the issuer signs in; name at least a domain, repository or address.");
+  const existing = await listTrustedIdentities(input.organizationId, input.repositoryId);
+  if (existing.length >= MAX_TRUSTED_IDENTITIES_PER_SCOPE) throw new Error(`At most ${MAX_TRUSTED_IDENTITIES_PER_SCOPE} trusted identities per ${input.repositoryId ? "repository" : "organization"}.`);
+  if (existing.some((e) => e.issuer === issuer && e.subject === subject)) throw new Error("This identity is already trusted here.");
+  const [row] = await db
+    .insert(signingIdentitiesTrusted)
+    .values({ organizationId: input.organizationId, repositoryId: input.repositoryId, name, issuer, subject, createdBy: input.createdBy })
+    .returning();
+  return row;
+}
+
+export async function removeTrustedIdentity(id: string): Promise<TrustedIdentityRow | null> {
+  const [row] = await db.delete(signingIdentitiesTrusted).where(eq(signingIdentitiesTrusted.id, id)).returning();
+  return row ?? null;
 }
 
 // --- Personal keys --------------------------------------------------------------------------
@@ -777,13 +860,53 @@ function matchKeys(check: SignatureCheck, data: Buffer, signature: Buffer, keys:
   return false;
 }
 
-function applyKeyless(check: SignatureCheck, cert: string | Buffer | null | undefined): void {
+/**
+ * Record the outcome of a keyless check on a signature that no trusted key
+ * verified: the certificate identity is shown either way; a chain that
+ * verified and matches a trusted identity makes the signature verified, a
+ * chain that verified without a match stays "keyless", and a failed check
+ * stays "keyless" with the reason (a private Sigstore instance, a tampered
+ * bundle, or a certificate that was already expired when logged).
+ */
+function applyKeyless(
+  check: SignatureCheck,
+  cert: string | Buffer | null | undefined,
+  identities: TrustedIdentityRow[],
+  verification: { ok: boolean; identity: string | null; issuer: string | null; signedAt: string | null; error: string | null } | { error: string },
+): void {
   if (!cert || check.status === "verified") return;
   const id = certificateIdentity(cert);
   if (!id) return;
   check.status = "keyless";
   check.identity = id.identity ?? id.subject;
   check.issuer = id.issuer;
+  if (!("ok" in verification) || !verification.ok) {
+    check.chainVerified = false;
+    check.reason = verification.error;
+    return;
+  }
+  check.chainVerified = true;
+  check.signedAt = verification.signedAt;
+  if (verification.identity) check.identity = verification.identity;
+  if (verification.issuer) check.issuer = verification.issuer;
+  const match = matchTrustedIdentity(identities, check.issuer, check.identity);
+  if (match) {
+    check.status = "verified";
+    check.identityId = match.id;
+    check.identityName = match.name;
+    check.keyId = null;
+    check.userKeyId = null;
+    check.reason = null;
+  } else {
+    check.reason = "identity is not trusted here";
+  }
+}
+
+/** The legacy annotations (certificate, chain, Rekor entry) of a cosign tag-convention layer. */
+function legacyMaterial(annotations: Record<string, string> | undefined): { certificate: string; chain: string | null; rekorBundle: string | null } | null {
+  const certificate = annotations?.[ANNOTATION_CERTIFICATE];
+  if (!certificate) return null;
+  return { certificate, chain: annotations?.[ANNOTATION_CHAIN] ?? null, rekorBundle: annotations?.[ANNOTATION_REKOR_BUNDLE] ?? null };
 }
 
 function invalid(check: SignatureCheck, reason: string): void {
@@ -820,6 +943,8 @@ export interface SignatureResult {
   keyId: string | null;
   /** Member's personal key that verified it instead. */
   userKeyId: string | null;
+  /** Trusted keyless identity that verified it instead. */
+  identityId: string | null;
   signer: string | null;
   identity: string | null;
   checks: SignatureCheck[];
@@ -839,12 +964,15 @@ export async function checkArtifactSignatures(input: {
   artifact: ArtifactRef;
   classification: Classification;
   keys: VerificationKey[];
+  /** Keyless identities trusted in scope (chain-verified certificates that match count as verified). */
+  identities?: TrustedIdentityRow[];
   load: BlobLoader;
 }): Promise<SignatureResult | null> {
   const { artifact, classification, subjectDigest } = input;
   const parsed = parseArtifactManifest(artifact.payload);
   const layers = parsed.layers ?? [];
   const keys = prepareKeys(input.keys);
+  const identities = input.identities ?? [];
   const candidates = repositoryPathCandidates(input.orgSlug, input.repoName);
   const checks: SignatureCheck[] = [];
 
@@ -874,7 +1002,11 @@ export async function checkArtifactSignatures(input: {
           invalid(check, "no signature annotation on the payload");
         } else {
           matchKeys(check, payload, Buffer.from(sigB64, "base64"), keys);
-          applyKeyless(check, layer.annotations?.[ANNOTATION_CERTIFICATE]);
+          const legacy = legacyMaterial(layer.annotations);
+          if (legacy && check.status !== "verified") {
+            const built = legacyMessageBundle(legacy, payload, sigB64);
+            applyKeyless(check, legacy.certificate, identities, "error" in built ? built : verifyKeylessBundle(built.bundle, payload));
+          }
         }
       }
       break;
@@ -919,7 +1051,15 @@ export async function checkArtifactSignatures(input: {
       }
       const certRaw =
         bundle.verificationMaterial?.certificate?.rawBytes ?? bundle.verificationMaterial?.x509CertificateChain?.certificates?.[0]?.rawBytes;
-      if (certRaw) applyKeyless(check, Buffer.from(certRaw, "base64"));
+      if (certRaw && check.status !== "verified") {
+        // Message signatures sign the subject manifest bytes; DSSE bundles carry their payload.
+        const artifactBytes = bundle.messageSignature && input.subjectPayload ? Buffer.from(input.subjectPayload) : undefined;
+        const verification =
+          bundle.messageSignature && !input.subjectPayload
+            ? { error: "subject manifest unavailable" }
+            : verifyKeylessBundle(bundle, artifactBytes);
+        applyKeyless(check, Buffer.from(certRaw, "base64"), identities, verification);
+      }
       break;
     }
     case "dsse": {
@@ -933,7 +1073,11 @@ export async function checkArtifactSignatures(input: {
           continue;
         }
         verifyDsse(check, envelope, subjectDigest, keys);
-        applyKeyless(check, layer.annotations?.[ANNOTATION_CERTIFICATE]);
+        const legacy = legacyMaterial(layer.annotations);
+        if (legacy && check.status !== "verified") {
+          const built = legacyDsseBundle(legacy, envelope);
+          applyKeyless(check, legacy.certificate, identities, "error" in built ? built : verifyKeylessBundle(built.bundle));
+        }
       }
       break;
     }
@@ -955,14 +1099,16 @@ export async function checkArtifactSignatures(input: {
     status,
     keyId: verified?.keyId ?? null,
     userKeyId: verified?.userKeyId ?? null,
+    identityId: verified?.identityId ?? null,
     signer: verified?.signer ?? null,
-    identity: keyless?.identity ?? null,
+    identity: verified?.identity ?? keyless?.identity ?? null,
     checks,
   };
 }
 
 interface VerifyContext {
   keys?: VerificationKey[];
+  identities?: TrustedIdentityRow[];
   orgSlug?: string;
   load?: BlobLoader;
 }
@@ -980,6 +1126,7 @@ async function orgSlugOf(organizationId: string): Promise<string> {
 export async function verifyManifestSignatures(repo: RepoRow, subjectDigest: string, ctx: VerifyContext = {}): Promise<number> {
   const orgSlug = ctx.orgSlug ?? (await orgSlugOf(repo.organizationId));
   const keys = ctx.keys ?? (await effectiveVerificationKeys(repo.organizationId, repo.id));
+  const identities = ctx.identities ?? (await effectiveTrustedIdentities(repo.organizationId, repo.id));
   const load = ctx.load ?? makeBlobLoader(imagePath(orgSlug, repo.name));
   const subject = await db.query.manifests.findFirst({
     where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, subjectDigest)),
@@ -998,6 +1145,7 @@ export async function verifyManifestSignatures(repo: RepoRow, subjectDigest: str
       artifact,
       classification,
       keys,
+      identities,
       load,
     });
     if (!result) continue;
@@ -1007,6 +1155,7 @@ export async function verifyManifestSignatures(repo: RepoRow, subjectDigest: str
       status: result.status,
       keyId: result.keyId,
       userKeyId: result.userKeyId,
+      identityId: result.identityId,
       identity: result.identity,
       details: result.checks,
       checkedAt: new Date(),
@@ -1044,10 +1193,11 @@ export async function reverifyRepository(repositoryId: string): Promise<{ subjec
   if (!repo) return { subjects: 0, signed: 0 };
   const orgSlug = await orgSlugOf(repo.organizationId);
   const keys = await effectiveVerificationKeys(repo.organizationId, repo.id);
+  const identities = await effectiveTrustedIdentities(repo.organizationId, repo.id);
   const load = makeBlobLoader(imagePath(orgSlug, repo.name));
   const subjects = await artifactSubjects(repo.id);
   let signed = 0;
-  for (const s of subjects) signed += await verifyManifestSignatures(repo, s, { keys, orgSlug, load });
+  for (const s of subjects) signed += await verifyManifestSignatures(repo, s, { keys, identities, orgSlug, load });
   await refreshRepositoryBlocks(repo.id);
   return { subjects: subjects.length, signed };
 }
@@ -1090,6 +1240,7 @@ export async function onManifestPushed(repositoryPath: string, digest: string, t
   const subject = row.subjectDigest ?? parseCosignTag(tag)?.digest ?? null;
   const ctx: VerifyContext = {
     keys: await effectiveVerificationKeys(org.id, repo.id),
+    identities: await effectiveTrustedIdentities(org.id, repo.id),
     orgSlug: org.slug,
     load: makeBlobLoader(repositoryPath),
   };
@@ -1108,6 +1259,12 @@ export interface SignatureStatusView {
   keyFingerprint: string | null;
   identity: string | null;
   issuer: string | null;
+  /** Trusted identity that verified a keyless signature. */
+  identityName: string | null;
+  /** Keyless: whether the Sigstore chain verified (null when no keyless check ran). */
+  chainVerified: boolean | null;
+  /** Keyless: when the transparency log recorded the signature. */
+  signedAt: string | null;
   checkedAt: string;
   /** "verified by key deploy", "unverified: no trusted key", … */
   description: string;
@@ -1167,6 +1324,8 @@ export interface AttestationView {
   trustedKeys: number;
   /** … and members' personal keys, when the organization trusts them. */
   memberKeys: number;
+  /** Keyless identities trusted by the organization and repository. */
+  trustedIdentities: number;
   total: number;
 }
 
@@ -1188,7 +1347,11 @@ export async function getAttestationView(
     ...children.map((c) => ({ digest: c.digest!, label: platformLabel(c.platform) })),
   ];
   const digests = subjects.map((s) => s.digest);
-  const [artifacts, keys] = await Promise.all([discoverArtifacts(repo.id, digests), effectiveVerificationKeys(repo.organizationId, repo.id)]);
+  const [artifacts, keys, identities] = await Promise.all([
+    discoverArtifacts(repo.id, digests),
+    effectiveVerificationKeys(repo.organizationId, repo.id),
+    effectiveTrustedIdentities(repo.organizationId, repo.id),
+  ]);
   const load = makeBlobLoader(imagePath(orgSlug, repo.name));
 
   const loadRows = () =>
@@ -1226,26 +1389,41 @@ export async function getAttestationView(
       }
     }
   }
+  const identityNames = new Map<string, string>();
+  for (const r of rows) {
+    if (r.identityId && !identityNames.has(r.identityId)) {
+      const i = await db.query.signingIdentitiesTrusted.findFirst({ where: eq(signingIdentitiesTrusted.id, r.identityId), columns: { name: true } });
+      identityNames.set(r.identityId, i?.name ?? "(removed)");
+    }
+  }
   const statusOf = (a: ArtifactRef): SignatureStatusView | null => {
     const r = rows.find((row) => row.signatureDigest === a.digest);
     if (!r) return null;
     const key = r.keyId ? keyNames.get(r.keyId) : r.userKeyId ? keyNames.get(r.userKeyId) : undefined;
     const checks = (r.details as SignatureCheck[] | null) ?? [];
-    const keyless = checks.find((c) => c.status === "keyless");
-    const signer = key?.scope === "user" ? (key.signer ?? null) : (checks.find((c) => c.status === "verified")?.signer ?? null);
+    const keyless = checks.find((c) => c.status === "keyless" || c.chainVerified != null);
+    const verifiedCheck = checks.find((c) => c.status === "verified");
+    const signer = key?.scope === "user" ? (key.signer ?? null) : (verifiedCheck?.signer ?? null);
+    const identityName = r.identityId ? (identityNames.get(r.identityId) ?? "(removed)") : null;
+    const keyName = identityName ? null : (key?.name ?? (r.status === "verified" ? "(removed)" : null));
     return {
       status: r.status,
-      keyName: key?.name ?? (r.status === "verified" ? "(removed)" : null),
+      keyName,
       signer,
       keyFingerprint: key?.fingerprint ?? null,
       identity: r.identity ?? keyless?.identity ?? null,
-      issuer: keyless?.issuer ?? null,
+      issuer: verifiedCheck?.issuer ?? keyless?.issuer ?? null,
+      identityName,
+      chainVerified: verifiedCheck?.chainVerified ?? keyless?.chainVerified ?? null,
+      signedAt: verifiedCheck?.signedAt ?? keyless?.signedAt ?? null,
       checkedAt: r.checkedAt.toISOString(),
       description: describeSignatureStatus({
         status: r.status,
         keyName: key?.name ?? null,
         signer,
         identity: r.identity ?? keyless?.identity ?? null,
+        identityName,
+        chainVerified: verifiedCheck?.chainVerified ?? keyless?.chainVerified ?? null,
         reason: checks.find((c) => c.reason)?.reason ?? null,
       }),
       checks,
@@ -1260,6 +1438,7 @@ export async function getAttestationView(
     others: [],
     trustedKeys: keys.filter((k) => k.scope === "trusted").length,
     memberKeys: keys.filter((k) => k.scope === "user").length,
+    trustedIdentities: identities.length,
     total: artifacts.length,
   };
   for (const a of artifacts) {

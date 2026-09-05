@@ -1,9 +1,11 @@
 // In-app job scheduler. Started once per server process from
 // src/instrumentation.ts; every 30 seconds it tries to take a Postgres
 // advisory lock on a dedicated connection — the replica that holds it runs
-// the schedules that are due, everyone else stays idle. A job never runs
-// twice at once; runs that are still "running" after six hours are marked
-// failed. Errors are logged and the loop keeps going.
+// the schedules that are due and drains the registry event outbox,
+// everyone else stays idle. A job never runs twice at once; runs that are
+// still "running" after six hours are marked failed. Errors are logged and
+// the loop keeps going. JOB_SCHEDULER=false leaves the schedules to
+// external cron but keeps the outbox drain — events must not depend on it.
 import { and, eq, isNull, lte, or } from "drizzle-orm";
 import { Client } from "pg";
 import { db } from "@/db";
@@ -12,6 +14,7 @@ import { env } from "./env";
 import { JOBS, runJob } from "./jobs";
 import { notify } from "./notify";
 import { nextRun } from "./schedule-shared";
+import { drainEventOutbox } from "./registry-events";
 
 /** Arbitrary but fixed: every replica must ask for the same key. */
 const LOCK_KEY = 7261637;
@@ -56,10 +59,10 @@ export function startScheduler(): void {
   if (s.started) return;
   s.started = true;
   if (!env.jobSchedulerEnabled) {
-    log("disabled by JOB_SCHEDULER=false; schedules are stored but never run here");
-    return;
+    log("schedules disabled by JOB_SCHEDULER=false; only the registry event outbox is drained here");
+  } else {
+    log(`started; checking for due schedules every ${TICK_MS / 1000}s`);
   }
-  log(`started; checking for due schedules every ${TICK_MS / 1000}s`);
   const first = setTimeout(() => {
     void tick();
     s.timer = setInterval(() => void tick(), TICK_MS);
@@ -200,8 +203,14 @@ async function tick(): Promise<void> {
   try {
     s.lastTickAt = new Date();
     if (!(await acquireLock())) return;
-    await failStuckRuns();
-    await runDue();
+    // Events registryd could not hand over come first: a scan or webhook
+    // that waited for the web app to come back should not also wait for
+    // a retention run.
+    await drainEventOutbox().catch((err) => console.error("[scheduler] outbox drain failed:", err));
+    if (env.jobSchedulerEnabled) {
+      await failStuckRuns();
+      await runDue();
+    }
     s.lastError = null;
   } catch (err) {
     s.lastError = err instanceof Error ? err.message : String(err);

@@ -11,7 +11,7 @@ import {
 } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { nextCookies } from "better-auth/next-js";
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { organization as organizationTable, user as userTable } from "@/db/schema";
 import { env } from "./env";
@@ -40,6 +40,31 @@ function reverifyAfterMembershipChange(organizationId: string): void {
     if ((await listMemberKeys(organizationId)).length === 0) return;
     await reverifyOrganization(organizationId);
   })().catch((err) => console.error("re-verification after a membership change failed:", err));
+}
+
+/**
+ * Account deletion must not orphan an organization or the instance: the
+ * only owner of an organization transfers it or deletes it first, and the
+ * last administrator stays. Memberships, tokens, keys and sessions go with
+ * the account (foreign keys cascade).
+ */
+async function refuseDeletionOfLastOwner(user: { id: string; role?: string | null }): Promise<void> {
+  const { rows } = await db.execute(sql`
+    SELECT o.name
+    FROM member m JOIN organization o ON o.id = m.organization_id
+    WHERE m.user_id = ${user.id} AND m.role = 'owner'
+      AND NOT EXISTS (SELECT 1 FROM member x WHERE x.organization_id = m.organization_id AND x.role = 'owner' AND x.user_id <> ${user.id})
+    ORDER BY o.name`);
+  const sole = rows.map((r) => String(r.name));
+  if (sole.length > 0) {
+    throw new APIError("BAD_REQUEST", {
+      message: `You are the only owner of ${sole.join(", ")}. Transfer ownership or delete ${sole.length === 1 ? "it" : "them"} first.`,
+    });
+  }
+  if (user.role === "admin") {
+    const [{ value: admins }] = await db.select({ value: count() }).from(userTable).where(eq(userTable.role, "admin"));
+    if (admins <= 1) throw new APIError("BAD_REQUEST", { message: "The last administrator cannot delete their account. Make someone else an administrator first." });
+  }
 }
 
 // Org slugs become both URL paths and image namespaces; these collide with
@@ -78,6 +103,7 @@ function buildAuth(settings: EffectiveSettings) {
   const oidc = settings.oidc.enabled && settings.oidc.issuer ? settings.oidc : null;
   // Instance name from the branding settings: email subjects, TOTP issuer.
   const brand = settings.branding.instanceName || "Chicorée";
+  const mailConfigured = !!settings.smtp.host;
 
   return betterAuth({
   appName: `${brand} Registry`,
@@ -95,6 +121,12 @@ function buildAuth(settings: EffectiveSettings) {
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 10,
+    // With a mail server, an address must be confirmed before a password
+    // sign-in works (the attempt re-sends the link). Without one nobody
+    // could confirm anything, so the check is off — administrators mark
+    // addresses verified by hand.
+    requireEmailVerification: mailConfigured,
+    revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) => {
       await sendMail({
         to: user.email,
@@ -111,6 +143,7 @@ function buildAuth(settings: EffectiveSettings) {
 
   emailVerification: {
     sendOnSignUp: true,
+    sendOnSignIn: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
       await sendMail({
@@ -128,16 +161,43 @@ function buildAuth(settings: EffectiveSettings) {
 
   socialProviders,
 
+  user: {
+    deleteUser: {
+      enabled: true,
+      // With a mail server the deletion is confirmed from the inbox; without
+      // one better-auth asks for the password (or a fresh session) instead.
+      sendDeleteAccountVerification: mailConfigured
+        ? async ({ user, url }) => {
+            await sendMail({
+              to: user.email,
+              subject: `Confirm deleting your ${brand} account`,
+              text: `Delete the account ${user.email}: ${url}\n\nIf you did not ask for this, ignore this email.`,
+              html: mailLayout(
+                "Delete your account",
+                `<p>Someone (hopefully you) asked to delete the ${brand} account for ${user.email}, with its access tokens, signing keys and memberships.</p><p>${buttonHtml(url, "Delete my account")}</p><p>If you did not ask for this, ignore this email — nothing happens without the link.</p>`,
+                brand,
+              ),
+            });
+          }
+        : undefined,
+      beforeDelete: async (user) => {
+        await refuseDeletionOfLastOwner(user);
+      },
+    },
+  },
+
   databaseHooks: {
     user: {
       create: {
         // The very first account on a fresh install becomes the instance
-        // administrator; everyone after that is a regular user.
+        // administrator; everyone after that is a regular user. That first
+        // account is also marked verified: it is created by whoever installs
+        // the registry, usually before any mail server exists.
         before: async (user, context) => {
           const [{ value: existing }] = await db.select({ value: count() }).from(userTable);
           // Sign-up mode and domain list (Administration → Auth providers → Access).
           await enforceSignUpPolicy(user, settings.access, { isFirstUser: existing === 0, invitationId: context?.headers?.get(INVITATION_HEADER) });
-          return { data: { ...user, role: existing === 0 ? "admin" : "user" } };
+          return { data: { ...user, role: existing === 0 ? "admin" : "user", ...(existing === 0 ? { emailVerified: true } : {}) } };
         },
         // Administrators own the "library" organization (top-level images).
         after: async (user, context) => {

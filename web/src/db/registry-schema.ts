@@ -403,6 +403,13 @@ export const repositoryWebhooks = pgTable(
     authSecret: text("auth_secret"),
     /** Encrypted HMAC key for X-Chicoree-Signature; null = unsigned. */
     signingSecret: text("signing_secret"),
+    /**
+     * Body format: "json" is the documented payload; the chat formats render
+     * the same event as a message for a Slack, Discord or Microsoft Teams
+     * incoming webhook, or as a plain {text} document (Mattermost, Google
+     * Chat, Rocket.Chat). See lib/webhook-chat.ts.
+     */
+    format: text("format", { enum: ["json", "slack", "discord", "teams", "text"] }).notNull().default("json"),
     events: jsonb("events").$type<string[]>().notNull().default(["push"]),
     enabled: boolean("enabled").notNull().default(true),
     createdBy: text("created_by"),
@@ -804,4 +811,57 @@ export const rateLimitCounters = pgTable(
     count: bigint("count", { mode: "number" }).notNull().default(0),
   },
   (t) => [index("rate_limit_counters_window_idx").on(t.windowStart)],
+);
+
+/**
+ * Durable copy of every manifest push / delete registryd reports to the web
+ * app. registryd inserts the row right after the change (store/outbox.go)
+ * and POSTs the event with the row id; the web app claims the row before
+ * acting (claimed_at) and marks it delivered_at afterwards. The scheduler
+ * drains rows that were never claimed — or whose claim is stale — with
+ * exponential backoff, so a web outage or a registryd restart delays
+ * scans, signature checks, webhooks and quota warnings instead of losing
+ * them. Delivered rows are swept after a week.
+ */
+export const registryEventOutbox = pgTable(
+  "registry_event_outbox",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** manifest.push | manifest.delete */
+    type: text("type").notNull(),
+    /** Repository path as registryd names it, e.g. "acme/app" or "nginx" (library). */
+    repository: text("repository").notNull(),
+    digest: text("digest"),
+    tag: text("tag"),
+    /** Tags that pointed at a manifest deleted by digest. */
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    mediaType: text("media_type"),
+    actor: text("actor"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+  },
+  (t) => [index("registry_event_outbox_pending_idx").on(t.deliveredAt, t.nextAttemptAt)],
+);
+
+/**
+ * Failed docker-login attempts at the token endpoint, counted per client
+ * address and per account so password guessing is slowed down on every
+ * replica alike (lib/login-throttle.ts). Rows expire with their window.
+ */
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    /** "ip:<address>" or "account:<email>" */
+    key: text("key").primaryKey(),
+    failures: integer("failures").notNull().default(0),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_attempts_updated_idx").on(t.updatedAt)],
 );

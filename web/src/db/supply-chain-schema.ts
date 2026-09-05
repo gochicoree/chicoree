@@ -63,6 +63,39 @@ export const userSigningKeys = pgTable(
   (t) => [index("user_signing_keys_user_idx").on(t.userId)],
 );
 
+/**
+ * Keyless (Sigstore) identities an organization (or one repository) trusts:
+ * the OIDC issuer of the Fulcio certificate plus the subject it names —
+ * an email, or the workflow URI of a CI system, with `*` wildcards. A
+ * keyless signature counts as verified only when its certificate chains to
+ * the Sigstore root, its Rekor entry checks out and the identity matches
+ * one of these rows (lib/sigstore.ts, lib/signatures.ts).
+ */
+export const signingIdentitiesTrusted = pgTable(
+  "signing_identities_trusted",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** null = trusted for every repository of the organization. */
+    repositoryId: text("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** OIDC issuer URL exactly as Fulcio recorded it, e.g. https://token.actions.githubusercontent.com */
+    issuer: text("issuer").notNull(),
+    /** Subject pattern: exact value or glob with `*`, e.g. https://github.com/acme/app/.github/workflows/release.yml@refs/tags/* */
+    subject: text("subject").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("signing_identities_trusted_org_idx").on(t.organizationId),
+    index("signing_identities_trusted_repo_idx").on(t.repositoryId),
+  ],
+);
+
 export const SIGNATURE_STATUSES = ["verified", "untrusted", "invalid", "keyless"] as const;
 export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
 
@@ -87,6 +120,8 @@ export const manifestSignatures = pgTable(
     keyId: text("key_id").references(() => signingKeysTrusted.id, { onDelete: "set null" }),
     /** The member's personal key that verified it instead (null unless status = verified through one). */
     userKeyId: text("user_key_id").references(() => userSigningKeys.id, { onDelete: "set null" }),
+    /** The trusted keyless identity that verified it (null unless status = verified through one). */
+    identityId: text("identity_id").references(() => signingIdentitiesTrusted.id, { onDelete: "set null" }),
     /** Certificate identity of a keyless signature, e.g. "user@example.com (https://accounts.google.com)". */
     identity: text("identity"),
     /** Per-signature detail (format, key fingerprint, reason, signed reference); see lib/signatures-shared.ts SignatureCheck. */

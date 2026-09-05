@@ -44,6 +44,10 @@ func New(ctx context.Context, databaseURL string) (*Store, error) {
 
 func (s *Store) Close() { s.pool.Close() }
 
+// Ping checks that the database answers; the health endpoint calls it with
+// a short deadline.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+
 // WaitForSchema blocks until the web app's migrations have created the domain
 // tables (compose starts both services concurrently).
 func (s *Store) WaitForSchema(ctx context.Context, timeout time.Duration) error {

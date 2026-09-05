@@ -35,6 +35,7 @@ export default async function SignInPage({
       signUp={{ mode: s.access.signUpMode, invitationId }}
       local={{ mode: s.access.localSignIn }}
       next={next}
+      initialNotice={sp.deleted === "1" ? "Your account has been deleted." : null}
     />
   );
 }

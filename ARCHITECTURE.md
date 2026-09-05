@@ -324,11 +324,23 @@ through an old name get no grant at all.
   (`actor_type` includes `proxy` and `mirror`); pulls also bump
   `repositories.pull_count`. A manifest request — GET or HEAD — counts as a
   pull (Docker Hub semantics; warm client caches revalidate with HEAD).
-- **Webhook**: manifest pushes/deletes POST an HMAC-signed event to the web
-  app, which caches the image config, fans out webhooks and kicks off
-  scanning. `manifest.delete` is posted for tag deletes too (with the digest
-  the tag pointed at, resolved before the delete) and carries `tags` — every
-  tag that pointed at a manifest deleted by digest.
+- **Events to the web app**: manifest pushes/deletes are first written to
+  `registry_event_outbox` (`store/outbox.go`, synchronous, before the client
+  gets its response) and then POSTed as an HMAC-signed event carrying the
+  row `id` (`hooks/webhook.go`, four attempts with backoff, in memory). The
+  web app claims the row (`claimed_at`) before it caches the image config,
+  fans out webhooks and quota warnings, verifies signatures and kicks off
+  scanning, and marks it `delivered_at` afterwards; a claim older than ten
+  minutes counts as abandoned. Its scheduler tick drains rows that were
+  never claimed or whose claim went stale (`lib/registry-events.ts`, 30 s
+  cadence, backoff 30 s → 1 h, 25 attempts, delivered rows swept after a
+  week), so an outage delays events instead of losing them; the HTTP path
+  is only the low-latency fast path. `manifest.delete` is posted for tag
+  deletes too (with the digest the tag pointed at, resolved before the
+  delete) and carries `tags` — every tag that pointed at a manifest deleted
+  by digest. `/internal/v1/healthz` pings the database and `Stat`s an
+  impossible digest on the storage backend (3 s budget) and answers 503
+  when either fails.
 - **GC** (`POST /internal/v1/gc`, bearer = webhook secret, optional
   `?grace=30m`): drop repo→blob links no manifest references, delete blob
   rows with zero links, remove their bytes from storage, sweep stale upload
@@ -415,11 +427,16 @@ through an old name get no grant at all.
   and `metrics` rows). Web-only tables: `audit_log` (`db/audit-schema.ts`),
   `job_schedules`, `notification_preferences`, `notification_state`,
   `retention_policies`, `repository_webhooks` (with `organization_id` for
-  organization hooks), `repository_stars`, `repository_visits`,
+  organization hooks and `format` = json | slack | discord | teams | text,
+  rendered by `lib/webhook-chat.ts`), `login_attempts` (docker-login
+  throttle counters per address and account, `lib/login-throttle.ts`),
+  `repository_stars`, `repository_visits`,
   `vulnerability_scans` (+ `findings`, `scanner`, `scanner_version`),
   `scan_findings` and `vulnerability_exceptions` (`db/scanning-schema.ts`),
-  `signing_keys_trusted`, `user_signing_keys`, `manifest_signatures` and
-  `manifest_artifacts` (`db/supply-chain-schema.ts`), `access_tokens` (+
+  `signing_keys_trusted`, `user_signing_keys`, `signing_identities_trusted`
+  (issuer + subject pattern per organization / repository),
+  `manifest_signatures` (+ `identity_id`) and `manifest_artifacts`
+  (`db/supply-chain-schema.ts`), `access_tokens` (+
   `last_used_ip`, `description`, `organization_id`, `repository_ids`),
   `service_accounts` (+ `last_used_ip`); columns `repositories.readme` /
   `require_signature` / `logo`, `organization_settings.require_signature` /
@@ -566,13 +583,23 @@ through an old name get no grant at all.
   the raw payload), Sigstore bundles (`dsseEnvelope` — statement subject
   must cover the digest, PAE verified — or `messageSignature` over the
   subject manifest bytes; a key hint matching a trusted key that fails →
-  *invalid*) and DSSE envelopes; Fulcio certificates yield status `keyless`
-  with identity + issuer and are **not** chain-verified. Results are
-  upserted into `manifest_signatures` (repository, image digest, artifact
-  digest, kind `signature` | `attestation`, status `verified` | `untrusted`
-  | `invalid` | `keyless`, key id, identity, per-signature details) by
+  *invalid*) and DSSE envelopes. Fulcio certificates go through
+  `lib/sigstore.ts` (sigstore-js `@sigstore/verify` with the vendored
+  `sigstore-trusted-root.json`, or `SIGSTORE_TRUSTED_ROOT`): certificate
+  chain + SCT, Rekor entry (inclusion promise or proof), validity at the
+  logged time and the signature itself; legacy `.sig` / `.att` layers are
+  converted to a v0.1 bundle from their `dev.sigstore.cosign/certificate`,
+  `/chain` and `/bundle` annotations first (no Rekor annotation → cannot be
+  verified). A verified chain whose issuer + SAN match a
+  `signing_identities_trusted` row in scope (`matchTrustedIdentity`, glob
+  subjects) is `verified` with `identity_id`; a verified chain without a
+  match, or a failed check, stays `keyless` with `chainVerified` and the
+  reason in the details. Results are upserted into `manifest_signatures`
+  (repository, image digest, artifact digest, kind `signature` |
+  `attestation`, status `verified` | `untrusted` | `invalid` | `keyless`,
+  key id / identity id, identity, per-signature details) by
   `verifyManifestSignatures`; `reverifyRepository` / `reverifyOrganization`
-  run after every key or policy change; `onManifestPushed` (from the
+  run after every key, identity or policy change; `onManifestPushed` (from the
   `manifest.push` event) re-verifies an artifact's subject or checks a new
   image for existing artifacts, and refreshes blocks quietly when the
   signature policy is on. Policy: `organization_settings.require_signature`
@@ -1063,8 +1090,19 @@ by the newest active key in `token_signing_keys`, else the file key; the
 - Scan rows written before the normalised `findings` column exist are
   converted lazily on first view or by the `scan-normalize` job; the
   normaliser is TypeScript, so there is no SQL backfill.
-- Keyless (Fulcio) signatures are displayed with their identity but never
-  chain-verified; only key-based signatures count for the signature policy.
+- Keyless signatures verify against the vendored public Sigstore root only
+  (or the file `SIGSTORE_TRUSTED_ROOT` names); the root is not refreshed
+  from TUF at runtime, so a key rotation upstream needs a new snapshot.
+  Legacy tag-convention signatures made without a Rekor entry cannot be
+  verified at all (the certificate has long expired), and keyless
+  signatures count for the policy only through a trusted identity.
+- The web app's Content-Security-Policy allows inline styles
+  (`style-src 'unsafe-inline'`) for style attributes and any https image
+  for READMEs; scripts are nonce-only. `_global-error` is prerendered
+  without a nonce and renders without its scripts.
+- Docker-login throttling counts failures per address and per account; a
+  proxy that hides client addresses (no `X-Forwarded-For`) makes every
+  client share one address budget of thirty failures per fifteen minutes.
 - Manifest DELETE removes the manifest row; blob bytes are reclaimed by the
   next GC pass, never inline.
 - The registry enforces exactly two-level names (`<org>/<repo>`), except in

@@ -27,17 +27,63 @@ import { resolveRepositoryRedirect } from "@/lib/redirects";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { authenticateLdap, LdapError } from "@/lib/ldap";
 import { isBanned, provisionLdapUser, type UserStore } from "@/lib/auth-ldap";
+import { recordAudit } from "@/lib/audit";
+import {
+  ACCOUNT_MAX_FAILURES,
+  accountKey,
+  clearLoginFailures,
+  IP_MAX_FAILURES,
+  ipKey,
+  lockMessage,
+  loginLock,
+  recordLoginFailure,
+} from "@/lib/login-throttle";
 
 export const dynamic = "force-dynamic";
 
-function unauthorized(message: string) {
+interface Refusal {
+  error: string;
+  /** Seconds until a locked client may try again (sent as Retry-After). */
+  retryAfter?: number;
+}
+
+function unauthorized(refusal: Refusal) {
   return NextResponse.json(
-    { errors: [{ code: "UNAUTHORIZED", message }] },
-    { status: 401 },
+    { errors: [{ code: "UNAUTHORIZED", message: refusal.error }] },
+    { status: 401, headers: refusal.retryAfter ? { "Retry-After": String(refusal.retryAfter) } : undefined },
   );
 }
 
-async function identify(req: NextRequest): Promise<Caller | { error: string }> {
+/**
+ * Count a failed docker login against the address (and the account, for
+ * password attempts) and write it to the audit log. Returns the refusal to
+ * send — the lock message once the limit is hit, else the original one.
+ */
+async function failed(req: NextRequest, username: string, method: "password" | "ldap" | "token", refusal: Refusal): Promise<Refusal> {
+  const ip = clientIp(req.headers);
+  const lock = await recordLoginFailure([
+    { key: ipKey(ip), max: IP_MAX_FAILURES },
+    ...(method === "token" ? [] : [{ key: accountKey(username), max: ACCOUNT_MAX_FAILURES }]),
+  ]).catch((err) => {
+    console.error("login throttle update failed:", err);
+    return null;
+  });
+  await recordAudit({
+    action: "registry.login.failed",
+    actor: { type: "user", id: null, label: username || null },
+    targetType: username ? "email" : null,
+    targetLabel: username || null,
+    details: { method, reason: refusal.error, ...(lock ? { lockedUntil: lock.lockedUntil.toISOString() } : {}) },
+    headers: req.headers,
+  });
+  if (lock) {
+    const retryAfter = Math.max(1, Math.ceil((lock.lockedUntil.getTime() - Date.now()) / 1000));
+    return { error: lockMessage(retryAfter), retryAfter };
+  }
+  return refusal;
+}
+
+async function identify(req: NextRequest): Promise<Caller | Refusal> {
   const header = req.headers.get("authorization");
   if (!header?.toLowerCase().startsWith("basic ")) return { kind: "anonymous" };
 
@@ -51,20 +97,32 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
   if (sep < 0) return { error: "malformed basic credentials" };
   const username = decoded.slice(0, sep);
   const password = decoded.slice(sep + 1);
+  const ip = clientIp(req.headers);
+
+  // A locked address or account is refused before any credential is
+  // checked, so guessing cannot continue while the lock lasts.
+  const lock = await loginLock([ipKey(ip), accountKey(username)]).catch((err) => {
+    console.error("login throttle lookup failed:", err);
+    return null;
+  });
+  if (lock) return { error: lockMessage(lock.retryAfterSeconds), retryAfter: lock.retryAfterSeconds };
 
   // Opaque credentials: expiry, restriction and last-use bookkeeping live in
   // lib/credential-auth.ts (shared with the jobs API).
-  if (password.startsWith(SA_PREFIX)) return identifyServiceAccount(password, clientIp(req.headers));
+  if (password.startsWith(SA_PREFIX)) {
+    const res = await identifyServiceAccount(password, ip);
+    return "error" in res ? failed(req, username, "token", res) : res;
+  }
 
   if (password.startsWith(PAT_PREFIX)) {
-    const res = await identifyAccessToken(password, clientIp(req.headers));
-    return "error" in res ? res : res.caller;
+    const res = await identifyAccessToken(password, ip);
+    return "error" in res ? failed(req, username, "token", res) : res.caller;
   }
 
   // Fall back to a password, but never around two-factor auth. Local
   // accounts verify against their own hash; otherwise the directory decides.
   const u = await db.query.user.findFirst({ where: eq(userTable.email, username.toLowerCase()) });
-  if (u?.banned) return { error: "account unavailable" };
+  if (u?.banned) return failed(req, username, "password", { error: "account unavailable" });
   if (u?.twoFactorEnabled) {
     return { error: "this account uses two-factor auth; docker login with an access token instead" };
   }
@@ -79,37 +137,45 @@ async function identify(req: NextRequest): Promise<Caller | { error: string }> {
     }
     const ctx = await (await getAuth()).$context;
     const valid = await ctx.password.verify({ hash: credential.password, password });
-    if (!valid) return { error: "invalid credentials" };
+    if (!valid) return failed(req, username, "password", { error: "invalid credentials" });
+    await clearLoginFailures(accountKey(username));
     return { kind: "user", userId: u.id, isAdmin: u.role === "admin", patScope: null };
   }
-  if ((await getInstanceSettings()).ldap.enabled) return identifyViaLdap(username, password);
+  if ((await getInstanceSettings()).ldap.enabled) {
+    const res = await identifyViaLdap(username, password);
+    if ("error" in res) return res.invalidCredentials ? failed(req, username, "ldap", res) : res;
+    await clearLoginFailures(accountKey(username));
+    return res;
+  }
   if (!u) {
-    return {
+    return failed(req, username, "password", {
       error: username.includes("@")
         ? "invalid credentials"
         : "invalid credentials: use your email address as the username (or an access token as the password)",
-    };
+    });
   }
   return { error: "this account has no password; docker login with an access token instead" };
 }
 
 /** `docker login` with directory credentials; provisions the account like the browser flow. */
-async function identifyViaLdap(username: string, password: string): Promise<Caller | { error: string }> {
+async function identifyViaLdap(username: string, password: string): Promise<Caller | (Refusal & { invalidCredentials: boolean })> {
   try {
     const identity = await authenticateLdap(username, password);
     const ctx = await (await getAuth()).$context;
     const user = await provisionLdapUser(ctx.internalAdapter as unknown as UserStore, identity);
-    if (isBanned(user)) return { error: "account unavailable" };
+    if (isBanned(user)) return { error: "account unavailable", invalidCredentials: true };
     if (user.twoFactorEnabled) {
-      return { error: "this account uses two-factor auth; docker login with an access token instead" };
+      return { error: "this account uses two-factor auth; docker login with an access token instead", invalidCredentials: false };
     }
     return { kind: "user", userId: user.id, isAdmin: user.role === "admin", patScope: null };
   } catch (e) {
-    if (e instanceof LdapError) return { error: e.invalidCredentials ? "invalid credentials" : e.message };
+    if (e instanceof LdapError) {
+      return { error: e.invalidCredentials ? "invalid credentials" : e.message, invalidCredentials: e.invalidCredentials };
+    }
     // Sign-up policy refusals (closed / invite-only / domain list) from the user hook.
-    if (isAPIError(e)) return { error: e.message };
+    if (isAPIError(e)) return { error: e.message, invalidCredentials: false };
     console.error("LDAP docker login failed", e);
-    return { error: "directory server unavailable" };
+    return { error: "directory server unavailable", invalidCredentials: false };
   }
 }
 
@@ -120,7 +186,7 @@ export async function GET(req: NextRequest) {
   const scopes = url.searchParams.getAll("scope");
 
   const caller = await identify(req);
-  if ("error" in caller) return unauthorized(caller.error);
+  if ("error" in caller) return unauthorized(caller);
 
   const access: AccessGrant[] = [];
   for (const scope of scopes) {

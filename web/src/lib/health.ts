@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { env } from "./env";
 import { formatBytes, relativeTime } from "./format";
 import { registryStatus, type RegistryStatus } from "./registry-client";
+import { OUTBOX_MAX_ATTEMPTS, outboxStats } from "./registry-events";
 import { getScanner, scanningEnabled } from "./scanners";
 import { activeSigner, fileKeyInfo, listSigningKeys, privateKeyFingerprint, KEY_DROP_WINDOW_MS } from "./signing-keys";
 
@@ -432,8 +433,54 @@ export async function runHealthChecks(): Promise<HealthCheck[]> {
     guarded("mirrors", "Mirrors", checkMirrors),
     guarded("disk", "Upload staging disk", async () => checkDisk(status)),
     guarded("gc", "Garbage collection", checkGC),
+    guarded("events", "Registry events", checkEvents),
   ]);
   return checks;
+}
+
+// --- registry event outbox ---------------------------------------------------
+
+/**
+ * Events registryd recorded but the web app has not processed yet. A few
+ * pending rows are normal right after a push; rows older than the drain
+ * interval, or rows that hit the attempt limit, mean the scheduler is not
+ * running or event processing keeps failing.
+ */
+async function checkEvents(): Promise<HealthCheck> {
+  const key = "events";
+  const title = "Registry events";
+  const stats = await outboxStats();
+  const details = [
+    { label: "Waiting", value: String(stats.pending) },
+    { label: "Given up", value: String(stats.stuck) },
+    { label: "Oldest waiting", value: stats.oldestPendingSeconds === null ? "—" : `${Math.round(stats.oldestPendingSeconds / 60)} min` },
+    { label: "Recovered from the outbox (24 h)", value: String(stats.drainedLastDay) },
+  ];
+  if (stats.stuck > 0) {
+    return {
+      key,
+      title,
+      status: "error",
+      summary: `${stats.stuck} event${stats.stuck === 1 ? "" : "s"} failed ${OUTBOX_MAX_ATTEMPTS} times and will not be retried — check the web logs`,
+      details,
+    };
+  }
+  if ((stats.oldestPendingSeconds ?? 0) > 600) {
+    return {
+      key,
+      title,
+      status: "warn",
+      summary: `${stats.pending} event${stats.pending === 1 ? "" : "s"} waiting for ${Math.round((stats.oldestPendingSeconds ?? 0) / 60)} min — is the scheduler running?`,
+      details,
+    };
+  }
+  return {
+    key,
+    title,
+    status: "ok",
+    summary: stats.pending === 0 ? "Every registry event has been processed" : `${stats.pending} event${stats.pending === 1 ? "" : "s"} in flight`,
+    details,
+  };
 }
 
 /** Cheap probe for uptime monitors: database + registry. */
@@ -441,11 +488,20 @@ export async function quickHealth(): Promise<{
   status: "ok" | "degraded";
   database: { ok: boolean; latencyMs: number; error?: string };
   registry: { ok: boolean; latencyMs: number; error?: string };
+  /** Registry events waiting for processing; null when the table is unavailable. */
+  events: { pending: number; stuck: number } | null;
 }> {
-  const [database, registry] = await Promise.all([probeDatabase(), probeRegistry()]);
+  const [database, registry, events] = await Promise.all([
+    probeDatabase(),
+    probeRegistry(),
+    outboxStats()
+      .then((s) => ({ pending: s.pending, stuck: s.stuck }))
+      .catch(() => null),
+  ]);
   return {
     status: database.ok && registry.ok ? "ok" : "degraded",
     database,
     registry: { ok: registry.ok, latencyMs: registry.latencyMs, error: registry.error },
+    events,
   };
 }

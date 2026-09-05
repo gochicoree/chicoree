@@ -7,9 +7,10 @@ import { TagRulesManager, type TagRuleItem } from "@/components/tag-rules-manage
 import { orgPolicy } from "@/lib/pull-policy";
 import { getRetentionPolicies, toSettings } from "@/lib/retention";
 import { listTagRules, type TagRuleRow } from "@/lib/tag-rules";
-import { listMemberKeys, listTrustedKeys, type TrustedKeyRow } from "@/lib/signatures";
+import { listMemberKeys, listTrustedKeys, type TrustedKeyRow, listTrustedIdentities, type TrustedIdentityRow } from "@/lib/signatures";
 import { SignaturePolicyForm } from "@/components/signature-policy-form";
 import { TrustedKeysManager, type TrustedKeyItem } from "@/components/trusted-keys-manager";
+import { TrustedIdentitiesManager, type TrustedIdentityItem } from "@/components/trusted-identities-manager";
 import { repoSettingsContext } from "../context";
 
 function serializeRules(rows: TagRuleRow[]): TagRuleItem[] {
@@ -34,9 +35,20 @@ function serializeKeys(rows: TrustedKeyRow[]): TrustedKeyItem[] {
   }));
 }
 
+function serializeIdentities(rows: TrustedIdentityRow[]): TrustedIdentityItem[] {
+  return rows.map((i) => ({
+    id: i.id,
+    name: i.name,
+    issuer: i.issuer,
+    subject: i.subject,
+    repositoryId: i.repositoryId,
+    createdAt: i.createdAt.toISOString(),
+  }));
+}
+
 export default async function RepoPolicyPage({ params }: { params: Promise<{ org: string; repo: string }> }) {
   const { repo } = await repoSettingsContext(params);
-  const [orgSettings, rules, orgRules, retention, keys, orgKeys, memberKeys] = await Promise.all([
+  const [orgSettings, rules, orgRules, retention, keys, orgKeys, memberKeys, identities, orgIdentities] = await Promise.all([
     db.query.organizationSettings.findFirst({
       where: eq(organizationSettings.organizationId, repo.organizationId),
     }),
@@ -46,6 +58,8 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
     listTrustedKeys(repo.organizationId, repo.id),
     listTrustedKeys(repo.organizationId, null),
     listMemberKeys(repo.organizationId),
+    listTrustedIdentities(repo.organizationId, repo.id),
+    listTrustedIdentities(repo.organizationId, null),
   ]);
   const memberKeyCount = (orgSettings?.trustMemberKeys ?? true) ? memberKeys.length : 0;
   return (
@@ -62,7 +76,7 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
         repositoryId={repo.id}
         value={repo.requireSignature ?? null}
         inherited={orgSettings?.requireSignature ?? false}
-        keyCount={keys.length + orgKeys.length + memberKeyCount}
+        keyCount={keys.length + orgKeys.length + memberKeyCount + identities.length + orgIdentities.length}
       />
       <TrustedKeysManager
         scope="repository"
@@ -70,6 +84,13 @@ export default async function RepoPolicyPage({ params }: { params: Promise<{ org
         repositoryId={repo.id}
         keys={serializeKeys(keys)}
         inherited={serializeKeys(orgKeys)}
+      />
+      <TrustedIdentitiesManager
+        scope="repository"
+        organizationId={repo.organizationId}
+        repositoryId={repo.id}
+        identities={serializeIdentities(identities)}
+        inherited={serializeIdentities(orgIdentities)}
       />
       <TagRulesManager
         scope="repository"

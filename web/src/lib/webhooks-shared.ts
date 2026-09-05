@@ -47,6 +47,24 @@ export function eventsForScope(scope: "repository" | "organization"): WebhookEve
   return WEBHOOK_EVENTS.filter((e) => scope === "organization" || !e.organizationOnly);
 }
 
+/**
+ * Body formats. "json" is the documented payload; the others render the same
+ * event as a message for a chat service's incoming webhook (lib/webhook-chat.ts).
+ */
+export type WebhookFormat = "json" | "slack" | "discord" | "teams" | "text";
+
+export const WEBHOOK_FORMATS: { value: WebhookFormat; label: string; description: string }[] = [
+  { value: "json", label: "JSON payload", description: "The full event for your own receiver" },
+  { value: "slack", label: "Slack", description: "Incoming webhook message (Block Kit)" },
+  { value: "discord", label: "Discord", description: "Webhook message with an embed" },
+  { value: "teams", label: "Microsoft Teams", description: "Adaptive Card for a Workflows webhook" },
+  { value: "text", label: "Plain text", description: "{ \"text\": … } for Mattermost, Google Chat, Rocket.Chat" },
+];
+
+export function isWebhookFormat(value: string): value is WebhookFormat {
+  return WEBHOOK_FORMATS.some((f) => f.value === value);
+}
+
 export const MAX_WEBHOOKS_PER_REPO = 5;
 export const MAX_WEBHOOKS_PER_ORG = 10;
 
@@ -56,6 +74,7 @@ export interface WebhookRow {
   name: string;
   url: string;
   method: string;
+  format: WebhookFormat;
   headers: Record<string, string>;
   authType: string;
   authHeaderName: string | null;
