@@ -198,8 +198,12 @@ through an old name get no grant at all.
   matching repository quota is checked before anything is written.
 - **Quotas**: before committing a blob (or mounting one into another org)
   and before auto-creating a repository, `registryd` checks the organization's
-  limits and every owner's account limits (`internal/store/quota.go`) and
-  answers `403 DENIED` with the reason. The web app applies the same rules
+  own limit or, when it has none of that kind, every owner's account limit
+  (`internal/store/quota.go`) and answers `403 DENIED` with the reason. An
+  organization with its own limit is outside the owners' pool: the owner-side
+  usage sums (`ownerStorageUsedSQL`, the repository count) left-join
+  `organization_limits` and skip organizations whose limit of that kind is
+  set. The web app applies the same rules
   (`web/src/lib/quota.ts`) when repositories or organizations are created
   through the UI or the REST API. `organization_limits.max_members` is
   web-only: `checkMemberQuota` runs in the organization hooks

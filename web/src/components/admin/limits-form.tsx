@@ -37,8 +37,8 @@ export function LimitsForm({
         title={scope === "user" ? "Account limits" : "Organization limits"}
         description={
           scope === "user"
-            ? "Caps for everything this user owns, summed across organizations where they are an owner. Leave a field empty for no limit."
-            : "Caps for this organization. Owner-level account limits apply on top. Leave a field empty for no limit."
+            ? "Caps for what this user owns, summed across their organizations that have no limit of their own. Leave a field empty for no limit."
+            : "Caps for this organization. A limit set here governs the organization; the owners' account limits apply only where it has none. Leave a field empty for no limit."
         }
       />
       <CardBody>

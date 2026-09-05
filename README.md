@@ -1510,6 +1510,14 @@ Set them under *Administration → Users / Organizations*, where usage is shown
 against each limit. Owners and admins are emailed when an organization reaches
 80 % or 95 % of a limit — see [Notifications](#notifications).
 
+**Which limit applies.** An organization's own limit governs it alone: when
+an organization has, say, a storage limit of its own, the owners' account
+storage limits are not consulted for pushes into it, and its storage does not
+count against their accounts. Account limits cover the owner's organizations
+that have no limit of that kind — their shared pool. So an administrator can
+give one organization a large allowance of its own while the owner's other
+organizations keep sharing the account's.
+
 **Members.** An organization can also be capped at a number of members (any
 role). An open invitation holds a seat until it is accepted or cancelled, so
 inviting is refused when members plus open invitations would reach the limit;

@@ -7,9 +7,21 @@ import { API_BASE, API_CHANGELOG, API_NOTICE, API_REVISION } from "./version";
 
 type Schema = Record<string, unknown>;
 
-/** "public | private" → enum; integer / boolean / date / string → the JSON Schema type. */
+const JSON_TYPES = new Set(["string", "integer", "number", "boolean"]);
+
+/**
+ * Parameter types as written in the catalog: `integer`, `boolean`, `date`,
+ * `string`; `integer | null` and the like become nullable JSON types;
+ * `public | private | null` becomes an enum whose `null` is a JSON null.
+ */
 function schemaFor(type: string): Schema {
-  if (type.includes("|")) return { type: "string", enum: type.split("|").map((s) => s.trim()) };
+  if (type.includes("|")) {
+    const parts = type.split("|").map((s) => s.trim());
+    const nullable = parts.includes("null");
+    const rest = parts.filter((s) => s !== "null");
+    if (rest.every((s) => JSON_TYPES.has(s))) return { type: nullable ? [...rest, "null"] : rest.length === 1 ? rest[0] : rest };
+    return { type: nullable ? ["string", "null"] : "string", enum: nullable ? [...rest, null] : rest };
+  }
   switch (type) {
     case "integer":
       return { type: "integer" };

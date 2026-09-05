@@ -20,6 +20,13 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-05.5",
+    changes: [
+      "Changed: an organization's own limit governs it alone. When an organization has a storage or repository limit of its own, the owners' account limits are not consulted for it and its usage does not count against their accounts; account limits cover the owner's organizations without such a limit. GET /me/usage and GET /users/{userId}/usage report that pool. Enforced the same way by registryd at push time.",
+      "OpenAPI: `integer | null` body fields are typed as nullable integers, and enums with null carry a JSON null instead of the string \"null\".",
+    ],
+  },
+  {
     revision: "2026-09-05.4",
     changes: [
       "Member limit: organizations can be capped at a number of members (Administration → Organizations → Limits, maxMembers); an open invitation holds a seat. Enforced when inviting, accepting an invitation, adding a member and on group-binding logins. GET /orgs/{org}/usage reports members and maxMembers.",

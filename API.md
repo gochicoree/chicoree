@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-05.4` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-05.5` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.4`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-05.5`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -2816,7 +2816,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### <a id="get-me-usage"></a>`GET /api/v1/me/usage`
 
-My usage against my limits — Everything the caller owns, summed across the organizations where they are an owner, against their account limits; with the month's traffic and the label administrators gave the account (a plan name, say).
+My usage against my limits — What counts against the caller's account limits: the organizations they own that have no limit of their own for that kind; with the month's traffic and the label administrators gave the account (a plan name, say).
 
 **Who:** a signed-in user or personal access token · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
 
@@ -3040,7 +3040,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### <a id="get-users-userId-limits"></a>`GET /api/v1/users/{userId}/limits`
 
-Account limits — The account's limits row: caps on everything the user owns, summed across their organizations. `configured` is false when there is no row (unlimited).
+Account limits — The account's limits row: caps on what the user owns, summed across their organizations that have no limit of their own. `configured` is false when there is no row (unlimited).
 
 **Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
 
@@ -3139,7 +3139,7 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ### <a id="get-orgs-org-limits"></a>`GET /api/v1/orgs/{org}/limits`
 
-Organization limits — The organization's limits row. Owner-level account limits apply on top; `configured` is false when there is no row.
+Organization limits — The organization's limits row. A limit set here governs the organization; the owners' account limits apply only to kinds it leaves unlimited. `configured` is false when there is no row.
 
 **Who:** instance administrators · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.4
 
@@ -3239,6 +3239,11 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-05.5
+
+- Changed: an organization's own limit governs it alone. When an organization has a storage or repository limit of its own, the owners' account limits are not consulted for it and its usage does not count against their accounts; account limits cover the owner's organizations without such a limit. GET /me/usage and GET /users/{userId}/usage report that pool. Enforced the same way by registryd at push time.
+- OpenAPI: `integer | null` body fields are typed as nullable integers, and enums with null carry a JSON null instead of the string "null".
 
 ### 2026-09-05.4
 
