@@ -17,7 +17,7 @@ export function Tabs({
     <div>
       <div
         role="tablist"
-        className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0"
+        className="-mx-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 scrollbar-none sm:mx-0 sm:px-0"
       >
         {tabs.map((tab, i) => (
           <button

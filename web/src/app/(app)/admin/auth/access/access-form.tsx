@@ -191,7 +191,7 @@ export function AccessForm({ access, source, appUrl }: { access: AccessSettings;
               name="apiEnabled"
               label="REST API switched on"
               defaultChecked={access.apiEnabled}
-              hint="Off: every /api/v1 endpoint answers 403 api_disabled, the API page and the OpenAPI document go away for everyone. docker login and the jobs API keep working."
+              hint="Off: every /api/v1 endpoint answers 403 api_disabled and the API page, its menu entry and the OpenAPI document disappear. docker login and the jobs API keep working."
             />
           </fieldset>
 

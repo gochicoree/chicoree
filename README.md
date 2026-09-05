@@ -1817,9 +1817,8 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
 - **Switching it off**: *Administration → Auth providers → Access → REST
   API* (default from `API_ENABLED`). While off, every endpoint, the index
   and the OpenAPI document answer `403` with code `api_disabled`, the API
-  page and its sidebar entry disappear for users (administrators keep the
-  entry so they find the switch), and `docker login` and the jobs API keep
-  working.
+  page and its sidebar entry disappear for everyone, and `docker login` and
+  the jobs API keep working.
 - **Who can do what**: read-only tokens read; read & write tokens also
   change things; a token limited to an organization or a repository list
   sees nothing outside it (and cannot search or create repositories).
