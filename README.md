@@ -815,7 +815,7 @@ Webhooks exist at two levels. **Repository webhooks** (*Repository →
 Settings → Webhooks*, up to five) fire for events in that repository;
 **organization webhooks** (*Organization → Settings → Webhooks*, up to ten)
 fire for events in every repository of the organization, plus the
-organization-level `quota.warning`. Both share the same form — HTTP method
+organization-level `quota.warning`, `quota.exceeded` and `quota.pruned`. Both share the same form — HTTP method
 (POST/PUT/PATCH), extra headers, authentication (bearer token, basic auth or a
 custom header; secrets are encrypted at rest) and an optional signing secret
 that adds `X-Chicoree-Signature: sha256=<hmac>` so receivers can verify the
@@ -841,6 +841,8 @@ picks the events it wants:
 | `retention.completed` | a retention run deleted (or, as a dry run, would delete) tags | `dryRun`, `deletedTags`, `deletedDigests`, `keptTags`, `policy`, `actor` |
 | `repository.renamed`, `repository.transferred` | the repository got a new name or moved to another organization — see [Renaming and transferring](#renaming-and-transferring) | the repository block for the new name, `previous { organization, name, path }`, `actor` |
 | `quota.warning` | usage reached 80 % / 95 % of a limit (organization hooks only) | `organization { slug, name }`, `quota { kind, used, limit, percent, threshold }`; `repository` is `null` |
+| `quota.exceeded` | storage is above the limit; the first notice and the reminder before pruning (organization hooks only) | `organization { slug, name }`, `quota { kind: "storage", used, limit, pruneAt, reminder }`; `repository` is `null` |
+| `quota.pruned` | the `quota-enforce` job removed images to meet the storage limit (organization hooks only) | `organization { slug, name }`, `quota { kind: "storage", used, limit, freed, tags, manifests, unmet }`; `repository` is `null` |
 
 Every delivery carries the same envelope plus the headers `X-Chicoree-Event`
 and `X-Chicoree-Delivery`; the `push` body is what earlier versions sent.
@@ -873,6 +875,8 @@ The people responsible get an email when something needs attention:
 | `mirror.failed` | organization owners and admins | a mirror sync fails |
 | `webhook.failed` | organization owners and admins | a webhook delivery fails after its final retry |
 | `quota.warning` | organization owners and admins | storage or repository usage reaches 80 % / 95 % of a limit — once per threshold, organization and 24 hours |
+| `quota.exceeded` | organization owners and admins, or the account holder for an account limit | storage is above the limit: once when first seen, once more two days before pruning starts |
+| `quota.pruned` | organization owners and admins, or the account holder | the `quota-enforce` job removed images to meet the limit, with what went |
 | `job.failed` | instance administrators | a job run fails (manual, API or scheduled) |
 | `token.expiring` | the token's owner, or the organization's owners and admins for a service account | a credential expires within seven days — once per credential, sent by the `token-expiry` job |
 
@@ -1519,6 +1523,23 @@ Set them under *Administration → Users / Organizations*, where usage is shown
 against each limit. Owners and admins are emailed when an organization reaches
 80 % or 95 % of a limit — see [Notifications](#notifications).
 
+**Over the limit.** A lowered limit never deletes anything by itself: pulls
+keep working and only pushes that need new layers are refused. The
+`quota-enforce` job (*Administration → Jobs → Over the limit*) is how an
+instance gets its space back when owners do not act. Each run records who is
+above a storage limit — an organization against its own limit, an account
+against its pool — mails the owners once with the date pruning starts, mails
+again two days before it, and after `graceDays` (default 14) removes the
+oldest images until the limit is met: untagged leftovers first, then tags by
+last push, taking an image with its last tag and its variants and
+attestations with it. Protected tags and the images they name are never
+removed; if they alone keep a target over the limit, the job says so and
+pushes stay refused. Garbage collection runs afterwards. The job is a dry
+run until scheduled with `dryRun=false`; targets that fit again are
+forgotten. Both notices are also webhook events (`quota.exceeded`,
+`quota.pruned`) and can be switched off per user under *Settings →
+Notifications*.
+
 **Which limit applies.** An organization's own limit governs it alone: when
 an organization has, say, a storage limit of its own, the owners' account
 storage limits are not consulted for pushes into it, and its storage does not
@@ -1967,7 +1988,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
   `mirror-sync` (re-sync every enabled mirror), `proxy-evict` (drop
   proxy-cache tags nobody pulled for `unusedFor`; `dryRun=true` only counts),
   `retention` (apply retention policies; a dry run unless
-  `dryRun=false`, narrowed by `organization=` / `repository=`) and
+  `dryRun=false`, narrowed by `organization=` / `repository=`),
+  `quota-enforce` (notify and, after `graceDays`, prune organizations and
+  accounts above their storage limit down to it; a dry run unless
+  `dryRun=false` — see [Limits](#limits)) and
   `reverify-signatures` (re-check every cosign signature and attestation
   against the trusted and personal keys, optionally one `organization=`). Add
   `?wait=false` to queue and return immediately. All of them can also run on

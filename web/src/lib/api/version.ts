@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.2",
+    changes: [
+      "Storage enforcement: the quota-enforce job (Administration → Jobs, POST /api/jobs/quota-enforce) notifies organizations and accounts above their storage limit and, after graceDays, removes the oldest images until the limit is met, protected tags excepted, then runs garbage collection. New notification and organization webhook events quota.exceeded and quota.pruned.",
+    ],
+  },
+  {
     revision: "2026-09-06.1",
     changes: [
       "Changed: the plan card on Settings and Organization → Settings appears only while an account portal is configured; a self-hosted registry with plain limits shows users nothing about them. The label on limits rows is documented accordingly.",

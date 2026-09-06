@@ -220,6 +220,16 @@ through an old name get no grant at all.
   a `note` only administrators see. The `portal` settings row enables the
   better-auth `oneTimeToken` plugin; the Manage button on the settings pages
   generates a token and redirects to the portal with it.
+- **Storage enforcement**: the `quota-enforce` job (`lib/quota-enforce.ts`)
+  finds targets above a storage limit (`findBreaches`: organizations with
+  their own limit, accounts across their pool), keeps them in
+  `quota_breaches` (first seen, notices sent, pruned), notifies through
+  `lib/notify.ts` (`quota.exceeded`, `quota.pruned`; organization webhooks
+  too) and, once `graceDays` have passed, prunes with the pure planner in
+  `lib/quota-enforce-shared.ts` (`planPruneToFit`: distinct blob bytes of
+  live manifests, oldest untagged then oldest tags, cascading to referrers
+  and orphaned index children, protected tags excluded) through `deleteTag`
+  / `deleteManifestByDigest`, then triggers GC.
 - **Manifests** are stored verbatim in Postgres (`manifests.payload`) —
   digests must verify byte-for-byte — together with parsed metadata
   (media type, config digest, subject digest for referrers) and an explicit

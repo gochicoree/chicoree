@@ -13,6 +13,7 @@ import { runAllMirrors } from "./mirror";
 import { evictProxyTags } from "./proxy";
 import { notify } from "./notify";
 import { PAGE_SIZES, paginatedQuery } from "./paginate-shared";
+import { runQuotaEnforcement } from "./quota-enforce";
 import { runRetention } from "./retention";
 import { reverifyOrganization } from "./signatures";
 import { runTokenExpiryReminders } from "./token-expiry";
@@ -147,6 +148,26 @@ JOBS.retention = {
       dryRun: params.dryRun !== "false",
       organizationSlug: params.organization || undefined,
       repositoryPath: params.repository || undefined,
+      subject: "user:system",
+    }),
+};
+
+JOBS["quota-enforce"] = {
+  name: "quota-enforce",
+  tab: "Over the limit",
+  title: "Enforce storage limits",
+  description:
+    "Finds organizations and accounts above their storage limit, tells their owners and, once they have been over for the grace period, removes the oldest images — untagged leftovers first, then tags by last push, protected tags never — until the limit is met, and runs garbage collection. Dry run by default: reports who is over and what would go.",
+  params: [
+    { name: "graceDays", description: "Days a target may stay over its limit before pruning starts", default: "14" },
+    { name: "dryRun", description: "true only reports; false notifies and prunes", default: "true" },
+    { name: "organization", description: "Only this organization (slug)", default: "" },
+  ],
+  run: async (params) =>
+    runQuotaEnforcement({
+      graceDays: Math.max(0, Math.min(365, Number(params.graceDays) || 14)),
+      dryRun: params.dryRun !== "false",
+      organizationSlug: params.organization || undefined,
       subject: "user:system",
     }),
 };

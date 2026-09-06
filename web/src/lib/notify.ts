@@ -28,6 +28,8 @@ import { emitOrganizationEvent, emitRepositoryEvent, tagsForDigest } from "./web
 export type { NotificationEvent };
 
 export type QuotaKind = "storage" | "public repositories" | "private repositories";
+/** Whose storage limit: an organization's own, or an account's across the organizations it owns. */
+export type QuotaTarget = { type: "organization"; organizationId: string } | { type: "user"; userId: string };
 
 export type NotifyInput =
   | { event: "scan.blocked"; repositoryId: string; blocked: { digest: string; reason: string }[] }
@@ -52,6 +54,8 @@ export type NotifyInput =
       attempts: number;
     }
   | { event: "quota.warning"; organizationId: string; kind: QuotaKind; used: number; limit: number; threshold: 80 | 95 }
+  | { event: "quota.exceeded"; target: QuotaTarget; used: number; limit: number; pruneAt: Date; reminder: boolean }
+  | { event: "quota.pruned"; target: QuotaTarget; used: number; limit: number; freed: number; tags: number; manifests: number; unmet: boolean; detail: string[] }
   | { event: "job.failed"; job: string; runId: string; error: string; triggeredBy: string }
   | {
       event: "token.expiring";
@@ -392,6 +396,79 @@ export async function notify(input: NotifyInput): Promise<void> {
       await emitOrganizationEvent(org.id, "quota.warning", {
         quota: { kind: input.kind, used: input.used, limit: input.limit, percent, threshold: input.threshold },
       }).catch((err) => console.error("quota.warning webhook failed:", err));
+      return;
+    }
+
+    case "quota.exceeded":
+    case "quota.pruned": {
+      // Who and where: the organization's managers, or the account itself for its pool.
+      let recipients: Recipient[] = [];
+      let who = "";
+      let url = env.appUrl;
+      let orgId: string | null = null;
+      if (input.target.type === "organization") {
+        const org = await db.query.organization.findFirst({ where: eq(organization.id, input.target.organizationId) });
+        if (!org) return;
+        recipients = await orgManagers(org.id);
+        who = org.name;
+        url = `${env.appUrl}/${org.slug}`;
+        orgId = org.id;
+      } else {
+        const u = await db.query.user.findFirst({ where: eq(userTable.id, input.target.userId) });
+        if (!u || u.banned || !u.email) return;
+        recipients = [{ id: u.id, email: u.email, name: u.name }];
+        who = "the organizations you own";
+        url = `${env.appUrl}/settings`;
+      }
+      const footer = input.target.type === "organization" ? FOOTER : "You receive this because the limit is on your account. Change what is sent to you under Settings → Notifications.";
+      if (input.event === "quota.exceeded") {
+        const date = input.pruneAt.toISOString().slice(0, 10);
+        const title = input.reminder ? "Images will be removed soon" : "Storage limit exceeded";
+        const message = compose(
+          title,
+          `${input.reminder ? "Reminder: " : ""}${who} is over its storage limit (${formatBytes(input.used)} of ${formatBytes(input.limit)})`,
+          [
+            `${who} stores ${formatBytes(input.used)}, above the limit of ${formatBytes(input.limit)}. Pushes that need new layers are refused until it fits.`,
+            `Free up space — delete tags or set a retention policy — or raise the limit. On ${date} the registry starts removing the oldest images itself, tags first, until the limit is met. Protected tags are never removed.`,
+          ],
+          [
+            `<strong>${esc(who)}</strong> stores <strong>${esc(formatBytes(input.used))}</strong>, above the limit of ${esc(formatBytes(input.limit))}. Pushes that need new layers are refused until it fits.`,
+            `Free up space — delete tags or set a retention policy — or raise the limit. On <strong>${date}</strong> the registry starts removing the oldest images itself, tags first, until the limit is met. Protected tags are never removed.`,
+          ],
+          { href: url, label: input.target.type === "organization" ? "Open the organization" : "Open your settings" },
+          footer,
+        );
+        await send("quota.exceeded", recipients, message);
+        if (orgId) {
+          await emitOrganizationEvent(orgId, "quota.exceeded", {
+            quota: { kind: "storage", used: input.used, limit: input.limit, pruneAt: input.pruneAt.toISOString(), reminder: input.reminder },
+          }).catch((err) => console.error("quota.exceeded webhook failed:", err));
+        }
+        return;
+      }
+      const lines = input.detail.length ? [`Removed: ${input.detail.join("; ")}${input.tags + input.manifests > input.detail.length ? "; …" : ""}`] : [];
+      const message = compose(
+        "Images removed to fit the storage limit",
+        `${who}: ${input.tags} tag${input.tags === 1 ? "" : "s"} and ${input.manifests} image${input.manifests === 1 ? "" : "s"} removed to fit the storage limit`,
+        [
+          `${who} was above its storage limit of ${formatBytes(input.limit)} for the whole grace period, so the registry removed the oldest images: ${input.tags} tag${input.tags === 1 ? "" : "s"} and ${input.manifests} image${input.manifests === 1 ? "" : "s"}, about ${formatBytes(input.freed)}.`,
+          input.unmet ? "Protected tags keep it above the limit; pushes stay refused until you free space or raise the limit." : "Pushes work again once garbage collection has run.",
+          ...lines,
+        ],
+        [
+          `<strong>${esc(who)}</strong> was above its storage limit of ${esc(formatBytes(input.limit))} for the whole grace period, so the registry removed the oldest images: <strong>${input.tags}</strong> tag${input.tags === 1 ? "" : "s"} and <strong>${input.manifests}</strong> image${input.manifests === 1 ? "" : "s"}, about ${esc(formatBytes(input.freed))}.`,
+          esc(input.unmet ? "Protected tags keep it above the limit; pushes stay refused until you free space or raise the limit." : "Pushes work again once garbage collection has run."),
+          ...lines.map(esc),
+        ],
+        { href: url, label: input.target.type === "organization" ? "Open the organization" : "Open your settings" },
+        footer,
+      );
+      await send("quota.pruned", recipients, message);
+      if (orgId) {
+        await emitOrganizationEvent(orgId, "quota.pruned", {
+          quota: { kind: "storage", used: input.used, limit: input.limit, freed: input.freed, tags: input.tags, manifests: input.manifests, unmet: input.unmet },
+        }).catch((err) => console.error("quota.pruned webhook failed:", err));
+      }
       return;
     }
 
