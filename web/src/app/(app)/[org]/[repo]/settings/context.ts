@@ -1,12 +1,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { getOrgContext } from "@/lib/session";
 import { getRepoByPath } from "@/lib/data";
-import { MANAGER_ROLES } from "@/lib/org-roles";
+import { getRepoContext } from "@/lib/repo-access";
 import { decodeRepoParam, repoHref } from "@/lib/proxy-shared";
 import { redirectMovedRepository } from "@/lib/redirects";
 
-/** Repository + access check shared by every settings tab (managers only). */
+/** Repository + access check shared by every settings tab (admin permission: owners, admins, or an admin grant). */
 export async function repoSettingsContext(params: Promise<{ org: string; repo: string }>) {
   const { org: orgSlug, repo: rawRepo } = await params;
   const repoName = decodeRepoParam(rawRepo);
@@ -18,8 +17,8 @@ export async function repoSettingsContext(params: Promise<{ org: string; repo: s
     const marker = pathname.indexOf("/settings");
     return redirectMovedRepository(orgSlug, repoName, marker >= 0 ? pathname.slice(marker) : "/settings");
   }
-  const ctx = await getOrgContext(orgSlug);
+  const access = await getRepoContext(orgSlug, repoName);
   const href = repoHref(orgSlug, repoName);
-  if (!ctx?.role || !MANAGER_ROLES.includes(ctx.role)) redirect(href);
-  return { orgSlug, repoName, repo: found.repo, href, base: `${href}/settings` };
+  if (!access?.can.manage) redirect(href);
+  return { orgSlug, repoName, repo: found.repo, org: access.org, role: access.role, href, base: `${href}/settings` };
 }

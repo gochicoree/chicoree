@@ -647,6 +647,19 @@ URL, which both services honour.
   repositories are pullable by anyone, including anonymously. Instance
   admins can do everything. Switching a repository from private to public
   asks for confirmation.
+- **Per-repository permissions.** The role is the baseline for every
+  repository; *Repository → Settings → Access* raises what one person or
+  one **team** may do in that repository: `pull`, `push` (also retag and
+  copy in) or `admin` (also delete images, change settings, manage access).
+  A grant never lowers anything, so the way to give someone push on one
+  repository only is the `viewer` role plus a `push` grant. Grants apply
+  to `docker` tokens, the REST API and the pages alike, count only while
+  the person is a member, and disappear with the membership.
+- **Teams** (*Organization → Teams*) group members; a grant to a team covers
+  everyone in it, and people join or leave teams without touching their
+  organization role. Owners and admins manage teams; every member can see
+  them. Service accounts keep their own model: a permission plus an
+  optional repository list.
 - **`docker login` credentials**: personal access tokens (`chc_pat_…`, per
   user, read-only or read-write) and service accounts (`chc_sa_…`, per org,
   pull / push / admin) — both usable as the password with any username.
@@ -1441,6 +1454,22 @@ For a multi-arch image the tab shows what is attached to the index and to
 each platform variant (`cosign sign --recursive` signs all of them). An
 empty tab offers the sign-and-attach commands only to people who may push
 to the repository; visitors and read-only members see a plain note.
+
+**Notation.** Signatures made with [Notation](https://notaryproject.dev)
+(`notation sign cr.example.com/acme/app@sha256:…`) are referrers of type
+`application/vnd.cncf.notary.signature` and show up on the same tab as
+*Notation signature* with the signing certificate's subject, issuer and
+signing time. Chicorée verifies the JWS envelope against the certificate
+in the envelope, checks that the payload names this image and that the
+signature has not expired, and calls it **verified** when the signing
+certificate — or any certificate above it in the embedded chain, such as
+your CA — is in the trust store: paste the certificate PEM under *Settings →
+Policies → Trusted signing keys*, which accepts certificates next to cosign
+public keys (the fingerprint compared is that of the certificate's public
+key). A verified Notation signature satisfies the signature pull policy like
+a cosign one. Not covered: Notation trust-policy files, revocation checks,
+timestamp countersignatures, and COSE envelopes, which are listed but not
+verified.
 
 Signing and attesting with cosign v3 (the registry has no TLS in this
 example, hence `--allow-http-registry`; drop it for a real deployment):

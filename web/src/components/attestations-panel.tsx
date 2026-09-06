@@ -204,6 +204,13 @@ export function AttestationsPanel({
                     manifest <Digest digest={s.digest} />
                   </span>
                   {s.sig?.checks[0]?.signedReference && <span className="break-all">reference {s.sig.checks[0].signedReference}</span>}
+                  {s.format === "notation" && s.sig?.checks[0]?.identity && (
+                    <span className="break-all">
+                      certificate {s.sig.checks[0].identity}
+                      {s.sig.checks[0].issuer && s.sig.checks[0].issuer !== s.sig.checks[0].identity ? `, issued by ${s.sig.checks[0].issuer}` : ""}
+                      {s.sig.checks[0].signedAt ? `, signed ${relativeTime(s.sig.checks[0].signedAt)}` : ""}
+                    </span>
+                  )}
                   {s.sig?.checks[0]?.payloadDigest && (
                     <span>
                       payload <Digest digest={s.sig.checks[0].payloadDigest} />

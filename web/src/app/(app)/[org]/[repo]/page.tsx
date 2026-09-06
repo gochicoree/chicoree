@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Globe, Settings, Tag as TagIcon } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
-import { countArtifactTags, egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, trafficSummary } from "@/lib/data";
+import { countArtifactTags, egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, sizeSeries, trafficSummary } from "@/lib/data";
 import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
 import { env } from "@/lib/env";
 import { scanningEnabled } from "@/lib/scanners";
@@ -35,6 +35,7 @@ import { CompareBar } from "./compare/compare-bar";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoVersionOf } from "@/lib/logo";
 import { logoRef } from "@/lib/logo-shared";
+import { getRepoContext } from "@/lib/repo-access";
 
 export default async function RepoPage({
   params,
@@ -49,8 +50,8 @@ export default async function RepoPage({
   const found = await getRepoByPath(orgSlug, repoName);
   // Renamed / transferred repositories: 308 to the new address.
   if (!found) return redirectMovedRepository(orgSlug, repoName);
-  const ctx = await getOrgContext(orgSlug);
-  const role = ctx?.role ?? null;
+  const access = await getRepoContext(orgSlug, repoName);
+  const role = access?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
   const session = await getSession();
 
@@ -58,12 +59,13 @@ export default async function RepoPage({
   // out of the lists unless the viewer (Settings → Display) or, failing a
   // choice there, the instance (Administration → Branding) wants them.
   const hideArtifacts = !(await showArtifactsFor(session?.user.id ?? null));
-  const [tags, overview, series, proxy, egress, traffic, rules, untagged, star, about, storage, hiddenTags, hiddenUntagged] = await Promise.all([
+  const [tags, overview, series, proxy, egress, sizes, traffic, rules, untagged, star, about, storage, hiddenTags, hiddenUntagged] = await Promise.all([
     listRepoTags(found.repo.id, { page: pageParam(query, "tags"), pageSize: PAGE_SIZES.tags, hideArtifacts }),
     repoTagOverview(found.repo.id),
     role ? pullSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     getOrgProxy(found.org.id),
     role ? egressSeries({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
+    role ? sizeSeries({ repoId: found.repo.id, days: 90 }) : Promise.resolve(null),
     role ? trafficSummary({ repoId: found.repo.id, days: 30 }) : Promise.resolve(null),
     effectiveTagRules(found.repo.organizationId, found.repo.id),
     untaggedManifestsPage(found.repo.id, { page: pageParam(query, "untagged"), pageSize: PAGE_SIZES.untagged, hideArtifacts }),
@@ -105,8 +107,8 @@ export default async function RepoPage({
   const tagList = tags.rows;
   const lastChecked = overview.lastCheckedAt;
   const scanning = await scanningEnabled();
-  // Deleting tags follows the registry access model: owners and admins (instance admins act as owners).
-  const canDelete = role === "owner" || role === "admin";
+  // Deleting tags follows the registry access model: admin permission (role or grant; instance admins act as owners).
+  const canDelete = !!access?.can.delete;
   const latestDigest = overview.latestDigest;
   // Which tag rules lock each tag (immutable / protected) — for badges and the delete button.
   const flagsByTag = new Map(tagList.map((t) => [t.name, tagFlags(rules, t.name)]));
@@ -159,7 +161,7 @@ export default async function RepoPage({
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {session && <StarButton repositoryId={found.repo.id} starred={star.starred} count={star.count} />}
-          {(role === "owner" || role === "admin") && (
+          {access?.can.manage && (
             <Link href={`${base}/settings`} className={buttonClasses("secondary", "sm")}>
               <Settings className="size-3.5" /> Settings
             </Link>
@@ -296,7 +298,7 @@ export default async function RepoPage({
         />
       </Card>
 
-      <ReadmeCard html={readmeHtml} about={about} canEdit={role === "owner" || role === "admin"} settingsHref={`${base}/settings`} />
+      <ReadmeCard html={readmeHtml} about={about} canEdit={!!access?.can.manage} settingsHref={`${base}/settings`} />
 
       {showUntagged && (
         <Card>
@@ -406,6 +408,14 @@ export default async function RepoPage({
               <CardHeader eyebrow="Activity" title="Egress per day" description="Bytes served by the registry, last 30 days" />
               <CardBody>
                 <PullsChart data={egress} height={130} kind="bytes" />
+              </CardBody>
+            </Card>
+          )}
+          {sizes && sizes.some((d) => d.bytes > 0) && (
+            <Card className="lg:col-span-2">
+              <CardHeader eyebrow="Size" title="Image size over time" description="Compressed size of the newest image pushed each day, last 90 days; indexes and attached artifacts are left out" />
+              <CardBody>
+                <PullsChart data={sizes.map((d) => ({ day: d.day, count: d.bytes }))} height={130} kind="bytes" emptyLabel="No images pushed in the last 90 days." />
               </CardBody>
             </Card>
           )}

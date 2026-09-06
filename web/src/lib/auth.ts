@@ -30,6 +30,7 @@ import { getInstanceSettings, settingsVersion, type EffectiveSettings } from "./
 import { auditAfterHook, auditBefore, auditOrganizationHooks, auditSessionCreated, auditSessionDeleted, auditUserCreated, auditUserUpdate } from "./auth-audit";
 import { canCreateOrganization, enforceSignUpPolicy, INVITATION_HEADER, ORG_CREATION_DENIED } from "./signup-policy";
 import { clearOrganizationRedirect } from "./redirects";
+import { dropOrganizationAccess } from "./repo-access";
 
 /**
  * Fire-and-forget re-verification of an organization's signatures after a
@@ -288,6 +289,7 @@ function buildAuth(settings: EffectiveSettings) {
         // (in the background — it can touch every repository).
         afterRemoveMember: async (data) => {
           await auditOrganizationHooks.afterRemoveMember(data);
+          await dropOrganizationAccess(data.organization.id, data.member.userId).catch((err) => console.error("dropping team seats and grants failed:", err));
           reverifyAfterMembershipChange(data.organization.id);
         },
         afterUpdateMemberRole: async (data) => {

@@ -20,6 +20,15 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.1",
+    changes: [
+      "Teams: `GET/POST /orgs/{org}/teams`, `GET/PATCH/DELETE /orgs/{org}/teams/{team}`, `GET /orgs/{org}/teams/{team}/members`, `PUT/DELETE /orgs/{org}/teams/{team}/members/{userId}`. Teams group members of an organization so repository access can be granted to all of them at once.",
+      "Per-repository permissions: `GET /repos/{org}/{repo}/access`, `PUT/DELETE /repos/{org}/{repo}/access/{user|team}/{id}` with `permission: pull | push | admin`. The organization role stays the baseline for every repository; a grant raises what one person or one team may do in one repository. Docker tokens, the API's write checks and the pages honour grants.",
+      "`GET /repos/{org}/{repo}/size-history?days=` — the compressed size of the newest image pushed each day; the repository page charts it for members.",
+      "Notation signatures: referrers of type `application/vnd.cncf.notary.signature` are recognised (`format: notation` in attestation and signature responses), their JWS envelope verified against the embedded certificate, and counted as verified when the signing certificate or its issuer is in the trust store — trusted signing keys now accept X.509 certificate PEMs.",
+    ],
+  },
+  {
     revision: "2026-09-06.9",
     changes: [
       "Webhook format `custom` with `payloadTemplate`: a JSON body of your own with {{placeholders}} (repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>); a value that is exactly \"{{event}}\" embeds the whole event. Webhook responses carry `payloadTemplate` (null for other formats).",

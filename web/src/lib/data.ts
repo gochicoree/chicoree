@@ -505,6 +505,45 @@ export async function pullSeries(opts: {
   return rows.map((r) => ({ day: r.day as string, count: Number(r.count) }));
 }
 
+export interface DaySizeRow {
+  /** ISO date */
+  day: string;
+  /** Compressed size of the newest image pushed that day (layers + config); 0 when nothing was pushed. */
+  bytes: number;
+  digest: string | null;
+}
+
+/**
+ * Image size over time: for each of the last `days` days, the compressed
+ * size of the newest image manifest pushed to the repository that day.
+ * Indexes, referrers and attached artifacts are skipped — they are not the
+ * image people pull.
+ */
+export async function sizeSeries(opts: { repoId: string; days?: number }): Promise<DaySizeRow[]> {
+  const days = Math.min(Math.max(opts.days ?? 90, 1), 366);
+  const { rows } = await db.execute(sql`
+    WITH pushes AS (
+      SELECT (m.created_at AT TIME ZONE 'utc')::date AS day, m.digest, m.created_at,
+        (SELECT coalesce(sum(b.size), 0) FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
+          WHERE mr.repository_id = m.repository_id AND mr.manifest_digest = m.digest) AS bytes
+      FROM manifests m
+      WHERE m.repository_id = ${opts.repoId}
+        AND m.created_at > now() - make_interval(days => ${days})
+        AND m.subject_digest IS NULL AND m.artifact_type IS NULL
+        AND m.media_type NOT LIKE '%index%' AND m.media_type NOT LIKE '%list%'
+    ), latest AS (
+      SELECT DISTINCT ON (day) day, digest, bytes FROM pushes ORDER BY day, created_at DESC
+    )
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day, coalesce(l.bytes, 0)::bigint AS bytes, l.digest
+    FROM generate_series(
+      (now() AT TIME ZONE 'utc')::date - ${days - 1}::int,
+      (now() AT TIME ZONE 'utc')::date,
+      interval '1 day') AS d(day)
+    LEFT JOIN latest l ON l.day = d.day
+    ORDER BY d.day`);
+  return rows.map((r) => ({ day: r.day as string, bytes: Number(r.bytes), digest: (r.digest as string | null) ?? null }));
+}
+
 // --- Traffic in bytes (repository_traffic, written by registryd) ---
 
 type TrafficScope = { repoId?: string; orgId?: string; days?: number };
