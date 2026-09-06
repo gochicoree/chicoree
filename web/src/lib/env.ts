@@ -91,6 +91,21 @@ export const env = {
     const n = Number(process.env.TRIVY_TIMEOUT_SECONDS ?? 600);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 600;
   },
+  /** Scan workers may take Trivy scans off the web container (Administration → Scanning overrides). */
+  get scanWorkers(): boolean {
+    return process.env.SCAN_WORKERS === "true";
+  },
+  /** Bearer token scan workers present to /api/internal/worker/*; empty = no workers. */
+  get scanWorkerToken() {
+    return process.env.SCAN_WORKER_TOKEN ?? "";
+  },
+  /** The registry as a worker on another machine reaches it: REGISTRY_URL, else https:// + REGISTRY_HOST. */
+  get registryPublicUrl() {
+    const explicit = process.env.REGISTRY_URL?.trim();
+    if (explicit) return explicit.replace(/\/$/, "");
+    const host = this.registryHost;
+    return /^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? `http://${host}` : `https://${host}`;
+  },
   /** The trivy binary (on PATH in the container image). */
   get trivyBin() {
     return process.env.TRIVY_BIN ?? "trivy";

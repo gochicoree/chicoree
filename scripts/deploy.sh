@@ -47,6 +47,7 @@ if [ ! -f .env ]; then
     -e "s|^AUTH_SECRET=.*|AUTH_SECRET=$(rand 48)|" \
     -e "s|^WEBHOOK_SECRET=.*|WEBHOOK_SECRET=$(rand 48)|" \
     -e "s|^JOBS_API_TOKEN=.*|JOBS_API_TOKEN=$(rand 48)|" \
+    -e "s|^SCAN_WORKER_TOKEN=.*|SCAN_WORKER_TOKEN=$(rand 48)|" \
     .env.prod.example > .env
   if [ -n "$NO_CLAIR" ]; then
     sed -i -e 's|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|' -e 's|^CLAIR_URL=.*|CLAIR_URL=|' .env

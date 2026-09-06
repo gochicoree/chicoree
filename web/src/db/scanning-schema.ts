@@ -1,6 +1,6 @@
 // Vulnerability scanning: the searchable side table of findings and the
 // VEX-style exceptions that take accepted findings out of the pull policy.
-import { index, pgTable, text, timestamp, bigserial } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, bigserial } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organization } from "./auth-schema";
 import { repositories } from "./registry-schema";
@@ -63,3 +63,45 @@ export const vulnerabilityExceptions = pgTable(
     index("vulnerability_exceptions_vuln_idx").on(t.vulnerabilityId),
   ],
 );
+
+/**
+ * Scans handed to external workers (Administration → Scanning → Offload to
+ * workers). One row per digest: a new push of the same digest re-queues it.
+ * Leases expire so a worker that died releases its task; the scheduler tick
+ * runs queued tasks inline when no worker has reported in for a while.
+ */
+export const scanTasks = pgTable(
+  "scan_tasks",
+  {
+    id: text("id").primaryKey(),
+    /** Manifest digest (vulnerability_scans.digest). */
+    digest: text("digest").notNull().unique(),
+    repositoryId: text("repository_id"),
+    /** `org/name` as the registry addresses it (library images keep the prefix here). */
+    repositoryPath: text("repository_path").notNull(),
+    status: text("status", { enum: ["queued", "leased", "done", "failed"] }).notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    /** Not before this time (backoff after a failure). */
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    leasedBy: text("leased_by"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("scan_tasks_status_idx").on(t.status, t.availableAt)],
+);
+
+/** Workers that have reported in; kept for the Scanning page and the inline fallback decision. */
+export const scanWorkers = pgTable("scan_workers", {
+  name: text("name").primaryKey(),
+  hostname: text("hostname"),
+  version: text("version"),
+  scannerVersion: text("scanner_version"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  running: integer("running").notNull().default(0),
+  completed: integer("completed").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  lastError: text("last_error"),
+});

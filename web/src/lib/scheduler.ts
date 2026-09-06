@@ -15,6 +15,7 @@ import { JOBS, runJob } from "./jobs";
 import { notify } from "./notify";
 import { nextRun } from "./schedule-shared";
 import { drainEventOutbox } from "./registry-events";
+import { dispatchScanTasks } from "./scan-tasks";
 
 /** Arbitrary but fixed: every replica must ask for the same key. */
 const LOCK_KEY = 7261637;
@@ -207,6 +208,7 @@ async function tick(): Promise<void> {
     // that waited for the web app to come back should not also wait for
     // a retention run.
     await drainEventOutbox().catch((err) => console.error("[scheduler] outbox drain failed:", err));
+    await dispatchScanTasks().catch((err) => console.error("[scheduler] scan task dispatch failed:", err));
     if (env.jobSchedulerEnabled) {
       await failStuckRuns();
       await runDue();

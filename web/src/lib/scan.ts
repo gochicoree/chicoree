@@ -72,7 +72,7 @@ export async function cacheManifestConfig(repositoryPath: string, digest: string
   }
 }
 
-async function setScanState(
+export async function setScanState(
   digest: string,
   repositoryId: string | null,
   fields: Partial<typeof vulnerabilityScans.$inferInsert>,
@@ -227,28 +227,60 @@ export async function runScan(repositoryPath: string, digest: string): Promise<v
       registryUrl: env.registryInternalUrl,
       token,
     });
-    await storeScanResult(digest, repo.id, {
-      scanner: scanner.name,
-      scannerVersion: result.scannerVersion,
-      findings: result.findings,
-      raw: result.raw,
-    });
-    await refreshRepositoryBlocks(repo.id).catch((err) => console.error("pull policy refresh failed:", err));
-    const blockedReason = await manifestBlockReason(repo.id, digest).catch(() => null);
-    await notify({
-      event: "scan.completed",
-      repositoryId: repo.id,
-      digest,
-      summary: result.summary,
-      blockedReason,
-      scanner: scanner.label,
-    }).catch((err) => console.error("scan.completed notification failed:", err));
+    await finishScan(repo.id, digest, result, { name: scanner.name, label: scanner.label });
   } catch (err) {
     await setScanState(digest, repo.id, {
       status: "failed",
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * Store a finished scan and everything that follows from it: the pull policy
+ * blocks, the notification. Shared by the inline path and results posted by
+ * scan workers (lib/scan-tasks.ts).
+ */
+export async function finishScan(
+  repositoryId: string,
+  digest: string,
+  result: { findings: Finding[]; raw: unknown; summary: Record<string, number>; scannerVersion: string | null },
+  scanner: { name: string; label: string },
+): Promise<void> {
+  await storeScanResult(digest, repositoryId, {
+    scanner: scanner.name,
+    scannerVersion: result.scannerVersion,
+    findings: result.findings,
+    raw: result.raw,
+  });
+  await refreshRepositoryBlocks(repositoryId).catch((err) => console.error("pull policy refresh failed:", err));
+  const blockedReason = await manifestBlockReason(repositoryId, digest).catch(() => null);
+  await notify({
+    event: "scan.completed",
+    repositoryId,
+    digest,
+    summary: result.summary,
+    blockedReason,
+    scanner: scanner.label,
+  }).catch((err) => console.error("scan.completed notification failed:", err));
+}
+
+/** The manifest of an image as the scanners need it, or null when it is an index, an artifact or unknown. */
+export async function scanTarget(repositoryPath: string, digest: string): Promise<{ repositoryId: string; payload: ManifestPayload; layers: { digest: string; size?: number; mediaType?: string }[] } | null> {
+  const repo = await resolveRepository(repositoryPath);
+  if (!repo) return null;
+  const row = await db.query.manifests.findFirst({ where: and(eq(manifests.repositoryId, repo.id), eq(manifests.digest, digest)) });
+  if (!row) return null;
+  let payload: ManifestPayload;
+  try {
+    payload = JSON.parse(row.payload) as ManifestPayload;
+  } catch {
+    return null;
+  }
+  if (payload.manifests || isArtifactManifest(payload)) return null;
+  const layers = (payload.layers ?? []).filter((l): l is ManifestDescriptor & { digest: string } => !!l.digest);
+  if (layers.length === 0) return null;
+  return { repositoryId: repo.id, payload, layers: layers.map((l) => ({ digest: l.digest, size: l.size, mediaType: l.mediaType })) };
 }
 
 export interface RecentScan {

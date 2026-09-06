@@ -32,7 +32,8 @@ function settingsFromForm(fd: FormData): ScannerSettings | { error: string } {
   }
   if (backend === "clair" && !/^https?:\/\/\S+$/.test(clairUrl)) return { error: "Clair needs an http(s) URL, e.g. http://clair:6060." };
   if (trivyServerUrl && !/^https?:\/\/\S+$/.test(trivyServerUrl)) return { error: "The Trivy server URL must be an http(s) URL, e.g. http://trivy:4954." };
-  return { backend, clairUrl, trivyServerUrl, trivyTimeoutSeconds };
+  const workers = backend === "trivy" && str(fd, "workers") === "on";
+  return { backend, clairUrl, trivyServerUrl, trivyTimeoutSeconds, workers };
 }
 
 export async function saveScannerSettings(_prev: ScannerActionResult | null, fd: FormData): Promise<ScannerActionResult> {

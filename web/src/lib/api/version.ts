@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.6",
+    changes: [
+      "Scan workers: Administration → Scanning → \"Offload scans to workers\" (SCAN_WORKERS, SCAN_WORKER_TOKEN) hands Trivy scans to external workers over the internal worker protocol (`POST /api/internal/worker/claim`, `/heartbeat`, `/tasks/<id>/result`, `/tasks/<id>/fail`, bearer token; not part of /api/v1). The web image ships the worker as `worker.mjs`; `docker-compose.worker.yml` runs it on another machine. Without a worker online, scans run inline as before. No /api/v1 change.",
+    ],
+  },
+  {
     revision: "2026-09-06.5",
     changes: [
       "The Attestations tab shows the cosign/oras sign-and-attach commands only to viewers who may push to the repository (owner, admin or member of a non-proxy organization, instance administrators); everyone else sees a plain note. No API change.",
