@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.9",
+    changes: [
+      "Webhook format `custom` with `payloadTemplate`: a JSON body of your own with {{placeholders}} (repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>); a value that is exactly \"{{event}}\" embeds the whole event. Webhook responses carry `payloadTemplate` (null for other formats).",
+    ],
+  },
+  {
     revision: "2026-09-06.8",
     changes: [
       "Webhook format `none`: the delivery is the bare request (method of your choice, headers, authentication) with no body — for deploy hooks that read their parameters from the URL and would misread the payload, such as the PaaS's POST /api/v1/deploy.",

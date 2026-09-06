@@ -9,7 +9,7 @@ import { MANAGER_ROLES } from "@/lib/org-roles";
 import { encryptSecret } from "@/lib/crypto";
 import { recordAudit } from "@/lib/audit";
 import { countWebhooks, findScopedWebhook, maxWebhooks, sendTestDelivery } from "@/lib/webhooks";
-import { eventsForScope, isWebhookEvent, isWebhookFormat, type WebhookScope } from "@/lib/webhooks-shared";
+import { eventsForScope, isWebhookEvent, isWebhookFormat, type WebhookScope, formatAllowsMethod, validatePayloadTemplate } from "@/lib/webhooks-shared";
 
 export interface WebhookResult {
   error?: string;
@@ -83,7 +83,8 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   const url = String(formData.get("url") ?? "").trim();
   const format = String(formData.get("format") ?? "json");
   // Chat services accept POST only; the method field is for JSON receivers.
-  const method = format === "json" || format === "none" ? String(formData.get("method") ?? "POST") : "POST";
+  const method = formatAllowsMethod(format) ? String(formData.get("method") ?? "POST") : "POST";
+  const payloadTemplate = format === "custom" ? String(formData.get("payloadTemplate") ?? "").trim() : "";
   const authType = String(formData.get("authType") ?? "none");
   const authHeaderName = String(formData.get("authHeaderName") ?? "").trim();
   const authSecretRaw = String(formData.get("authSecret") ?? "");
@@ -100,6 +101,10 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   }
   if (!["http:", "https:"].includes(parsedUrl.protocol)) return { error: "Webhook URLs must be http(s)." };
   if (!isWebhookFormat(format)) return { error: "Invalid format." };
+  if (format === "custom") {
+    const problem = validatePayloadTemplate(payloadTemplate);
+    if (problem) return { error: problem };
+  }
   if (!["GET", "POST", "PUT", "PATCH"].includes(method)) return { error: "Invalid method." };
   if (!["none", "bearer", "basic", "header"].includes(authType)) return { error: "Invalid authentication type." };
   if (authType === "header" && !/^[A-Za-z0-9-]+$/.test(authHeaderName)) return { error: "Enter a valid header name." };
@@ -110,6 +115,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
     url,
     method: method as "GET" | "POST" | "PUT" | "PATCH",
     format,
+    payloadTemplate: format === "custom" ? payloadTemplate : null,
     headers: parseHeaders(String(formData.get("headers") ?? "")),
     authType: authType as "none" | "bearer" | "basic" | "header",
     authHeaderName: authType === "header" ? authHeaderName : null,

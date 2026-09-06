@@ -903,7 +903,11 @@ fire for events in every repository of the organization, plus the
 organization-level `quota.warning`, `quota.exceeded` and `quota.pruned`. Both share the same form — HTTP method
 (POST/PUT/PATCH with the payload, or GET; the *No body* format sends the
 bare request for receivers that read their parameters from the URL, such as
-the PaaS's deploy hook, which would misread a payload), extra headers,
+the PaaS's deploy hook, which would misread a payload; *Custom JSON* sends a
+body you write, with `{{repository}}`, `{{tag}}`, `{{digest}}`,
+`{{reference}}`, `{{registry}}`, `{{organization}}`, `{{actor}}`,
+`{{timestamp}}`, `{{deliveryId}}`, `{{event.<path>}}` filled in and a value
+that is exactly `"{{event}}"` replaced by the whole event), extra headers,
 authentication (bearer token, basic auth or a
 custom header; secrets are encrypted at rest) and an optional signing secret
 that adds `X-Chicoree-Signature: sha256=<hmac>` so receivers can verify the

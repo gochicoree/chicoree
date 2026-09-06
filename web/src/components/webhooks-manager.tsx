@@ -13,7 +13,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
-import { eventsForScope, WEBHOOK_EVENTS, WEBHOOK_FORMATS, type WebhookFormat, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
+import { eventsForScope, formatAllowsMethod, WEBHOOK_EVENTS, WEBHOOK_FORMATS, WEBHOOK_PLACEHOLDERS, type WebhookFormat, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
 
 export type { WebhookRow };
 
@@ -50,7 +50,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(saveWebhook, null);
   const [authType, setAuthType] = useState(hook?.authType ?? "none");
   const [format, setFormat] = useState<string>(hook?.format ?? "json");
-  const chat = format !== "json" && format !== "none";
+  const chat = !formatAllowsMethod(format);
   const { toast } = useToast();
   const events = eventsForScope(scope.kind);
   const selected = new Set(hook?.events ?? ["push"]);
@@ -75,6 +75,25 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
         <Field label="Method" htmlFor="wh-method">
           <Select id="wh-method" name="method" options={METHODS} defaultValue={hook?.method ?? "POST"} />
         </Field>
+      )}
+      {format === "custom" && (
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Field
+            label="Payload (JSON)"
+            htmlFor="wh-payload"
+            hint={`Placeholders: ${WEBHOOK_PLACEHOLDERS.filter((p) => p.key !== "event.<path>").map((p) => `{{${p.key}}}`).join(" ")} and {{event.<path>}} for any field. A value that is exactly "{{event}}" embeds the whole event as JSON.`}
+          >
+            <Textarea
+              id="wh-payload"
+              name="payloadTemplate"
+              required
+              rows={5}
+              defaultValue={hook?.payloadTemplate ?? '{\n  "uuid": "…",\n  "force": false,\n  "event": "{{event}}"\n}'}
+              className="font-mono text-xs"
+              spellCheck={false}
+            />
+          </Field>
+        </div>
       )}
       <div className="sm:col-span-2">
         <Field label="URL" htmlFor="wh-url" hint={chat ? "The incoming-webhook URL the chat service gave you" : undefined}>

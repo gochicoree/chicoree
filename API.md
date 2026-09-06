@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-06.8` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-06.9` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-06.8`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-06.9`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -1264,6 +1264,7 @@ Response `200`:
       "url": "https://ci.example.com/hooks/registry",
       "method": "POST",
       "format": "json",
+      "payloadTemplate": null,
       "headers": {},
       "authType": "bearer",
       "authHeaderName": null,
@@ -1301,8 +1302,9 @@ Create a organization webhook.
 | `name` | body | string | yes | Up to 64 characters. |
 | `url` | body | string | yes | http(s) URL the payload is sent to. |
 | `events` | body | string[] | yes | Event names to subscribe to (see the webhooks documentation); at least one. |
-| `format` | body | json \| none \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks such as the PaaS's, which read parameters from the URL and would misread the payload). |
-| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json and none formats; chat formats always POST. GET never carries a body. |
+| `format` | body | json \| none \| custom \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks that read parameters from the URL and would misread the payload). `custom` sends `payloadTemplate`. |
+| `payloadTemplate` | body | string |  | custom format only: a JSON object or array, up to 20000 characters, with {{placeholders}} — repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>; a string value that is exactly "{{event}}" embeds the whole event as JSON. |
+| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json, none and custom formats; chat formats always POST. GET never carries a body. |
 | `headers` | body | object |  | Extra request headers, name → value. |
 | `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
 | `authHeaderName` | body | string |  | Header name for authType header. |
@@ -1319,6 +1321,7 @@ Response `201`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1338,7 +1341,7 @@ Response `201`:
 
 ~~~sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","payloadTemplate":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
   "https://registry.example.com/api/v1/orgs/acme/webhooks"
 ~~~
 
@@ -1362,6 +1365,7 @@ Response `200`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1408,8 +1412,9 @@ Update a organization webhook — Omitted fields keep their value.
 | `name` | body | string |  | Up to 64 characters. |
 | `url` | body | string |  | http(s) URL the payload is sent to. |
 | `events` | body | string[] |  | Event names to subscribe to (see the webhooks documentation); at least one. |
-| `format` | body | json \| none \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks such as the PaaS's, which read parameters from the URL and would misread the payload). |
-| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json and none formats; chat formats always POST. GET never carries a body. |
+| `format` | body | json \| none \| custom \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks that read parameters from the URL and would misread the payload). `custom` sends `payloadTemplate`. |
+| `payloadTemplate` | body | string |  | custom format only: a JSON object or array, up to 20000 characters, with {{placeholders}} — repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>; a string value that is exactly "{{event}}" embeds the whole event as JSON. |
+| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json, none and custom formats; chat formats always POST. GET never carries a body. |
 | `headers` | body | object |  | Extra request headers, name → value. |
 | `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
 | `authHeaderName` | body | string |  | Header name for authType header. |
@@ -1426,6 +1431,7 @@ Response `200`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1445,7 +1451,7 @@ Response `200`:
 
 ~~~sh
 curl -X PATCH -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","payloadTemplate":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
   "https://registry.example.com/api/v1/orgs/acme/webhooks/{id}"
 ~~~
 
@@ -1710,6 +1716,7 @@ Response `200`:
       "url": "https://ci.example.com/hooks/registry",
       "method": "POST",
       "format": "json",
+      "payloadTemplate": null,
       "headers": {},
       "authType": "bearer",
       "authHeaderName": null,
@@ -1748,8 +1755,9 @@ Create a repository webhook.
 | `name` | body | string | yes | Up to 64 characters. |
 | `url` | body | string | yes | http(s) URL the payload is sent to. |
 | `events` | body | string[] | yes | Event names to subscribe to (see the webhooks documentation); at least one. |
-| `format` | body | json \| none \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks such as the PaaS's, which read parameters from the URL and would misread the payload). |
-| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json and none formats; chat formats always POST. GET never carries a body. |
+| `format` | body | json \| none \| custom \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks that read parameters from the URL and would misread the payload). `custom` sends `payloadTemplate`. |
+| `payloadTemplate` | body | string |  | custom format only: a JSON object or array, up to 20000 characters, with {{placeholders}} — repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>; a string value that is exactly "{{event}}" embeds the whole event as JSON. |
+| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json, none and custom formats; chat formats always POST. GET never carries a body. |
 | `headers` | body | object |  | Extra request headers, name → value. |
 | `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
 | `authHeaderName` | body | string |  | Header name for authType header. |
@@ -1766,6 +1774,7 @@ Response `201`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1785,7 +1794,7 @@ Response `201`:
 
 ~~~sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","payloadTemplate":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
   "https://registry.example.com/api/v1/repos/acme/api/webhooks"
 ~~~
 
@@ -1810,6 +1819,7 @@ Response `200`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1857,8 +1867,9 @@ Update a repository webhook — Omitted fields keep their value.
 | `name` | body | string |  | Up to 64 characters. |
 | `url` | body | string |  | http(s) URL the payload is sent to. |
 | `events` | body | string[] |  | Event names to subscribe to (see the webhooks documentation); at least one. |
-| `format` | body | json \| none \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks such as the PaaS's, which read parameters from the URL and would misread the payload). |
-| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json and none formats; chat formats always POST. GET never carries a body. |
+| `format` | body | json \| none \| custom \| slack \| discord \| teams \| text |  | Payload shape; default json. `none` sends no body at all — the request, its headers and authentication are the signal (deploy hooks that read parameters from the URL and would misread the payload). `custom` sends `payloadTemplate`. |
+| `payloadTemplate` | body | string |  | custom format only: a JSON object or array, up to 20000 characters, with {{placeholders}} — repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>; a string value that is exactly "{{event}}" embeds the whole event as JSON. |
+| `method` | body | GET \| POST \| PUT \| PATCH |  | For the json, none and custom formats; chat formats always POST. GET never carries a body. |
 | `headers` | body | object |  | Extra request headers, name → value. |
 | `authType` | body | none \| bearer \| basic \| header |  | How `authSecret` is sent. |
 | `authHeaderName` | body | string |  | Header name for authType header. |
@@ -1875,6 +1886,7 @@ Response `200`:
   "url": "https://ci.example.com/hooks/registry",
   "method": "POST",
   "format": "json",
+  "payloadTemplate": null,
   "headers": {},
   "authType": "bearer",
   "authHeaderName": null,
@@ -1894,7 +1906,7 @@ Response `200`:
 
 ~~~sh
 curl -X PATCH -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
+  -H "Content-Type: application/json" -d '{"name":"api","url":"…","events":"…","format":"…","payloadTemplate":"…","method":"…","headers":"…","authType":"…","authHeaderName":"…","authSecret":"…","signingSecret":"…","enabled":true}' \
   "https://registry.example.com/api/v1/repos/acme/api/webhooks/{id}"
 ~~~
 
@@ -3239,6 +3251,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-06.9
+
+- Webhook format `custom` with `payloadTemplate`: a JSON body of your own with {{placeholders}} (repository, organization, tag, digest, reference, registry, actor, timestamp, deliveryId, event.<path>); a value that is exactly "{{event}}" embeds the whole event. Webhook responses carry `payloadTemplate` (null for other formats).
 
 ### 2026-09-06.8
 

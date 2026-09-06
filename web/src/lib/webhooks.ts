@@ -21,13 +21,7 @@ import { decryptSecret } from "./crypto";
 import { env } from "./env";
 import { imagePath, imageReference } from "./library";
 import { WEBHOOK_LOG_MAX } from "./paginate-shared";
-import {
-  MAX_WEBHOOKS_PER_ORG,
-  MAX_WEBHOOKS_PER_REPO,
-  type WebhookEvent,
-  type WebhookRow,
-  type WebhookScope,
-} from "./webhooks-shared";
+import { MAX_WEBHOOKS_PER_ORG, MAX_WEBHOOKS_PER_REPO, type WebhookEvent, type WebhookRow, type WebhookScope, renderPayloadTemplate } from "./webhooks-shared";
 
 export { MAX_WEBHOOKS_PER_ORG, MAX_WEBHOOKS_PER_REPO };
 export type { WebhookEvent, WebhookRow, WebhookScope };
@@ -262,7 +256,22 @@ export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Prom
   // GET and the "none" format carry no body: the receiver acts on the request
   // itself (a deploy hook, for instance); the event still travels in the headers.
   const sendsBody = hook.method !== "GET" && hook.format !== "none";
-  const body = !sendsBody ? "" : hook.format && hook.format !== "json" ? JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload))) : JSON.stringify(payload);
+  let body = "";
+  let templateError: string | null = null;
+  if (sendsBody) {
+    if (hook.format === "custom") {
+      try {
+        body = JSON.stringify(renderPayloadTemplate(hook.payloadTemplate ?? "{}", payload as unknown as Record<string, unknown>));
+      } catch (err) {
+        // Recorded as a failed delivery below; nothing is sent.
+        templateError = `payload template: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    } else if (hook.format && hook.format !== "json") {
+      body = JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload)));
+    } else {
+      body = JSON.stringify(payload);
+    }
+  }
   const headers: Record<string, string> = {
     ...(sendsBody ? { "Content-Type": "application/json" } : {}),
     "User-Agent": "Chicoree-Webhooks/1.0",
@@ -286,7 +295,8 @@ export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Prom
   let error: string | null = null;
   let snippet: string | null = null;
   let attempts = 0;
-  for (const delay of [0, 2000, 6000]) {
+  if (templateError) error = templateError;
+  for (const delay of templateError ? [] : [0, 2000, 6000]) {
     if (delay) await sleep(delay);
     attempts++;
     const controller = new AbortController();
@@ -562,6 +572,7 @@ export async function listWebhookRows(scope: WebhookScope): Promise<WebhookRow[]
         authHeaderName: h.authHeaderName,
         hasAuthSecret: !!h.authSecret,
         hasSigningSecret: !!h.signingSecret,
+        payloadTemplate: h.payloadTemplate ?? null,
         events: h.events,
         enabled: h.enabled,
         lastStatus: h.lastStatus,
