@@ -168,9 +168,11 @@ Clair needs Postgres and downloads several gigabytes of advisory data, so
 smaller installs may prefer Trivy or nothing. On Coolify the compose file has
 no profiles: the `clair` and `trivy` services are always present — delete the
 ones you do not use and empty `CLAIR_URL` / `TRIVY_SERVER_URL` to match.
-`TRIVY_TIMEOUT_SECONDS` (default `600`) caps one scan; `TRIVY_BIN` and
-`TRIVY_CACHE_DIR` (`/var/lib/chicoree/trivy` in the image) are environment
-only.
+`TRIVY_TIMEOUT_SECONDS` (default `600`) caps one scan; `TRIVY_BIN`,
+`TRIVY_CACHE_DIR` (`/var/lib/chicoree/trivy` in the image) and
+`TRIVY_SERVER_TOKEN` (the token a Trivy server started with `--token`
+expects; the bundled `trivy` service reads the same variable) are
+environment only.
 
 #### Scan workers
 
@@ -208,7 +210,23 @@ the workers (name, Trivy version, running / completed / failed, last seen)
 and the queue. Any number of workers share the queue: claims are atomic
 (`FOR UPDATE SKIP LOCKED`), so two workers never get the same task. Clair
 does not use workers: it already fetches layers itself, from wherever it
-runs. Changing the backend applies to new scans; stored results keep the
+runs.
+
+**One vulnerability database for the whole pool.** Left alone, every
+worker downloads and refreshes its own Trivy database (well over a gigabyte
+on disk with the Java index). Trivy's client/server mode moves that to one
+place: run a `trivy server` next to the workers (the worker repository's
+compose file has a `trivy-server` profile; the registry's own `trivy`
+profile is the same thing on the registry host) and give each worker
+`TRIVY_SERVER_URL` and, when the server was started with a token,
+`TRIVY_SERVER_TOKEN`. The worker still pulls and unpacks the image — that
+is the point of having workers — but sends only the package list to the
+server for matching, and its cache volume stays small. The server updates
+the database on its own; put it on the workers' private network and give it
+a token, since Trivy's server has no other access control. One thing stays
+on the client: the Java index Trivy uses to identify JAR files is
+downloaded by whichever side scans the image, so workers that scan Java
+images still fetch that one part. Changing the backend applies to new scans; stored results keep the
 label of the scanner that produced them. Turning scanning on later scans
 images as they are pushed; *Re-scan everything* on the Scanning page (or the
 `scan-stale` job with `olderThan=0s`) catches up on existing ones. What the

@@ -91,6 +91,8 @@ export function normalizeTrivyReport(report: TrivyReport): Finding[] {
 export interface TrivyOptions {
   bin: string;
   serverUrl: string;
+  /** Authentication for the Trivy server (`--token`); empty = none. */
+  serverToken?: string;
   timeoutSeconds: number;
   cacheDir: string;
 }
@@ -191,7 +193,10 @@ export function createTrivyScanner(opts: TrivyOptions): Scanner {
         "remote",
       ];
       if (insecure) args.push("--insecure");
-      if (opts.serverUrl) args.push("--server", opts.serverUrl.replace(/\/$/, ""));
+      if (opts.serverUrl) {
+        args.push("--server", opts.serverUrl.replace(/\/$/, ""));
+        if (opts.serverToken) args.push("--token", opts.serverToken);
+      }
       args.push(image);
       // The pull token is handed over as a docker config entry for our
       // registry host only (a "registrytoken" is used as the Bearer as is,

@@ -87,6 +87,10 @@ export const env = {
   get trivyServerUrl() {
     return process.env.TRIVY_SERVER_URL ?? "";
   },
+  /** Token the Trivy server expects (`trivy server --token`); sent as the Trivy-Token header. Environment only. */
+  get trivyServerToken() {
+    return process.env.TRIVY_SERVER_TOKEN ?? "";
+  },
   get trivyTimeoutSeconds() {
     const n = Number(process.env.TRIVY_TIMEOUT_SECONDS ?? 600);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 600;
