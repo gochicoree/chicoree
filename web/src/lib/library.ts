@@ -7,8 +7,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/db";
 import { member, organization } from "@/db/schema";
 
-export const LIBRARY_SLUG = "library";
-export const LIBRARY_NAME = "Library";
+import { LIBRARY_NAME, LIBRARY_SLUG } from "./library-shared";
+
+export { LIBRARY_SLUG, LIBRARY_NAME, isLibrary, imagePath, imageReference, displayPath, splitImagePath } from "./library-shared";
 
 let ensured = false;
 
@@ -45,36 +46,6 @@ export async function ensureLibraryOrg(adminUserId?: string): Promise<void> {
     }
   }
   ensured = true;
-}
-
-export function isLibrary(orgSlug: string): boolean {
-  return orgSlug === LIBRARY_SLUG;
-}
-
-/** The path clients use: `nginx` for library repos, `org/repo` otherwise. */
-export function imagePath(orgSlug: string, repoName: string): string {
-  return isLibrary(orgSlug) ? repoName : `${orgSlug}/${repoName}`;
-}
-
-/** Full docker reference, e.g. `registry.example.com/nginx:1.27`. */
-export function imageReference(host: string, orgSlug: string, repoName: string, ref?: string): string {
-  const base = `${host}/${imagePath(orgSlug, repoName)}`;
-  if (!ref) return base;
-  return ref.startsWith("sha256:") ? `${base}@${ref}` : `${base}:${ref}`;
-}
-
-/**
- * Split a scope/repo name into org + repo; single segments belong to library.
- * Deeper paths (`dockerhub/bitnami/redis`) keep everything after the
- * organization as the repository name — the registry only accepts those in
- * proxy-cache organizations.
- */
-export function splitImagePath(name: string): { orgSlug: string; repoName: string } | null {
-  const parts = name.split("/");
-  if (parts.some((p) => !p)) return null;
-  if (parts.length === 1) return { orgSlug: LIBRARY_SLUG, repoName: parts[0] };
-  if (parts.length >= 2) return { orgSlug: parts[0], repoName: parts.slice(1).join("/") };
-  return null;
 }
 
 export { repoHref } from "./proxy-shared";

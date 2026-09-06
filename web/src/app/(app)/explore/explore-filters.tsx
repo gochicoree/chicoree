@@ -11,10 +11,13 @@ export interface ExploreQuery {
   org: string;
   visibility: string;
   sort: string;
+  /** "all" keeps the filterable list even with every filter at its default. */
+  view?: string;
 }
 
 function exploreHref(v: ExploreQuery): string {
   const p = new URLSearchParams();
+  if (v.view === "all") p.set("view", "all");
   if (v.q) p.set("q", v.q);
   if (v.org) p.set("org", v.org);
   if (v.visibility && v.visibility !== "all") p.set("visibility", v.visibility);
@@ -55,6 +58,7 @@ export function ExploreFilters({
         apply({ q });
       }}
     >
+      {value.view === "all" && <input type="hidden" name="view" value="all" />}
       <div className="relative min-w-0 flex-1 sm:min-w-56">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
         <input

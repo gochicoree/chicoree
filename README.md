@@ -80,7 +80,11 @@ organization in the name) is stored and served through the built-in
 `library` organization, exactly like `docker.io/nginx` ⇢ `library/nginx`.
 `library` is created with the first administrator, owned by admins, and
 cannot be deleted or renamed; add members to it to let others push
-top-level names.
+top-level names. The organization is virtual to everyone else: no list,
+search result, notification, audit entry or pull command shows a `library/`
+prefix, the image is simply `nginx`, and `/nginx` in the browser opens its
+repository page. Only the storage path and the API's `/orgs/library/…`
+routes keep the name.
 
 > **macOS note:** AirPlay occupies port 5000. Set `REGISTRY_PORT=5010` and
 > `REGISTRY_HOST=localhost:5010` in `.env`.
@@ -672,10 +676,16 @@ full results page (`/search?q=…`). Search understands:
 Results only ever include what you may see: public repositories for
 everyone, private ones where you are a member, everything for
 administrators. `GET /api/search?q=` is the same typeahead as JSON (anonymous
-callers get public data). The **Explore** page (`/explore`) has the same
-filter box plus organization, visibility (public / private / both) and sort
-(most pulled, recently updated, name) controls; the filters live in the URL,
-so a filtered view can be shared.
+callers get public data; anonymous calls count against the anonymous API
+[rate limit](#rate-limits) per address). The **Explore** page (`/explore`)
+opens with an overview: *Trending* (the most pulled repositories of the last
+7 days), *Organizations* (everyone who publishes something you may see,
+busiest first; a card drills down into that organization's images) and
+*Recently updated*. *All images* (`/explore?view=all`) is the full list with
+the same filter box plus organization, visibility (public / private / both)
+and sort (most pulled, recently updated, name) controls; the filters live in
+the URL, so a filtered view can be shared. Visitors share one cached copy of
+the overview per minute.
 
 **Without an account.** Explore, search, organization pages and public
 repositories (tags, layers, scan results, compare) open without signing

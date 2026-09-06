@@ -27,6 +27,7 @@ import { OrgOverviewGrid } from "@/components/org-overview";
 import { EntityLogo } from "@/components/entity-logo";
 import { VisibilityBadge } from "@/components/ui/badge";
 
+import { imagePath } from "@/lib/library-shared";
 export const metadata: Metadata = { title: "Dashboard" };
 
 /** "expires today" / "expires in 3 days" for an invitation that is still open. */
@@ -157,14 +158,14 @@ export default async function DashboardPage({
                         <Link href={href} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] hover:bg-card-2">
                           <EntityLogo
                             kind="repository"
-                            name={`${p.orgSlug}/${p.repoName}`}
+                            name={imagePath(p.orgSlug, p.repoName)}
                             logo={logoRef("repository", p.repoId, p.logoVersion)}
                             size={18}
                             fallback={<Container className="size-3.5 text-ink-3" />}
                           />
                           <span className="min-w-0 flex-1 truncate">
                             <span className="font-medium text-ink">
-                              {p.orgSlug}/{p.repoName}
+                              {imagePath(p.orgSlug, p.repoName)}
                             </span>
                             {p.tag ? (
                               <span className="font-mono text-ink-2">:{p.tag}</span>
@@ -236,7 +237,7 @@ export default async function DashboardPage({
               emptyText="Star a repository from its page and it shows up here."
               items={starred.map((r) => ({
                 id: r.id,
-                path: `${r.orgSlug}/${r.name}`,
+                path: imagePath(r.orgSlug, r.name),
                 href: repoHref(r.orgSlug ?? "", r.name),
                 visibility: r.visibility,
                 proxy: r.proxy,
@@ -254,7 +255,7 @@ export default async function DashboardPage({
               emptyText="Open a repository and it will be listed here."
               items={recent.map((r) => ({
                 id: r.id,
-                path: `${r.orgSlug}/${r.name}`,
+                path: imagePath(r.orgSlug, r.name),
                 href: repoHref(r.orgSlug ?? "", r.name),
                 visibility: r.visibility,
                 proxy: r.proxy,

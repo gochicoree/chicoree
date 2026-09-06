@@ -28,6 +28,7 @@ import { SeverityBar, SeverityChips } from "@/components/severity";
 import { AdminNav } from "../admin-nav";
 import { MetricsForm } from "./metrics-form";
 
+import { imagePath } from "@/lib/library-shared";
 export const metadata: Metadata = { title: "Metrics" };
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -166,7 +167,7 @@ export default async function AdminMetricsPage() {
                     <tr key={r.id}>
                       <td className={`${td} min-w-0`}>
                         <Link href={`/${r.org}/${r.name}`} className="font-mono text-[13px] hover:underline">
-                          {r.org}/{r.name}
+                          {imagePath(r.org, r.name)}
                         </Link>
                       </td>
                       <td className={num}>{formatBytes(r.egress30d)}</td>
@@ -245,7 +246,7 @@ export default async function AdminMetricsPage() {
                     <tr key={r.id}>
                       <td className={`${td} min-w-0`}>
                         <Link href={repoHref(r.org, r.name)} className="font-mono text-[13px] hover:underline">
-                          {r.org}/{r.name}
+                          {imagePath(r.org, r.name)}
                         </Link>
                       </td>
                       <td className={num}>{formatCount(r.pulls30d)}</td>
@@ -279,7 +280,7 @@ export default async function AdminMetricsPage() {
                       <td className={`${td} min-w-0`}>
                         <span className="flex items-center gap-2">
                           <Link href={repoHref(r.org, r.name)} className="font-mono text-[13px] hover:underline">
-                            {r.org}/{r.name}
+                            {imagePath(r.org, r.name)}
                           </Link>
                           <VisibilityBadge visibility={r.visibility} />
                         </span>

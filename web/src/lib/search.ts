@@ -14,6 +14,7 @@ import { PAGE_SIZES, paginate, paginatedQuery, type PageState } from "./paginate
 import { digestQuery, likeEscape, normalizeQuery, splitTagQuery, type SearchHit } from "./search-shared";
 import { memberOfOrganizationFilter, visibleRepositoriesFilter, type Viewer } from "./viewer";
 
+import { imagePath } from "@/lib/library-shared";
 export interface TagHit {
   orgSlug: string;
   repoName: string;
@@ -404,14 +405,14 @@ export async function quickSearch(viewer: Viewer, rawQuery: string, limit = 8): 
   const hits: SearchHit[] = [
     ...digests.map<SearchHit>((d) => ({
       kind: "digest",
-      label: `${d.orgSlug}/${d.repoName}@${shortDigest(d.digest)}`,
+      label: `${imagePath(d.orgSlug, d.repoName)}@${shortDigest(d.digest)}`,
       href: digestHref(d),
       detail: d.tags.length ? `tags: ${d.tags.join(", ")}` : d.mediaType,
       meta: relativeTime(d.createdAt),
     })),
     ...repositories.map<SearchHit>((r) => ({
       kind: "repository",
-      label: `${r.orgSlug}/${r.name}`,
+      label: imagePath(r.orgSlug, r.name),
       href: repoHref(r.orgSlug ?? "", r.name),
       detail: r.description || undefined,
       meta: `${r.visibility} · ${formatCount(r.pullCount)} pulls`,
@@ -427,7 +428,7 @@ export async function quickSearch(viewer: Viewer, rawQuery: string, limit = 8): 
     })),
     ...tags.map<SearchHit>((t) => ({
       kind: "tag",
-      label: `${t.orgSlug}/${t.repoName}:${t.tag}`,
+      label: `${imagePath(t.orgSlug, t.repoName)}:${t.tag}`,
       href: tagHref(t),
       detail: shortDigest(t.digest),
       meta: relativeTime(t.updatedAt),

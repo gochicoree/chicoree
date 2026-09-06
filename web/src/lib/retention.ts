@@ -10,6 +10,7 @@ import { planRetention, type RetentionPlan, type RetentionSettings } from "./ret
 import { deleteTag } from "./tag-admin";
 import { effectiveTagRules } from "./tag-rules";
 
+import { imagePath } from "@/lib/library-shared";
 export * from "./retention-shared";
 
 export type RetentionPolicyRow = typeof retentionPolicies.$inferSelect;
@@ -158,7 +159,7 @@ export async function planScope(opts: {
     if (!previewed && !effective.policy.enabled) continue;
     out.push({
       repositoryId: repo.id,
-      path: `${repo.orgSlug}/${repo.name}`,
+      path: imagePath(repo.orgSlug, repo.name),
       scope: effective.scope,
       policy: effective.policy,
       plan: await planRepository(repo, effective.policy, now),

@@ -20,6 +20,14 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.4",
+    changes: [
+      "The library organization is virtual in the UI: no list, search result, dashboard entry, notification, audit label or job result shows a `library/` prefix, and `/<name>` opens the top-level repository. Storage and the `/orgs/library/…` routes are unchanged; `path` and `reference` fields already omitted the prefix.",
+      "Explore opens with an overview — trending repositories (pulls in the last 7 days), organizations busiest first with drill-down, recently updated — and `?view=all` is the filterable list. No API change.",
+      "Anonymous calls to the header search typeahead (`/api/search`) count against the anonymous API rate limit per address (`RATE_LIMIT_API_ANONYMOUS`).",
+    ],
+  },
+  {
     revision: "2026-09-06.3",
     changes: [
       "Editions: Administration → Branding (INSTANCE_EDITION as default) switches the landing page between self-hosted wording and a hosted service — sign-up as the call to action, the free plan named from the default limits, a link to the account portal's plans. No API change.",

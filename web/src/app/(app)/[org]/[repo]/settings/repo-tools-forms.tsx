@@ -11,6 +11,7 @@ import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { repoNameProblem } from "@/lib/repo-names-shared";
 
+import { imagePath, imageReference } from "@/lib/library-shared";
 export interface TransferTarget {
   id: string;
   name: string;
@@ -18,7 +19,7 @@ export interface TransferTarget {
 }
 
 function pullRef(registryHost: string, orgSlug: string, name: string): string {
-  return orgSlug === "library" ? `${registryHost}/${name}` : `${registryHost}/${orgSlug}/${name}`;
+  return imageReference(registryHost, orgSlug, name);
 }
 
 /** Rename within the organization; the old name keeps working for pulls. */
@@ -59,7 +60,7 @@ export function RepoRenameForm({
         setOpen(false);
         return;
       }
-      toast({ title: `Renamed to ${orgSlug}/${next}`, description: `docker pull ${res.pullReference}. The old name keeps working for pulls.` });
+      toast({ title: `Renamed to ${imagePath(orgSlug, next)}`, description: `docker pull ${res.pullReference}. The old name keeps working for pulls.` });
       setOpen(false);
       router.push(`${res.href}/settings/danger`);
       router.refresh();
@@ -125,7 +126,7 @@ export function RepoRenameForm({
             New reference: <code className="font-mono text-ink">docker pull {pullRef(registryHost, orgSlug, next)}:&lt;tag&gt;</code>
           </li>
           <li>
-            <code className="font-mono">{orgSlug}/{name}</code> keeps working for <strong>pulls</strong> (and tag lists) through a redirect; a push or delete against it is refused with the new name.
+            <code className="font-mono">{imagePath(orgSlug, name)}</code> keeps working for <strong>pulls</strong> (and tag lists) through a redirect; a push or delete against it is refused with the new name.
           </li>
           <li>Bookmarks and links to the old web address redirect to the new one.</li>
           <li>Tags, scans, webhooks, mirrors, tag rules and retention settings stay as they are. CI pipelines pushing to the old name must be updated.</li>
@@ -174,7 +175,7 @@ export function RepoTransferForm({
         setOpen(false);
         return;
       }
-      toast({ title: `Moved to ${target.slug}/${name}`, description: `docker pull ${res.pullReference}. The old name keeps working for pulls.` });
+      toast({ title: `Moved to ${imagePath(target.slug, name)}`, description: `docker pull ${res.pullReference}. The old name keeps working for pulls.` });
       setOpen(false);
       router.push(res.href);
       router.refresh();
@@ -202,7 +203,7 @@ export function RepoTransferForm({
                 <Field label="Target organization" htmlFor="transfer-target">
                   <Select
                     id="transfer-target"
-                    options={targets.map((t) => ({ value: t.id, label: t.name, description: `${t.slug}/${name}` }))}
+                    options={targets.map((t) => ({ value: t.id, label: t.name, description: imagePath(t.slug, name) }))}
                     value={targetId}
                     onChange={(v) => {
                       setTargetId(v);
@@ -239,7 +240,7 @@ export function RepoTransferForm({
               New reference: <code className="font-mono text-ink">docker pull {pullRef(registryHost, target.slug, name)}:&lt;tag&gt;</code>
             </li>
             <li>
-              <code className="font-mono">{orgSlug}/{name}</code> keeps working for <strong>pulls</strong> through a redirect; pushes and deletes against it are refused with the new name.
+              <code className="font-mono">{imagePath(orgSlug, name)}</code> keeps working for <strong>pulls</strong> through a redirect; pushes and deletes against it are refused with the new name.
             </li>
             <li>
               Members of <strong>{target.name}</strong> get access according to their roles there; members of {orgName} lose access unless the repository is public. Service accounts of {orgName} restricted to this repository lose it.
