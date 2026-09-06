@@ -1199,8 +1199,9 @@ The management API lives in `web/src/app/api/v1/**/route.ts` on top of
 - `handler.ts` also computes a weak `ETag` over successful GET bodies and
   answers `304` to a matching `If-None-Match`.
 - `scripts/api-smoke.mts` — contract tests that seed rows directly and run
-  the request matrix against a running app; `.github/workflows/ci.yml` runs
-  them against a Postgres service after `npm run lint` and `next build`.
+  the request matrix against a running app (`API_BASE` + `DATABASE_URL`);
+  run them together with `npm run lint` before a deploy — there is no CI
+  workflow in the repository by choice.
 - `scan-gate.ts`, `copy.ts`, `webhooks.ts`, `service-accounts.ts` — the
   pipeline-facing operations (wait for a scan and judge it, promote an image,
   manage hooks and service accounts) built on the same libraries as the UI.
