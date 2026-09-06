@@ -99,7 +99,7 @@ function validate(kind: Kind, body: Record<string, unknown>, existing: Hook | nu
   if (!isWebhookFormat(format)) throw unprocessable(`"format" must be one of ${WEBHOOK_FORMATS.map((f) => f.value).join(", ")}.`, { field: "format" });
   // Chat services accept POST only; the method field is for JSON receivers.
   const methodRaw = (str("method", 10) ?? existing?.method ?? "POST").toUpperCase();
-  const method = format === "json" ? methodRaw : "POST";
+  const method = format === "json" || format === "none" ? methodRaw : "POST";
   if (!(METHODS as readonly string[]).includes(method)) throw unprocessable(`"method" must be one of ${METHODS.join(", ")}.`, { field: "method" });
   const authType = str("authType", 10) ?? existing?.authType ?? "none";
   if (!(AUTH_TYPES as readonly string[]).includes(authType)) throw unprocessable(`"authType" must be one of ${AUTH_TYPES.join(", ")}.`, { field: "authType" });

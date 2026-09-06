@@ -50,7 +50,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
   const [state, action, pending] = useActionState<WebhookResult | null, FormData>(saveWebhook, null);
   const [authType, setAuthType] = useState(hook?.authType ?? "none");
   const [format, setFormat] = useState<string>(hook?.format ?? "json");
-  const chat = format !== "json";
+  const chat = format !== "json" && format !== "none";
   const { toast } = useToast();
   const events = eventsForScope(scope.kind);
   const selected = new Set(hook?.events ?? ["push"]);
@@ -68,7 +68,7 @@ function WebhookForm({ scope, hook, onDone }: { scope: WebhookScope; hook?: Webh
       <Field label="Name" htmlFor="wh-name">
         <Input id="wh-name" name="name" required defaultValue={hook?.name} placeholder="Deploy to staging" />
       </Field>
-      <Field label="Format" htmlFor="wh-format" hint={chat ? "Sent as a POST the service understands" : undefined}>
+      <Field label="Format" htmlFor="wh-format" hint={chat ? "Sent as a POST the service understands" : format === "none" ? "Nothing but the request: right for deploy hooks whose parameters sit in the URL" : undefined}>
         <Select id="wh-format" name="format" options={WEBHOOK_FORMATS} value={format} onChange={(v) => setFormat(v as WebhookFormat)} />
       </Field>
       {!chat && (

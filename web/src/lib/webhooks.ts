@@ -259,9 +259,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Promise<void> {
   // Chat formats render the event as a message; the JSON format sends the
   // payload itself. Signing and authentication apply to whatever is sent.
-  // GET carries no body: the receiver acts on the request itself (a deploy
-  // hook, for instance); the event still travels in the headers.
-  const sendsBody = hook.method !== "GET";
+  // GET and the "none" format carry no body: the receiver acts on the request
+  // itself (a deploy hook, for instance); the event still travels in the headers.
+  const sendsBody = hook.method !== "GET" && hook.format !== "none";
   const body = !sendsBody ? "" : hook.format && hook.format !== "json" ? JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload))) : JSON.stringify(payload);
   const headers: Record<string, string> = {
     ...(sendsBody ? { "Content-Type": "application/json" } : {}),

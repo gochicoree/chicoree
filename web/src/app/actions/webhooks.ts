@@ -83,7 +83,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   const url = String(formData.get("url") ?? "").trim();
   const format = String(formData.get("format") ?? "json");
   // Chat services accept POST only; the method field is for JSON receivers.
-  const method = format === "json" ? String(formData.get("method") ?? "POST") : "POST";
+  const method = format === "json" || format === "none" ? String(formData.get("method") ?? "POST") : "POST";
   const authType = String(formData.get("authType") ?? "none");
   const authHeaderName = String(formData.get("authHeaderName") ?? "").trim();
   const authSecretRaw = String(formData.get("authSecret") ?? "");

@@ -55,10 +55,11 @@ export function eventsForScope(scope: "repository" | "organization"): WebhookEve
  * Body formats. "json" is the documented payload; the others render the same
  * event as a message for a chat service's incoming webhook (lib/webhook-chat.ts).
  */
-export type WebhookFormat = "json" | "slack" | "discord" | "teams" | "text";
+export type WebhookFormat = "json" | "none" | "slack" | "discord" | "teams" | "text";
 
 export const WEBHOOK_FORMATS: { value: WebhookFormat; label: string; description: string }[] = [
   { value: "json", label: "JSON payload", description: "The full event for your own receiver" },
+  { value: "none", label: "No body", description: "Just the request with your headers and authentication — for deploy hooks that read parameters from the URL" },
   { value: "slack", label: "Slack", description: "Incoming webhook message (Block Kit)" },
   { value: "discord", label: "Discord", description: "Webhook message with an embed" },
   { value: "teams", label: "Microsoft Teams", description: "Adaptive Card for a Workflows webhook" },
