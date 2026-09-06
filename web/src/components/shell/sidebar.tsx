@@ -155,8 +155,10 @@ export function Sidebar({
                 className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-ink-2 transition-colors hover:bg-card-2 hover:text-ink lg:py-1.5"
               >
                 <MoreHorizontal className="size-4" />
-                All organizations
-                <span className="ml-auto font-mono text-xs text-ink-3">{orgCount}</span>
+                {(orgCount ?? 0) - orgs.length} more
+                <span className="ml-auto font-mono text-xs text-ink-3" title={`${orgCount} organizations in total`}>
+                  {orgCount} total
+                </span>
               </Link>
             )}
             {orgs.length === 0 && canCreateOrgs && (
