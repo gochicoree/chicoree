@@ -203,6 +203,7 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       clairUrl: env.clairUrl,
       trivyServerUrl: env.trivyServerUrl,
       trivyTimeoutSeconds: env.trivyTimeoutSeconds,
+      workers: env.scanWorkers,
     },
     quotas: {
       ...DEFAULT_QUOTAS,
@@ -254,7 +255,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
     case "ratelimit":
       return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated || !!process.env.RATE_LIMIT_API_ANONYMOUS || !!process.env.RATE_LIMIT_API_AUTHENTICATED;
     case "scanner":
-      return !!process.env.SCANNER || !!d.scanner.clairUrl;
+      return !!process.env.SCANNER || !!d.scanner.clairUrl || !!process.env.SCAN_WORKERS;
     case "quotas":
       return Object.keys(process.env).some((k) => k.startsWith("DEFAULT_USER_MAX_") || k.startsWith("DEFAULT_ORG_MAX_"));
     case "portal":

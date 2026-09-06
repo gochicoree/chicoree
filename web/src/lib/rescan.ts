@@ -9,7 +9,8 @@ import { after } from "next/server";
 import { db } from "@/db";
 import { manifests, vulnerabilityScans } from "@/db/schema";
 import { recordAudit, type AuditActor } from "./audit";
-import { isArtifactManifest, runScan, type ManifestPayload } from "./scan";
+import { isArtifactManifest, type ManifestPayload } from "./scan";
+import { startScan } from "./scan-tasks";
 import { getScanner } from "./scanners";
 import { scanInProgress } from "./scanner-shared";
 import { imagePath } from "./library";
@@ -66,7 +67,7 @@ export async function queueRescan(
     .values({ digest, repositoryId: repo.id, status: "pending", error: null, updatedAt: new Date() })
     .onConflictDoUpdate({ target: vulnerabilityScans.digest, set: { repositoryId: repo.id, status: "pending", error: null, updatedAt: new Date() } });
   after(async () => {
-    await runScan(path, digest).catch((err) => console.error("rescan failed:", err));
+    await startScan(path, digest).catch((err) => console.error("rescan failed:", err));
   });
   return { queued: true, message: "Scan queued; the result appears when it finishes." };
 }

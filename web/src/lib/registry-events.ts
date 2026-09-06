@@ -8,7 +8,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { env } from "./env";
-import { cacheManifestConfig, runScan } from "./scan";
+import { cacheManifestConfig } from "./scan";
+import { startScan } from "./scan-tasks";
 import { buildPushPayload, dispatchRepositoryWebhooks, emitRepositoryEvent, resolveActor } from "./webhooks";
 import { checkQuotaWarningsForRepository } from "./notify";
 import { getRepoByPath } from "./data";
@@ -68,7 +69,7 @@ export async function processRegistryEvent(event: RegistryEvent): Promise<void> 
     // Signatures and attestations arrive as pushes too: verify what was
     // attached (or the image itself) and refresh the signature policy.
     await onManifestPushed(event.repository, event.digest, event.tag).catch((err) => console.error("signature verification failed:", err));
-    await runScan(event.repository, event.digest).catch((err) => console.error("scan failed:", err));
+    await startScan(event.repository, event.digest).catch((err) => console.error("scan failed:", err));
     return;
   }
 

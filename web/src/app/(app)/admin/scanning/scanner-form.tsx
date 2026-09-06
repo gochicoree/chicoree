@@ -89,6 +89,16 @@ export function ScannerForm({ values, source }: { values: ScannerSettings; sourc
                 <Field label="Timeout (seconds)" htmlFor="scanner-trivy-timeout" hint="Per image; the first scan also downloads the database.">
                   <Input id="scanner-trivy-timeout" name="trivyTimeoutSeconds" type="number" min={30} max={7200} defaultValue={values.trivyTimeoutSeconds} className="font-mono" />
                 </Field>
+                <label className="flex items-start gap-2.5 text-sm sm:col-span-2">
+                  <input type="checkbox" name="workers" defaultChecked={values.workers} className="mt-0.5 size-4 accent-[var(--action)]" />
+                  <span>
+                    <span className="block font-medium text-ink">Offload scans to workers</span>
+                    <span className="block text-xs text-ink-2">
+                      Scans wait for a scan worker (SCAN_WORKER_TOKEN) instead of running in this container. While no worker has reported in for two
+                      minutes, they run here anyway.
+                    </span>
+                  </span>
+                </label>
               </>
             )}
             {backend !== "clair" && <input type="hidden" name="clairUrl" value={values.clairUrl} />}

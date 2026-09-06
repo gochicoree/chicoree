@@ -18,6 +18,8 @@ export interface ScannerSettings {
   /** Empty = standalone trivy, downloading its own database into TRIVY_CACHE_DIR. */
   trivyServerUrl: string;
   trivyTimeoutSeconds: number;
+  /** Trivy only: hand scans to external workers (SCAN_WORKER_TOKEN) instead of running them in the web container. */
+  workers: boolean;
 }
 
 /** One vulnerability in one package, as stored in vulnerability_scans.findings. */

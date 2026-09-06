@@ -1,0 +1,36 @@
+# A scan worker for another machine: takes Trivy scans off the registry host.
+#
+#   1. On the registry host: set SCAN_WORKER_TOKEN in .env (scripts/deploy.sh
+#      generates one on a first deploy), redeploy, and turn on Administration →
+#      Scanning → "Offload scans to workers" (or SCAN_WORKERS=true).
+#   2. Here: CHICOREE_URL=https://registry.example.com SCAN_WORKER_TOKEN=… \
+#        docker compose -f docker-compose.worker.yml up -d --build
+#
+# The worker needs to reach the instance (CHICOREE_URL) and the registry
+# (REGISTRY_HOST as https://, or REGISTRY_URL to override); it holds no
+# database credentials. Scale with `--scale scan-worker=3` or
+# WORKER_CONCURRENCY. Without any worker reporting in for two minutes the
+# instance runs queued scans itself, so a worker outage only slows scans down.
+services:
+  scan-worker:
+    build: ./web
+    image: chicoree-web
+    command: ["node", "worker.mjs"]
+    restart: unless-stopped
+    environment:
+      CHICOREE_URL: ${CHICOREE_URL:?set CHICOREE_URL to the instance, e.g. https://registry.example.com}
+      SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:?set SCAN_WORKER_TOKEN from the instance's .env}
+      WORKER_NAME: ${WORKER_NAME:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      REGISTRY_URL: ${REGISTRY_URL:-}
+      TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
+      TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}
+      TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
+    volumes:
+      - worker-trivy-cache:/var/lib/chicoree/trivy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  worker-trivy-cache:

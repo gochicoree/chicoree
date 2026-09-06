@@ -15,6 +15,9 @@ import { AdminNav } from "../admin-nav";
 import { ScannerForm } from "./scanner-form";
 import { RescanButton } from "./rescan-button";
 import { imagePath } from "@/lib/library-shared";
+import { env } from "@/lib/env";
+import { scanWorkerStats } from "@/lib/scan-tasks";
+import { WorkersCard } from "./workers-card";
 
 export const metadata: Metadata = { title: "Scanning" };
 export const dynamic = "force-dynamic";
@@ -25,10 +28,11 @@ const STATUS_TONE: Record<string, "ok" | "danger" | "neutral" | "info"> = { scan
 
 export default async function AdminScanningPage() {
   await requireAdmin();
-  const [settings, scans, counts, tagged] = await Promise.all([
+  const [settings, scans, counts, workers, tagged] = await Promise.all([
     getInstanceSettings(),
     recentScans(10),
     scanCounts(),
+    scanWorkerStats(),
     db.execute(sql`
       SELECT count(DISTINCT t.manifest_digest)::int AS n FROM tags t
       JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
@@ -49,6 +53,9 @@ export default async function AdminScanningPage() {
 
       <div className="space-y-6">
         <ScannerForm values={settings.scanner} source={settings.sources.scanner} />
+        {(settings.scanner.backend === "trivy" || workers.workers.length > 0 || workers.queued > 0) && (
+          <WorkersCard stats={workers} enabled={settings.scanner.workers} tokenSet={!!env.scanWorkerToken} />
+        )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Scanned" value={counts.scanned} detail="manifests with a result" />

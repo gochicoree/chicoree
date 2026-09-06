@@ -113,6 +113,13 @@
       "when": 1788690660270,
       "tag": "0015_quota_breaches",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788711785937,
+      "tag": "0016_scan_workers",
+      "breakpoints": true
     }
   ]
 }

@@ -6,3 +6,6 @@ web/next-env.d.ts
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Bundled scan worker (web/Dockerfile builds it)
+web/dist/

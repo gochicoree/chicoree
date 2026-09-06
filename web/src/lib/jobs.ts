@@ -5,7 +5,8 @@ import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { jobRuns, manifests, organization, repositories, tags, vulnerabilityScans } from "@/db/schema";
 import { triggerGarbageCollection } from "./registry-client";
-import { normalizeLegacyScans, runScan } from "./scan";
+import { normalizeLegacyScans } from "./scan";
+import { startScan } from "./scan-tasks";
 import { scanningEnabled } from "./scanners";
 import { expireExceptions } from "./security";
 import { env } from "./env";
@@ -81,7 +82,7 @@ export const JOBS: Record<string, JobDefinition> = {
       let failed = 0;
       for (const row of rows) {
         try {
-          await runScan(row.path as string, row.digest as string);
+          await startScan(row.path as string, row.digest as string);
           scanned++;
         } catch {
           failed++;

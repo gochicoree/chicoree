@@ -410,6 +410,18 @@ through an old name get no grant at all.
   Either credential is accepted while configured; 404 when neither is, 401
   otherwise. A row saved before `tokenHash` existed counts as disabled until
   the section is saved again.
+- **Scan workers** (`lib/scan-tasks.ts`, `lib/scan-worker-auth.ts`,
+  `app/api/internal/worker/*`, `src/worker/main.ts` bundled by esbuild to
+  `worker.mjs` in the image): with *Offload scans to workers* on, a push's
+  scan becomes a `scan_tasks` row instead of running trivy in the web
+  container. Workers authenticate with `SCAN_WORKER_TOKEN`, claim the oldest
+  due row atomically (`FOR UPDATE SKIP LOCKED`, twenty-minute lease), get the
+  manifest, layers, registry address and a scoped pull token, and post the
+  normalised findings back; `finishScan` then does exactly what the inline
+  path does (store, pull-policy refresh, notification). The scheduler tick
+  releases expired leases and, while no worker has reported in for two
+  minutes, runs queued tasks inline — the option degrades to today's
+  behaviour rather than stalling. Workers hold no database credentials.
 
 ## Web app (Next.js App Router)
 
