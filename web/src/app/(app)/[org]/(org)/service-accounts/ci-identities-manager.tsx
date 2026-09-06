@@ -88,7 +88,7 @@ export function CiIdentitiesManager({ organizationId, organizationSlug, appUrl, 
           </form>
           <div className="mt-5 space-y-2">
             <p className="text-xs text-ink-2">In a GitHub Actions job (needs <code className="font-mono">permissions: id-token: write</code>):</p>
-            <CommandLine command={`- uses: ruohki/chicoree/.github/actions/login@main\n  with:\n    registry-url: ${appUrl}\n    organization: ${organizationSlug}`} />
+            <CommandLine command={`- uses: gochicoree/chicoree/.github/actions/login@main\n  with:\n    registry-url: ${appUrl}\n    organization: ${organizationSlug}`} />
           </div>
         </CardBody>
       </Card>

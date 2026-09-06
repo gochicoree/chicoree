@@ -7,7 +7,7 @@ waits for a running scan, applies the organization's accepted risks, and
 writes the verdict to the job summary.
 
 ```yaml
-- uses: ruohki/chicoree/.github/actions/scan-gate@main
+- uses: gochicoree/chicoree/.github/actions/scan-gate@main
   with:
     registry-url: https://registry.example.com
     token: ${{ secrets.REGISTRY_TOKEN }}     # or the token from the login action

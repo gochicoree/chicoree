@@ -12,13 +12,13 @@ permissions:
   contents: read
 
 steps:
-  - uses: ruohki/chicoree/.github/actions/login@main
+  - uses: gochicoree/chicoree/.github/actions/login@main
     id: registry
     with:
       registry-url: https://registry.example.com
       organization: acme          # only needed when several organizations trust this workflow
   - run: docker build -t ${{ steps.registry.outputs.registry }}/acme/api:${{ github.sha }} . && docker push ${{ steps.registry.outputs.registry }}/acme/api:${{ github.sha }}
-  - uses: ruohki/chicoree/.github/actions/scan-gate@main
+  - uses: gochicoree/chicoree/.github/actions/scan-gate@main
     with:
       registry-url: https://registry.example.com
       token: ${{ steps.registry.outputs.token }}

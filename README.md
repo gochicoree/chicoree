@@ -33,7 +33,7 @@ A self-hosted OCI container registry with a proper management plane.
 ### One command on a Linux server
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/gochicoree/chicoree/main/install.sh | sudo sh
 ```
 
 `install.sh` asks a few questions — public HTTPS with Let's Encrypt or plain
