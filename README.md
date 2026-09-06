@@ -1375,7 +1375,9 @@ any other OCI referrer. Chicorée reads both ways of attaching artifacts:
   tags in the same repository (cosign v2, `cosign attach signature|sbom`).
 
 For a multi-arch image the tab shows what is attached to the index and to
-each platform variant (`cosign sign --recursive` signs all of them).
+each platform variant (`cosign sign --recursive` signs all of them). An
+empty tab offers the sign-and-attach commands only to people who may push
+to the repository; visitors and read-only members see a plain note.
 
 Signing and attesting with cosign v3 (the registry has no TLS in this
 example, hence `--allow-http-registry`; drop it for a real deployment):
