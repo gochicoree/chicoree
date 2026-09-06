@@ -13,6 +13,7 @@ export function OrgTabs({
     { href: `/${slug}`, label: "Repositories", show: true, exact: true },
     { href: `/${slug}/security`, label: "Security", show: isMember },
     { href: `/${slug}/members`, label: "Members", show: isMember },
+    { href: `/${slug}/teams`, label: "Teams", show: isMember },
     { href: `/${slug}/service-accounts`, label: "Service accounts", show: canManage },
     { href: `/${slug}/audit`, label: "Audit", show: canManage },
     { href: `/${slug}/settings`, label: "Settings", show: canManage },

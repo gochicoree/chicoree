@@ -216,6 +216,29 @@ async function run() {
   await expect("create org", "POST", "/orgs", 201, { token: A, body: { slug: `${SLUG}-b`, name: "Smoke B" } });
   await expect("delete org", "DELETE", `/orgs/${SLUG}-b`, 200, { token: A });
 
+  // --- Teams and per-repository permissions (2026-09-07.1) ---
+  await expect("outsider: create team → 403", "POST", `/orgs/${SLUG}/teams`, 403, { token: U, body: { name: "Backend" } });
+  const team = await expect("admin: create team", "POST", `/orgs/${SLUG}/teams`, 201, { token: A, body: { name: "Backend", description: "owns app" }, verify: (b) => (isObj(b) && b.slug === "backend" && b.memberCount === 0) || "bad team" });
+  const teamId = (team.body as { id: string }).id;
+  await expect("admin: list teams", "GET", `/orgs/${SLUG}/teams`, 200, { token: A, verify: (b) => (isObj(b) && b.total === 1) || "expected 1 team" });
+  await expect("admin: add non-member to team → 422", "PUT", `/orgs/${SLUG}/teams/backend/members/${userId}`, 422, { token: A });
+  await q(`INSERT INTO member (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, 'viewer', now())`, [randomUUID(), orgId, userId]);
+  await expect("admin: add viewer to team", "PUT", `/orgs/${SLUG}/teams/backend/members/${userId}`, 200, { token: A, verify: (b) => (isObj(b) && (b.members as unknown[]).length === 1) || "member missing" });
+  await expect("viewer: team detail by id", "GET", `/orgs/${SLUG}/teams/${teamId}`, 200, { token: U, verify: (b) => (isObj(b) && b.slug === "backend") || "wrong team" });
+  await expect("admin: rename team", "PATCH", `/orgs/${SLUG}/teams/backend`, 200, { token: A, body: { name: "Platform", slug: "platform" }, verify: (b) => (isObj(b) && b.slug === "platform") || "rename failed" });
+  await expect("viewer: change repo → 403", "PATCH", `/repos/${SLUG}/app`, 403, { token: U, body: { description: "nope" } });
+  await expect("viewer: size history readable", "GET", `/repos/${SLUG}/app/size-history?days=30`, 200, { token: U, verify: (b) => (isObj(b) && b.days === 30 && (b.items as unknown[]).length === 30) || "bad series" });
+  await expect("viewer: access list → 403", "GET", `/repos/${SLUG}/app/access`, 403, { token: U });
+  await expect("admin: grant team admin on app", "PUT", `/repos/${SLUG}/app/access/team/${teamId}`, 200, { token: A, body: { permission: "admin" }, verify: (b) => (isObj(b) && b.permission === "admin" && b.subjectType === "team") || "bad grant" });
+  await expect("viewer+team grant: change repo → 200", "PATCH", `/repos/${SLUG}/app`, 200, { token: U, body: { description: "granted" } });
+  await expect("viewer+team grant: access list shows manage", "GET", `/repos/${SLUG}/app/access`, 200, { token: U, verify: (b) => (isObj(b) && b.total === 1 && (b.you as { manage: boolean }).manage === true) || "you.manage false" });
+  await expect("admin: bad permission → 422", "PUT", `/repos/${SLUG}/app/access/user/${userId}`, 422, { token: A, body: { permission: "root" } });
+  await expect("admin: grant user pull", "PUT", `/repos/${SLUG}/app/access/user/${userId}`, 200, { token: A, body: { permission: "pull" } });
+  await expect("admin: remove team grant", "DELETE", `/repos/${SLUG}/app/access/team/${teamId}`, 200, { token: A });
+  await expect("viewer (pull grant only): change repo → 403", "PATCH", `/repos/${SLUG}/app`, 403, { token: U, body: { description: "nope" } });
+  await expect("admin: delete team", "DELETE", `/orgs/${SLUG}/teams/platform`, 200, { token: A });
+  await expect("admin: teams empty", "GET", `/orgs/${SLUG}/teams`, 200, { token: A, verify: (b) => (isObj(b) && b.total === 0) || "team still there" });
+
   if (WITH_REGISTRY) {
     await expect("retag (registry)", "PUT", `/repos/${SLUG}/app/tags/v2`, 201, { token: A, body: { digest } });
     await expect("delete tag (registry)", "DELETE", `/repos/${SLUG}/app/tags/v2`, 200, { token: A });

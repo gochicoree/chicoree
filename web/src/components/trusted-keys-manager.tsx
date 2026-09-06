@@ -144,8 +144,8 @@ export function TrustedKeysManager({
         title="Trusted signing keys"
         description={
           scope === "organization"
-            ? "cosign public keys whose signatures count as verified in every repository of this organization."
-            : "cosign public keys trusted for this repository, in addition to the organization's."
+            ? "cosign public keys and Notation signing certificates whose signatures count as verified in every repository of this organization."
+            : "cosign public keys and Notation signing certificates trusted for this repository, in addition to the organization's."
         }
       />
       {keys.length > 0 ? (
@@ -174,7 +174,7 @@ export function TrustedKeysManager({
               required
               rows={3}
               className="font-mono text-xs"
-              placeholder={"-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----"}
+              placeholder={"-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----   or   -----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}
             />
           </Field>
           <div className="flex flex-wrap items-center gap-3">

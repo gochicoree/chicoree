@@ -223,6 +223,75 @@ export const vulnerabilityScans = pgTable("vulnerability_scans", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Teams group members of an organization so repository access can be granted
+ * to several people at once (repository_grants). Membership in a team never
+ * exceeds membership in the organization: leaving the organization removes
+ * the person from its teams.
+ */
+export const teams = pgTable(
+  "teams",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** URL-safe, unique per organization (like an organization slug). */
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique("teams_org_slug_uq").on(t.organizationId, t.slug)],
+);
+
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    addedBy: text("added_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.teamId, t.userId] }), index("team_members_user_idx").on(t.userId)],
+);
+
+/**
+ * Per-repository permissions on top of the organization role. The role is
+ * the baseline for every repository (viewer pulls, member pushes, admin and
+ * owner manage); a grant raises what one person or one team may do in one
+ * repository — it never lowers it. Grants only count while the person is a
+ * member of the organization.
+ */
+export const repositoryGrants = pgTable(
+  "repository_grants",
+  {
+    id: text("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    repositoryId: text("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    subjectType: text("subject_type", { enum: ["user", "team"] }).notNull(),
+    /** user.id or teams.id, depending on subject_type. */
+    subjectId: text("subject_id").notNull(),
+    permission: text("permission", { enum: ["pull", "push", "admin"] }).notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("repository_grants_subject_uq").on(t.repositoryId, t.subjectType, t.subjectId),
+    index("repository_grants_subject_idx").on(t.subjectType, t.subjectId),
+  ],
+);
+
 export const serviceAccounts = pgTable(
   "service_accounts",
   {

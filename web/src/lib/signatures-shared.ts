@@ -5,8 +5,8 @@
 // verification statuses. No Node APIs, no database.
 
 export type ArtifactKind = "signature" | "attestation" | "sbom" | "other";
-export type ArtifactSubkind = "provenance" | "spdx" | "cyclonedx" | "vuln" | "cosign-sign" | "custom";
-export type ArtifactFormat = "cosign-legacy" | "sigstore-bundle" | "dsse" | "raw" | "unknown";
+export type ArtifactSubkind = "provenance" | "spdx" | "cyclonedx" | "vuln" | "cosign-sign" | "notation" | "custom";
+export type ArtifactFormat = "cosign-legacy" | "sigstore-bundle" | "dsse" | "notation" | "raw" | "unknown";
 export type SignatureStatus = "verified" | "untrusted" | "invalid" | "keyless";
 
 // --- Media types and annotations ---------------------------------------------------
@@ -18,6 +18,11 @@ export const SIGSTORE_BUNDLE_PREFIX = "application/vnd.dev.sigstore.bundle";
 export const SPDX_JSON = "application/spdx+json";
 export const CYCLONEDX_JSON = "application/vnd.cyclonedx+json";
 export const OCI_EMPTY_CONFIG = "application/vnd.oci.empty.v1+json";
+/** Notation (notaryproject.dev): signatures are referrers of this artifact type with one JWS or COSE layer. */
+export const NOTATION_ARTIFACT_TYPE = "application/vnd.cncf.notary.signature";
+export const NOTATION_JWS = "application/jose+json";
+export const NOTATION_COSE = "application/cose";
+export const NOTATION_PAYLOAD_TYPE = "application/vnd.cncf.notary.payload.v1+json";
 
 /** Layer media types that carry an SBOM document as-is. */
 export const SBOM_MEDIA_TYPES = [
@@ -55,6 +60,8 @@ export function isArtifactMediaType(mediaType: string | null | undefined): boole
     mt === COSIGN_SIMPLE_SIGNING ||
     mt === DSSE_ENVELOPE ||
     mt === IN_TOTO_JSON ||
+    mt === NOTATION_JWS ||
+    mt === NOTATION_COSE ||
     mt.startsWith(SIGSTORE_BUNDLE_PREFIX) ||
     isSbomMediaType(mt)
   );
@@ -114,7 +121,7 @@ export function predicateSubkind(predicateType: string | null | undefined): Arti
 }
 
 export function kindForSubkind(subkind: ArtifactSubkind): ArtifactKind {
-  if (subkind === "cosign-sign") return "signature";
+  if (subkind === "cosign-sign" || subkind === "notation") return "signature";
   if (subkind === "spdx" || subkind === "cyclonedx") return "sbom";
   return "attestation";
 }
@@ -129,6 +136,9 @@ export function classifyArtifact(d: ArtifactDescriptor): Classification {
   const ann = d.annotations ?? {};
   const tagSuffix = parseCosignTag(d.tag)?.suffix ?? null;
 
+  if (d.artifactType === NOTATION_ARTIFACT_TYPE || layers.includes(NOTATION_JWS) || layers.includes(NOTATION_COSE)) {
+    return { kind: "signature", subkind: "notation", format: "notation", predicateType: null };
+  }
   if (layers.some((m) => m.startsWith(SIGSTORE_BUNDLE_PREFIX)) || (d.artifactType ?? "").startsWith(SIGSTORE_BUNDLE_PREFIX)) {
     const predicateType = ann[ANNOTATION_BUNDLE_PREDICATE] ?? null;
     if (ann[ANNOTATION_BUNDLE_CONTENT] === "message-signature") {
@@ -510,6 +520,8 @@ export function signatureFormatLabel(format: ArtifactFormat): string {
       return "Sigstore bundle";
     case "dsse":
       return "DSSE envelope";
+    case "notation":
+      return "Notation signature";
     case "raw":
       return "raw document";
     default:
@@ -539,4 +551,67 @@ export const SIGNATURE_BLOCK_REASON = "no signature from a trusted key or identi
 
 export function isSignatureBlockReason(reason: string | null | undefined): boolean {
   return !!reason && reason.includes("(signature policy)");
+}
+
+// --- Notation JWS envelopes (pure parsing; verification lives in lib/notation.ts) ---------------
+
+export interface NotationJws {
+  /** base64url segments exactly as signed. */
+  protectedB64: string;
+  payloadB64: string;
+  signatureB64: string;
+  protected: {
+    alg?: string;
+    cty?: string;
+    crit?: string[];
+    signingScheme?: string;
+    signingTime?: string;
+    authenticSigningTime?: string;
+    expiry?: string;
+  };
+  /** targetArtifact of the payload. */
+  target: { mediaType?: string; digest?: string; size?: number } | null;
+  /** Certificate chain, leaf first (base64 DER). */
+  x5c: string[];
+  signingAgent: string | null;
+}
+
+function b64urlToUtf8(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  return typeof atob === "function" ? decodeURIComponent(escape(atob(b64))) : Buffer.from(b64, "base64").toString("utf8");
+}
+
+/** Read a Notation JWS JSON serialization; null when it is not one. */
+export function parseNotationJws(value: unknown): NotationJws | null {
+  if (!value || typeof value !== "object") return null;
+  const o = value as Record<string, unknown>;
+  if (typeof o.protected !== "string" || typeof o.payload !== "string" || typeof o.signature !== "string") return null;
+  let prot: Record<string, unknown>;
+  let payload: Record<string, unknown>;
+  try {
+    prot = JSON.parse(b64urlToUtf8(o.protected)) as Record<string, unknown>;
+    payload = JSON.parse(b64urlToUtf8(o.payload)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const header = (o.header ?? {}) as Record<string, unknown>;
+  const x5c = Array.isArray(header.x5c) ? header.x5c.filter((c): c is string => typeof c === "string") : [];
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  return {
+    protectedB64: o.protected,
+    payloadB64: o.payload,
+    signatureB64: o.signature,
+    protected: {
+      alg: str(prot.alg),
+      cty: str(prot.cty),
+      crit: Array.isArray(prot.crit) ? prot.crit.filter((c): c is string => typeof c === "string") : undefined,
+      signingScheme: str(prot["io.cncf.notary.signingScheme"]),
+      signingTime: str(prot["io.cncf.notary.signingTime"]),
+      authenticSigningTime: str(prot["io.cncf.notary.authenticSigningTime"]),
+      expiry: str(prot["io.cncf.notary.expiry"]),
+    },
+    target: payload.targetArtifact && typeof payload.targetArtifact === "object" ? (payload.targetArtifact as NotationJws["target"]) : null,
+    x5c,
+    signingAgent: str(header["io.cncf.notary.signingAgent"]) ?? null,
+  };
 }

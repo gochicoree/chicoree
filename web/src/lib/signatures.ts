@@ -30,6 +30,7 @@ import { WRITER_ROLES } from "./org-roles";
 import { refreshRepositoryBlocks } from "./pull-policy";
 import { effectiveSignaturePolicy } from "./pull-policy-shared";
 import { fetchBlobBytes } from "./registry-client";
+import { verifyNotationJws } from "./notation";
 import {
   ANNOTATION_CERTIFICATE,
   ANNOTATION_CHAIN,
@@ -57,8 +58,7 @@ import {
   type ProvenanceSummary,
   type SbomSummary,
   type SignatureCheck,
-  type SignatureStatus,
-} from "./signatures-shared";
+  type SignatureStatus, NOTATION_COSE } from "./signatures-shared";
 
 export * from "./signatures-shared";
 
@@ -117,12 +117,13 @@ export function keyFingerprint(key: KeyObject): string {
 /** Parse a PEM public key (or certificate) and describe it; throws a user-facing message. */
 export function parsePublicKey(input: string): ParsedPublicKey {
   const pem = input.trim();
-  if (!pem.includes("-----BEGIN")) throw new Error("Paste a PEM-encoded public key (-----BEGIN PUBLIC KEY----- …).");
+  if (!pem.includes("-----BEGIN")) throw new Error("Paste a PEM-encoded public key (-----BEGIN PUBLIC KEY----- …) or an X.509 certificate (-----BEGIN CERTIFICATE----- …).");
+  const isCertificate = pem.includes("-----BEGIN CERTIFICATE-----");
   let key: KeyObject;
   try {
-    key = createPublicKey({ key: pem, format: "pem" });
+    key = isCertificate ? new X509Certificate(pem).publicKey : createPublicKey({ key: pem, format: "pem" });
   } catch (err) {
-    throw new Error(`Not a usable public key: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`Not a usable ${isCertificate ? "certificate" : "public key"}: ${err instanceof Error ? err.message : String(err)}`);
   }
   const details = key.asymmetricKeyDetails ?? {};
   let keyType: string;
@@ -144,7 +145,7 @@ export function parsePublicKey(input: string): ParsedPublicKey {
     default:
       throw new Error(`Unsupported key type "${key.asymmetricKeyType}"; use ECDSA, Ed25519 or RSA.`);
   }
-  return { key, pem: key.export({ type: "spki", format: "pem" }) as string, fingerprint: keyFingerprint(key), keyType };
+  return { key, pem: key.export({ type: "spki", format: "pem" }) as string, fingerprint: keyFingerprint(key), keyType: isCertificate ? `${keyType} (certificate)` : keyType };
 }
 
 /**
@@ -731,6 +732,9 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
   let complete = true;
 
   switch (cls.format) {
+    case "notation":
+      summary = { kind: "signature", predicateType: null, signatures: layers.length };
+      break;
     case "cosign-legacy":
       summary = { kind: "signature", predicateType: null, signatures: layers.length };
       break;
@@ -977,6 +981,24 @@ export async function checkArtifactSignatures(input: {
   const checks: SignatureCheck[] = [];
 
   switch (classification.format) {
+    case "notation": {
+      for (const layer of layers) {
+        const check: SignatureCheck = { payloadDigest: layer.digest ?? "", format: "notation", status: "untrusted" };
+        checks.push(check);
+        const mt = (layer.mediaType ?? "").split(";")[0].trim();
+        if (mt === NOTATION_COSE) {
+          check.reason = "COSE envelopes are listed but not verified yet; sign with the JWS envelope (notation's default) to have it checked";
+          continue;
+        }
+        const blob = layer.digest ? await input.load(layer.digest) : null;
+        if (!blob) {
+          invalid(check, "envelope blob unavailable");
+          continue;
+        }
+        verifyNotationJws(blob, subjectDigest, keys, check);
+      }
+      break;
+    }
     case "cosign-legacy": {
       for (const layer of layers) {
         const check: SignatureCheck = { payloadDigest: layer.digest ?? "", format: "cosign-legacy", status: "untrusted" };

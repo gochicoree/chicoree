@@ -56,6 +56,19 @@ through better-auth's organization access control and shared by server,
 client and the token service. Repositories are auto-created on first push
 (private) when the pusher may write to the org namespace.
 
+Per-repository grants (`repository_grants`: repository, subject `user` |
+`team`, permission `pull` | `push` | `admin`) and teams (`teams`,
+`team_members`; a team never outgrows the organization's membership, and
+`afterRemoveMember` drops a leaver's seats and grants) raise the role's
+baseline for one repository, never lower it: `lib/repo-access.ts`
+`grantedPermission(userId, repoId)` is the maximum over the person's own
+and their teams' grants, and `effectivePermission` folds it into the role
+(members only). The token service (`allowedRepositoryActions`), the REST
+API (`loadRepo` → `can.manage/write/delete`) and the pages
+(`getRepoContext`) all consult it, so a `viewer` with a `push` grant pushes
+one repository and nothing else. Service accounts keep their own permission
+plus optional repository list.
+
 Refinements: a `*` action (`repository:<name>:*`, what `skopeo delete`
 requests) expands to every valid action and is then filtered by what the
 caller may do; repositories in proxy-cache organizations grant `pull` only,
@@ -591,13 +604,25 @@ through an old name get no grant at all.
   `searchFindings` (`vulnerability_id ILIKE %q% OR package ILIKE %q%`, 200
   rows) behind `/<org>/security` and `/admin/security`. Index (multi-arch)
   manifests aggregate their children's scans in the UI.
+- **Notation** (`lib/notation.ts`): a referrer of artifact type
+  `application/vnd.cncf.notary.signature` with a JWS layer is parsed
+  (`parseNotationJws`, pure), the signature checked with the leaf certificate
+  from `x5c` (PS256/384/512 with RSA-PSS salt = hash length, ES256/384/512
+  in IEEE P1363 form) over `protected.payload`, the payload's
+  `targetArtifact.digest` compared to the subject and `io.cncf.notary.expiry`
+  honoured; it is *verified* when the SPKI fingerprint of any chain
+  certificate matches a trusted key row (leaf or issuing CA), otherwise
+  *untrusted* with the certificate subject as identity. COSE layers are
+  listed as untrusted with a reason; trust-policy files, revocation and
+  timestamps are not implemented.
 - **Signatures** (`src/lib/signatures.ts`, `signatures-shared.ts`,
   `app/api/artifacts/[repo]/[digest]/route.ts`): `discoverArtifacts` finds
   manifests whose `subject_digest` is one of the subjects ∪ manifests under
   `sha256-<hex>.sig|att|sbom` tags; `classifyArtifact` maps a descriptor to
   kind (`signature` | `attestation` | `sbom` | `other`), subkind
-  (`provenance`, `spdx`, `cyclonedx`, `vuln`, `cosign-sign`, `custom`) and
-  format (`cosign-legacy`, `sigstore-bundle`, `dsse`, `raw`); the parsed
+  (`provenance`, `spdx`, `cyclonedx`, `vuln`, `cosign-sign`, `notation`,
+  `custom`) and format (`cosign-legacy`, `sigstore-bundle`, `dsse`,
+  `notation`, `raw`); the parsed
   summary (SBOM package count and preview, SLSA v1 / v0.2 fields) is cached
   content-addressed in `manifest_artifacts` (the first layer blob is loaded
   through registryd with a system pull token, ≤ 16 MiB; a summary computed
@@ -605,7 +630,9 @@ through an old name get no grant at all.
   (`signing_keys_trusted`: organization, optional repository, normalised
   SPKI PEM, fingerprint = sha256 of the DER SPKI — the value Sigstore
   bundles carry as the key hint, type; ≤ 50 per scope) are parsed with
-  Node's `createPublicKey` (ECDSA, Ed25519, RSA ≥ 2048). Personal keys
+  Node's `createPublicKey` (ECDSA, Ed25519, RSA ≥ 2048) or taken from an
+  X.509 certificate PEM (the certificate's public key; how Notation
+  signing certificates and CAs are trusted). Personal keys
   (`user_signing_keys`: owner, name, PEM, globally unique fingerprint; ≤ 10
   per user, *Settings → Signing keys*) join them through
   `effectiveVerificationKeys(orgId, repoId)`, which yields `VerificationKey`s

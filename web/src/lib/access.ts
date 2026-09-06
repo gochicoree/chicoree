@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { isDockerHubUrl, proxyLocalName } from "./proxy-shared";
 import { restrictionAllows, type TokenRestriction } from "./token-policy-shared";
+import { grantedPermission } from "./repo-access";
 
 export type RegistryAction = "pull" | "push" | "delete";
 
@@ -99,6 +100,12 @@ export async function allowedRepositoryActions(
           where: and(eq(member.organizationId, org.id), eq(member.userId, caller.userId)),
         });
         allowed = membership ? [...(ROLE_REGISTRY_ACTIONS[membership.role as OrgRole] ?? ["pull"])] : [];
+        // Per-repository grants (to the person or one of their teams) raise the role's baseline.
+        if (membership && repo) {
+          const granted = await grantedPermission(caller.userId, repo.id);
+          if (granted === "admin") allowed = ["pull", "push", "delete"];
+          else if (granted === "push" && !allowed.includes("push")) allowed = [...new Set([...allowed, "pull" as const, "push" as const])];
+        }
         if (allowed.length === 0 && visibility === "public") allowed = ["pull"];
       }
       if (caller.patScope === "read") allowed = allowed.filter((a) => a === "pull");

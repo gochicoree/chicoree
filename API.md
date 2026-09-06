@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-06.9` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-07.1` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-06.9`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.1`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -105,6 +105,14 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | [`GET /api/v1/orgs/{org}/repos`](#get-orgs-org-repos) | List repositories of an organization | anyone |
 | [`POST /api/v1/orgs/{org}/repos`](#post-orgs-org-repos) | Create a repository | organization owners, admins and members |
 | [`GET /api/v1/orgs/{org}/members`](#get-orgs-org-members) | List members | organization members |
+| [`GET /api/v1/orgs/{org}/teams`](#get-orgs-org-teams) | List teams | organization members |
+| [`POST /api/v1/orgs/{org}/teams`](#post-orgs-org-teams) | Create a team | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/teams/{team}`](#get-orgs-org-teams-team) | Team details | organization members |
+| [`PATCH /api/v1/orgs/{org}/teams/{team}`](#patch-orgs-org-teams-team) | Update a team | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/teams/{team}`](#delete-orgs-org-teams-team) | Delete a team | organization owners and admins |
+| [`GET /api/v1/orgs/{org}/teams/{team}/members`](#get-orgs-org-teams-team-members) | List team members | organization members |
+| [`PUT /api/v1/orgs/{org}/teams/{team}/members/{userId}`](#put-orgs-org-teams-team-members-userId) | Add a member to a team | organization owners and admins |
+| [`DELETE /api/v1/orgs/{org}/teams/{team}/members/{userId}`](#delete-orgs-org-teams-team-members-userId) | Remove a member from a team | organization owners and admins |
 | [`GET /api/v1/orgs/{org}/audit`](#get-orgs-org-audit) | Organization audit log | organization owners and admins |
 | [`POST /api/v1/orgs`](#post-orgs) | Create an organization | a signed-in user or personal access token |
 | [`PATCH /api/v1/orgs/{org}`](#patch-orgs-org) | Rename an organization | organization owners and admins |
@@ -136,6 +144,10 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 
 | Endpoint | What it does | Who |
 | --- | --- | --- |
+| [`GET /api/v1/repos/{org}/{repo}/size-history`](#get-repos-org-repo-size-history) | Image size over time | anyone |
+| [`GET /api/v1/repos/{org}/{repo}/access`](#get-repos-org-repo-access) | Who has access to a repository | organization owners and admins |
+| [`PUT /api/v1/repos/{org}/{repo}/access/{subjectType}/{subjectId}`](#put-repos-org-repo-access-subjectType-subjectId) | Grant access to a person or a team | organization owners and admins |
+| [`DELETE /api/v1/repos/{org}/{repo}/access/{subjectType}/{subjectId}`](#delete-repos-org-repo-access-subjectType-subjectId) | Remove a grant | organization owners and admins |
 | [`GET /api/v1/repos/{org}/{repo}`](#get-repos-org-repo) | Repository details | anyone |
 | [`PATCH /api/v1/repos/{org}/{repo}`](#patch-repos-org-repo) | Update a repository | organization owners and admins |
 | [`DELETE /api/v1/repos/{org}/{repo}`](#delete-repos-org-repo) | Delete a repository | organization owners and admins |
@@ -559,6 +571,287 @@ Response `200`:
 ~~~sh
 curl -H "Authorization: Bearer $TOKEN" \
   "https://registry.example.com/api/v1/orgs/acme/members"
+~~~
+
+### <a id="get-orgs-org-teams"></a>`GET /api/v1/orgs/{org}/teams`
+
+List teams — Teams group members so a repository can grant access to all of them at once.
+
+**Who:** organization members · **Service accounts:** no · **Write:** no · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "t_3a…",
+      "slug": "backend",
+      "name": "Backend",
+      "description": "Owns the API and the workers",
+      "memberCount": 3,
+      "createdAt": "2026-09-07T09:00:00.000Z"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams"
+~~~
+
+### <a id="post-orgs-org-teams"></a>`POST /api/v1/orgs/{org}/teams`
+
+Create a team.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `name` | body | string | yes | Up to 64 characters. |
+| `slug` | body | string |  | Lowercase letters, digits and single . _ - separators; derived from the name when omitted. |
+| `description` | body | string |  | Up to 200 characters. |
+
+Response `201`:
+
+~~~json
+{
+  "id": "t_3a…",
+  "slug": "backend",
+  "name": "Backend",
+  "description": "Owns the API and the workers",
+  "memberCount": 3,
+  "createdAt": "2026-09-07T09:00:00.000Z"
+}
+~~~
+
+~~~sh
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","slug":"…","description":"The public API server"}' \
+  "https://registry.example.com/api/v1/orgs/acme/teams"
+~~~
+
+### <a id="get-orgs-org-teams-team"></a>`GET /api/v1/orgs/{org}/teams/{team}`
+
+Team details — By slug or id, with the members.
+
+**Who:** organization members · **Service accounts:** no · **Write:** no · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "t_3a…",
+  "slug": "backend",
+  "name": "Backend",
+  "description": "Owns the API and the workers",
+  "memberCount": 1,
+  "createdAt": "2026-09-07T09:00:00.000Z",
+  "members": [
+    {
+      "userId": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "viewer",
+      "addedAt": "2026-09-07T09:05:00.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}"
+~~~
+
+### <a id="patch-orgs-org-teams-team"></a>`PATCH /api/v1/orgs/{org}/teams/{team}`
+
+Update a team — Omitted fields keep their value.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+| `name` | body | string |  | Up to 64 characters. |
+| `slug` | body | string |  | Lowercase letters, digits and single . _ - separators. |
+| `description` | body | string |  | Up to 200 characters. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "t_3a…",
+  "slug": "backend",
+  "name": "Backend",
+  "description": "Owns the API and the workers",
+  "memberCount": 1,
+  "createdAt": "2026-09-07T09:00:00.000Z",
+  "members": [
+    {
+      "userId": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "viewer",
+      "addedAt": "2026-09-07T09:05:00.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"api","slug":"…","description":"The public API server"}' \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}"
+~~~
+
+### <a id="delete-orgs-org-teams-team"></a>`DELETE /api/v1/orgs/{org}/teams/{team}`
+
+Delete a team — Its repository grants go with it; nobody loses their organization membership.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": true,
+  "team": "backend"
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}"
+~~~
+
+### <a id="get-orgs-org-teams-team-members"></a>`GET /api/v1/orgs/{org}/teams/{team}/members`
+
+List team members.
+
+**Who:** organization members · **Service accounts:** no · **Write:** no · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "userId": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "viewer",
+      "addedAt": "2026-09-07T09:05:00.000Z"
+    }
+  ],
+  "total": 1
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}/members"
+~~~
+
+### <a id="put-orgs-org-teams-team-members-userId"></a>`PUT /api/v1/orgs/{org}/teams/{team}/members/{userId}`
+
+Add a member to a team — Only members of the organization can join its teams (`GET /orgs/{org}/members` for their ids).
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+| `userId` | path | string | yes | The member's user id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "t_3a…",
+  "slug": "backend",
+  "name": "Backend",
+  "description": "Owns the API and the workers",
+  "memberCount": 1,
+  "createdAt": "2026-09-07T09:00:00.000Z",
+  "members": [
+    {
+      "userId": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "viewer",
+      "addedAt": "2026-09-07T09:05:00.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}/members/{userId}"
+~~~
+
+### <a id="delete-orgs-org-teams-team-members-userId"></a>`DELETE /api/v1/orgs/{org}/teams/{team}/members/{userId}`
+
+Remove a member from a team.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `team` | path | string | yes | Team slug or id. |
+| `userId` | path | string | yes | The member's user id. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "t_3a…",
+  "slug": "backend",
+  "name": "Backend",
+  "description": "Owns the API and the workers",
+  "memberCount": 1,
+  "createdAt": "2026-09-07T09:00:00.000Z",
+  "members": [
+    {
+      "userId": "u_7f…",
+      "name": "Jo Doe",
+      "email": "jo@example.com",
+      "role": "viewer",
+      "addedAt": "2026-09-07T09:05:00.000Z"
+    }
+  ]
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/orgs/acme/teams/{team}/members/{userId}"
 ~~~
 
 ### <a id="get-orgs-org-audit"></a>`GET /api/v1/orgs/{org}/audit`
@@ -1508,6 +1801,150 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ## Repositories
 
 
+
+### <a id="get-repos-org-repo-size-history"></a>`GET /api/v1/repos/{org}/{repo}/size-history`
+
+Image size over time — For each of the last `days` days, the compressed size (layers + config) of the newest image pushed that day, zero when nothing was pushed. Indexes, referrers and attached artifacts are left out.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `days` | query | integer |  | 7–366; default 90. |
+
+Response `200`:
+
+~~~json
+{
+  "days": 90,
+  "items": [
+    {
+      "day": "2026-09-05",
+      "bytes": 0,
+      "digest": null
+    },
+    {
+      "day": "2026-09-06",
+      "bytes": 73400320,
+      "digest": "sha256:9f8e…"
+    }
+  ],
+  "latest": {
+    "day": "2026-09-06",
+    "bytes": 73400320,
+    "digest": "sha256:9f8e…"
+  },
+  "peakBytes": 81920000
+}
+~~~
+
+~~~sh
+curl \
+  "https://registry.example.com/api/v1/repos/acme/api/size-history"
+~~~
+
+### <a id="get-repos-org-repo-access"></a>`GET /api/v1/repos/{org}/{repo}/access`
+
+Who has access to a repository — The grants on this repository — per person or per team, on top of the organization roles — and what the caller may do here. Repository admins only.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** no · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "id": "g_91…",
+      "subjectType": "team",
+      "subjectId": "t_3a…",
+      "name": "Backend",
+      "detail": "backend",
+      "permission": "push",
+      "createdAt": "2026-09-07T09:10:00.000Z"
+    }
+  ],
+  "total": 1,
+  "you": {
+    "role": "admin",
+    "manage": true,
+    "write": true,
+    "delete": true
+  }
+}
+~~~
+
+~~~sh
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/access"
+~~~
+
+### <a id="put-repos-org-repo-access-subjectType-subjectId"></a>`PUT /api/v1/repos/{org}/{repo}/access/{subjectType}/{subjectId}`
+
+Grant access to a person or a team — `subjectType` is `user` or `team`. The grant raises what they may do in this repository above their organization role; it never lowers it. Members of the organization only.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `subjectType` | path | user \| team | yes | Whether `subjectId` is a user id or a team id. |
+| `subjectId` | path | string | yes | User id or team id. |
+| `permission` | body | pull \| push \| admin | yes | pull: browse and pull. push: also push, retag, copy in. admin: also delete images, change settings, manage access. |
+
+Response `200`:
+
+~~~json
+{
+  "id": "g_91…",
+  "subjectType": "team",
+  "subjectId": "t_3a…",
+  "name": "Backend",
+  "detail": "backend",
+  "permission": "push",
+  "createdAt": "2026-09-07T09:10:00.000Z"
+}
+~~~
+
+~~~sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"permission":"…"}' \
+  "https://registry.example.com/api/v1/repos/acme/api/access/{subjectType}/{subjectId}"
+~~~
+
+### <a id="delete-repos-org-repo-access-subjectType-subjectId"></a>`DELETE /api/v1/repos/{org}/{repo}/access/{subjectType}/{subjectId}`
+
+Remove a grant.
+
+**Who:** organization owners and admins · **Service accounts:** no · **Write:** needs a read & write token · **Since:** 2026-09-07.1
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `subjectType` | path | user \| team | yes | Whether `subjectId` is a user id or a team id. |
+| `subjectId` | path | string | yes | User id or team id. |
+
+Response `200`:
+
+~~~json
+{
+  "deleted": true
+}
+~~~
+
+~~~sh
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://registry.example.com/api/v1/repos/acme/api/access/{subjectType}/{subjectId}"
+~~~
 
 ### <a id="get-repos-org-repo"></a>`GET /api/v1/repos/{org}/{repo}`
 
@@ -3251,6 +3688,13 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-07.1
+
+- Teams: `GET/POST /orgs/{org}/teams`, `GET/PATCH/DELETE /orgs/{org}/teams/{team}`, `GET /orgs/{org}/teams/{team}/members`, `PUT/DELETE /orgs/{org}/teams/{team}/members/{userId}`. Teams group members of an organization so repository access can be granted to all of them at once.
+- Per-repository permissions: `GET /repos/{org}/{repo}/access`, `PUT/DELETE /repos/{org}/{repo}/access/{user|team}/{id}` with `permission: pull | push | admin`. The organization role stays the baseline for every repository; a grant raises what one person or one team may do in one repository. Docker tokens, the API's write checks and the pages honour grants.
+- `GET /repos/{org}/{repo}/size-history?days=` — the compressed size of the newest image pushed each day; the repository page charts it for members.
+- Notation signatures: referrers of type `application/vnd.cncf.notary.signature` are recognised (`format: notation` in attestation and signature responses), their JWS envelope verified against the embedded certificate, and counted as verified when the signing certificate or its issuer is in the trust store — trusted signing keys now accept X.509 certificate PEMs.
 
 ### 2026-09-06.9
 

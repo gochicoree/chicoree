@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, GitCompareArrows, Layers } from "lucide-react";
 import { db } from "@/db";
 import { ciIdentitiesTrusted, organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
-import { getOrgContext, getSession } from "@/lib/session";
+import { getSession } from "@/lib/session";
 import { getManifestWithScan, getRepoByPath, listUserOrgs } from "@/lib/data";
 import { env } from "@/lib/env";
 import { fetchBlobJson } from "@/lib/registry-client";
@@ -47,6 +47,7 @@ import { scanInProgress } from "@/lib/scanner-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { showArtifactsFor } from "@/lib/artifact-visibility";
 import { imagePath } from "@/lib/library-shared";
+import { getRepoContext } from "@/lib/repo-access";
 
 interface Descriptor {
   mediaType?: string;
@@ -129,8 +130,8 @@ export default async function TagDetailPage({
   const found = await getRepoByPath(orgSlug, repoName);
   // Renamed / transferred repositories: 308 to the new address.
   if (!found) return redirectMovedRepository(orgSlug, repoName, `/tags/${rawTag}`);
-  const ctx = await getOrgContext(orgSlug);
-  const role = ctx?.role ?? null;
+  const access = await getRepoContext(orgSlug, repoName);
+  const role = access?.role ?? null;
   if (found.repo.visibility === "private" && !role) notFound();
 
   // The reference may be a tag name or a raw digest (index children).
@@ -214,7 +215,7 @@ export default async function TagDetailPage({
     for (const [d, info] of refs) shared[d] = info;
   }
   // Tag rules: lock badges for a tag reference, and whether the image may be deleted by digest.
-  const canManage = role === "owner" || role === "admin";
+  const canManage = !!access?.can.manage;
   const rules = await effectiveTagRules(found.repo.organizationId, found.repo.id);
   const flags = isDigestRef ? null : tagFlags(rules, reference);
   const deletion = canManage ? await manifestDeleteBlocker(found.repo, digest) : null;
@@ -255,7 +256,7 @@ export default async function TagDetailPage({
   });
   const signaturesRequired = effectiveSignaturePolicy(orgSettingsRow, found.repo);
   const signedByTrustedKey = attestations.signatures.some((s) => s.sig?.status === "verified");
-  const canReverify = !!role && WRITER_ROLES.includes(role);
+  const canReverify = !!access?.can.write;
   // "Move or copy": writers only, and never out of a proxy cache (its images belong to the upstream).
   const sourceIsProxy = !!(await db.query.organizationProxies.findFirst({
     where: eq(organizationProxies.organizationId, found.repo.organizationId),

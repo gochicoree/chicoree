@@ -18,6 +18,7 @@ import { restrictionAllows } from "@/lib/token-policy-shared";
 import { memberOfOrganizationFilter, visibleRepositoriesFilter } from "@/lib/viewer";
 import type { ApiCaller } from "./auth";
 import { forbidden, notFound } from "./respond";
+import { grantedPermission } from "@/lib/repo-access";
 
 export type OrgRow = typeof organization.$inferSelect;
 export type RepoRow = typeof repositories.$inferSelect;
@@ -134,9 +135,11 @@ export async function loadRepo(c: ApiCaller, orgSlug: string, repoName: string):
   let write = false;
   if (c.kind === "user") {
     const inScope = c.caller.patScope !== "read" && restrictionAllows(c.caller.restriction, { organizationId: org.id, repositoryId: repo.id });
-    manage = inScope && !!role && MANAGER_ROLES.includes(role);
+    // Role baseline, raised by grants to the person or their teams (members only).
+    const granted = role && !c.caller.isAdmin ? await grantedPermission(c.caller.userId, repo.id) : null;
+    manage = inScope && !!role && (MANAGER_ROLES.includes(role) || granted === "admin");
     del = manage;
-    write = inScope && !!role && WRITER_ROLES.includes(role);
+    write = inScope && !!role && (WRITER_ROLES.includes(role) || granted === "push" || granted === "admin");
   } else if (c.kind === "sa") {
     const listed = !c.caller.repositoryIds || c.caller.repositoryIds.includes(repo.id);
     const own = c.caller.organizationId === org.id && listed;
