@@ -20,6 +20,7 @@ export function scannerFromSettings(s: ScannerSettings): Scanner | null {
       return createTrivyScanner({
         bin: env.trivyBin,
         serverUrl: s.trivyServerUrl,
+        serverToken: env.trivyServerToken,
         timeoutSeconds: s.trivyTimeoutSeconds > 0 ? s.trivyTimeoutSeconds : env.trivyTimeoutSeconds,
         cacheDir: env.trivyCacheDir,
       });
