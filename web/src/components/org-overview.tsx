@@ -7,8 +7,8 @@ import { EntityLogo } from "@/components/entity-logo";
 import { buttonClasses } from "@/components/ui/button";
 import { logoRef } from "@/lib/logo-shared";
 import { MANAGER_ROLES, WRITER_ROLES, type OrgRole } from "@/lib/org-roles";
-
 import { isLibrary } from "@/lib/library-shared";
+
 /**
  * The dashboard's organization cards: one per organization the user belongs
  * to, with their role, the size of the place and how alive it is. The whole

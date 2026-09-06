@@ -15,8 +15,8 @@ import { ConfirmModal } from "@/components/ui/modal";
 import { PaginationFooter } from "@/components/ui/pagination";
 import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { useActionToast } from "@/components/ui/toast";
-
 import { isLibrary } from "@/lib/library-shared";
+
 type Row = Omit<ExceptionView, "expiresAt" | "createdAt"> & { expiresAt: string | null; createdAt: string };
 
 const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-3 first:pl-5 last:pr-5";

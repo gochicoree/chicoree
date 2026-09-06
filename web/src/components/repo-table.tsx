@@ -7,8 +7,8 @@ import { repoHref } from "@/lib/proxy-shared";
 import { StarCount } from "@/components/star-button";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
-
 import { imagePath } from "@/lib/library-shared";
+
 /** Repository listing used on org pages and the explore page. */
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
   if (repos.length === 0) return null;

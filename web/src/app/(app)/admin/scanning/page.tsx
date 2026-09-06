@@ -14,8 +14,8 @@ import { SeverityChips } from "@/components/severity";
 import { AdminNav } from "../admin-nav";
 import { ScannerForm } from "./scanner-form";
 import { RescanButton } from "./rescan-button";
-
 import { imagePath } from "@/lib/library-shared";
+
 export const metadata: Metadata = { title: "Scanning" };
 export const dynamic = "force-dynamic";
 

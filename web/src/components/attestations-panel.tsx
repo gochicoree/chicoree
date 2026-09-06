@@ -116,6 +116,7 @@ export function AttestationsPanel({
   digestReference,
   policyHref,
   canReverify,
+  canPush,
   signaturesRequired,
 }: {
   view: AttestationView;
@@ -125,6 +126,8 @@ export function AttestationsPanel({
   digestReference: string;
   policyHref: string;
   canReverify: boolean;
+  /** The viewer may push to this repository; only then are the sign/attach commands shown. */
+  canPush: boolean;
   signaturesRequired: boolean;
 }) {
   // An attestation carries a signature too: counting only the plain ones read
@@ -161,7 +164,13 @@ export function AttestationsPanel({
         </div>
       )}
 
-      {view.total === 0 && (
+      {view.total === 0 && !canPush && (
+        <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-ink-3">
+          Signatures, SBOMs and provenance show up here once someone who can push attaches them.
+        </p>
+      )}
+
+      {view.total === 0 && canPush && (
         <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
           <p>
             Sign the image or attach an SBOM with cosign or oras and it shows up here.

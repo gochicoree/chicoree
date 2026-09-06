@@ -46,8 +46,8 @@ import { WRITER_ROLES } from "@/lib/org-roles";
 import { scanInProgress } from "@/lib/scanner-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { showArtifactsFor } from "@/lib/artifact-visibility";
-
 import { imagePath } from "@/lib/library-shared";
+
 interface Descriptor {
   mediaType?: string;
   digest?: string;
@@ -272,6 +272,7 @@ export default async function TagDetailPage({
       digestReference={digestReference}
       policyHref={`${base}/settings/policy`}
       canReverify={canReverify}
+      canPush={canReverify && !sourceIsProxy}
       signaturesRequired={signaturesRequired}
     />
   );

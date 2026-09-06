@@ -26,8 +26,8 @@ import { RepoShortlist } from "@/components/repo-shortlist";
 import { OrgOverviewGrid } from "@/components/org-overview";
 import { EntityLogo } from "@/components/entity-logo";
 import { VisibilityBadge } from "@/components/ui/badge";
-
 import { imagePath } from "@/lib/library-shared";
+
 export const metadata: Metadata = { title: "Dashboard" };
 
 /** "expires today" / "expires in 3 days" for an invitation that is still open. */

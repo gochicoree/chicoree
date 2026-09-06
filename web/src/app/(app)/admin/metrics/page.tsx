@@ -27,8 +27,8 @@ import { PullsChart } from "@/components/pulls-chart";
 import { SeverityBar, SeverityChips } from "@/components/severity";
 import { AdminNav } from "../admin-nav";
 import { MetricsForm } from "./metrics-form";
-
 import { imagePath } from "@/lib/library-shared";
+
 export const metadata: Metadata = { title: "Metrics" };
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
