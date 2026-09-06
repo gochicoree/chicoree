@@ -290,6 +290,10 @@ export const env = {
   get instanceTagline() {
     return process.env.INSTANCE_TAGLINE ?? "";
   },
+  /** self-hosted (default) or hosted: the landing page's audience (Administration → Branding overrides). */
+  get instanceEdition(): "self-hosted" | "hosted" {
+    return (process.env.INSTANCE_EDITION ?? "").trim().toLowerCase() === "hosted" ? "hosted" : "self-hosted";
+  },
   /** List signatures, SBOMs and BuildKit attestation entries next to images (default: hidden). */
   get showArtifacts() {
     return process.env.SHOW_ARTIFACTS === "true" || process.env.SHOW_ARTIFACTS === "1";

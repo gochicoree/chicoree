@@ -17,9 +17,26 @@ export interface Announcement {
   dismissible: boolean;
 }
 
+/**
+ * How the instance presents itself: a registry people run themselves, or a
+ * hosted service people sign up for. Changes the landing page's wording and
+ * the default tagline, nothing about how the registry works.
+ */
+export type Edition = "self-hosted" | "hosted";
+
+export const EDITIONS: { value: Edition; label: string; description: string }[] = [
+  { value: "self-hosted", label: "Self-hosted", description: "The landing page speaks to whoever runs this registry: install, first account, your images." },
+  { value: "hosted", label: "Hosted service", description: "The landing page speaks to customers: sign up, the free plan, upgrade later." },
+];
+
+export function defaultTagline(edition: Edition): string {
+  return edition === "hosted" ? "Container registry, hosted for you" : "Self-hosted OCI container registry";
+}
+
 export interface BrandingSettings {
   instanceName: string;
   tagline: string;
+  edition: Edition;
   /** An image as a data: URL (≤ LOGO_MAX_BYTES, one of LOGO_MEDIA_TYPES), or "" for the built-in mark. */
   logoDataUrl: string;
   /** #rrggbb, or "" for the default. Applied as the --brand token. */
@@ -47,6 +64,7 @@ export interface BrandingSettings {
 export const DEFAULT_BRANDING: BrandingSettings = {
   instanceName: "Chicorée",
   tagline: "Self-hosted OCI container registry",
+  edition: "self-hosted",
   logoDataUrl: "",
   accentColor: "",
   footerLinks: [],

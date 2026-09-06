@@ -109,7 +109,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Account portal | *Administration → Limits*; `PORTAL_URL`, `PORTAL_LABEL` as defaults — see [Account portal](#account-portal) |
 | Token signing keys | *Administration → Signing keys*; `TOKEN_KEY_RELOAD_INTERVAL` (default `60s`) and `TOKEN_KEY_DROP_WINDOW` (default `10m`) on `registryd` — see [Signing-key rotation](#signing-key-rotation) |
 | Upload staging | `STORAGE_STAGING=local\|shared` and `UPLOAD_SESSION_TTL` (default `24h`) on `registryd` — see [Running several registryd replicas](#running-several-registryd-replicas) |
-| Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE` as defaults — see [Branding](#branding) |
+| Branding | *Administration → Branding*; `INSTANCE_NAME`, `INSTANCE_TAGLINE`, `INSTANCE_EDITION` as defaults — see [Branding](#branding) |
 | Pull rate limits | *Administration → Rate limits*; `RATE_LIMIT_ANONYMOUS`, `RATE_LIMIT_AUTHENTICATED`, `RATE_LIMIT_TRUSTED_PROXIES` as defaults, read by the web app and `registryd` — see [Rate limits](#rate-limits) |
 | REST API rate limits | *Administration → Rate limits*; `RATE_LIMIT_API_ANONYMOUS` (default `120/1m`), `RATE_LIMIT_API_AUTHENTICATED` (default `1200/1m`) as defaults — see [REST API](#rest-api) |
 | Audit log | `AUDIT_RETENTION_DAYS` (default `365`) — see [Audit log](#audit-log) |
@@ -516,8 +516,19 @@ the chicory mark), the accent colour, up to six footer links, and an
 announcement banner shown at the top of every page. `info` and `warning`
 banners can be dismissed (remembered per browser until the text changes),
 `danger` banners cannot. `INSTANCE_NAME` and `INSTANCE_TAGLINE` are the
-environment defaults; the page previews changes live. The same page holds
-two display switches: **Gravatar** (see [Pictures](#pictures)) and **Show
+environment defaults; the page previews changes live.
+
+**Edition** (`INSTANCE_EDITION`, `self-hosted` by default) says who the
+landing page speaks to. *Self-hosted* addresses whoever runs the registry:
+install it, create the first account, push your images. *Hosted service*
+addresses customers of a registry run for them: the call to action is
+"Create your account", the page names what a new account gets for free
+(from the default limits under *Administration → Limits*) and, when an
+[account portal](#account-portal) is configured, links to its plans. The
+default tagline follows the edition until one is entered. Nothing about how
+the registry works changes.
+
+The same page holds two display switches: **Gravatar** (see [Pictures](#pictures)) and **Show
 index members and artifacts in lists** (`SHOW_ARTIFACTS`, off by default).
 With it off, the untagged list leaves out every manifest that belongs to a
 multi-arch index that still exists (platform variants as well as BuildKit
@@ -665,6 +676,14 @@ callers get public data). The **Explore** page (`/explore`) has the same
 filter box plus organization, visibility (public / private / both) and sort
 (most pulled, recently updated, name) controls; the filters live in the URL,
 so a filtered view can be shared.
+
+**Without an account.** Explore, search, organization pages and public
+repositories (tags, layers, scan results, compare) open without signing
+in: visitors see exactly what an anonymous `docker pull` may fetch, in a
+reduced shell with *Sign in* and, while sign-up is open, *Create an
+account*. Everything else — the dashboard, settings, organization
+management, administration — asks for a sign-in first. Public images pull
+anonymously as well, within the anonymous [rate limit](#rate-limits).
 
 **READMEs.** Owners and admins of an organization can write a README for
 each repository under *Repository → Settings → General*: Markdown (GitHub

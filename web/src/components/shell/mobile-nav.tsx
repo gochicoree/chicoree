@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass, Menu, Search, Settings, X } from "lucide-react";
+import { Compass, LogIn, Menu, Search, Settings, X } from "lucide-react";
 import { BrandLockup } from "@/components/brand";
 import { Sidebar, type NavBranding, type NavOrg, type NavUser } from "./sidebar";
 
@@ -18,14 +18,16 @@ export function MobileNav({
   isAdmin,
   branding,
   canCreateOrgs,
+  canSignUp,
   showApi,
 }: {
   orgs: NavOrg[];
   orgCount?: number;
-  user: NavUser;
+  user: NavUser | null;
   isAdmin: boolean;
   branding?: NavBranding;
   canCreateOrgs?: boolean;
+  canSignUp?: boolean;
   showApi?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,7 +73,7 @@ export function MobileNav({
         >
           <Menu className="size-5" />
         </button>
-        <Link href="/dashboard" className="flex min-w-0 items-center gap-2 px-1">
+        <Link href={user ? "/dashboard" : "/"} className="flex min-w-0 items-center gap-2 px-1">
           <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} size="sm" />
         </Link>
         <div className="ml-auto flex items-center">
@@ -81,9 +83,15 @@ export function MobileNav({
           <Link href="/explore" aria-label="Explore" className={iconLink}>
             <Compass className="size-5" />
           </Link>
-          <Link href="/settings" aria-label="Settings" className={iconLink}>
-            <Settings className="size-5" />
-          </Link>
+          {user ? (
+            <Link href="/settings" aria-label="Settings" className={iconLink}>
+              <Settings className="size-5" />
+            </Link>
+          ) : (
+            <Link href="/sign-in" aria-label="Sign in" className={iconLink}>
+              <LogIn className="size-5" />
+            </Link>
+          )}
         </div>
       </header>
 
@@ -111,7 +119,7 @@ export function MobileNav({
             >
               <X className="size-5" />
             </button>
-            <Sidebar orgs={orgs} orgCount={orgCount} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} showApi={showApi} />
+            <Sidebar orgs={orgs} orgCount={orgCount} user={user} isAdmin={isAdmin} branding={branding} canCreateOrgs={canCreateOrgs} canSignUp={canSignUp} showApi={showApi} />
           </div>
         </div>
       )}

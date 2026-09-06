@@ -16,7 +16,10 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${b.instanceName}`,
     },
     description:
-      b.tagline || "Self-hosted OCI container registry with organizations, access control and vulnerability scanning.",
+      b.tagline ||
+      (b.edition === "hosted"
+        ? "Hosted OCI container registry with organizations, access control and vulnerability scanning."
+        : "Self-hosted OCI container registry with organizations, access control and vulnerability scanning."),
     applicationName: b.instanceName,
     appleWebApp: { title: b.instanceName, statusBarStyle: "default" },
   };

@@ -14,7 +14,7 @@ export type SettingsSource = "database" | "environment" | "none";
 // Sign-up controls and branding: shapes live in the *-shared modules so client
 // components can import them without touching the database.
 import { DEFAULT_ACCESS, normalizeLocalSignInPath, type AccessSettings } from "./access-shared";
-import { DEFAULT_BRANDING, type BrandingSettings } from "./branding-shared";
+import { DEFAULT_BRANDING, defaultTagline, type BrandingSettings } from "./branding-shared";
 import type { ScannerSettings } from "./scanner-shared";
 import { DEFAULT_PORTAL, DEFAULT_QUOTAS, type PortalSettings, type QuotaDefaults } from "./quota-shared";
 export type { AccessSettings } from "./access-shared";
@@ -186,7 +186,8 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
     branding: {
       ...DEFAULT_BRANDING,
       instanceName: env.instanceName || DEFAULT_BRANDING.instanceName,
-      tagline: env.instanceTagline || DEFAULT_BRANDING.tagline,
+      edition: env.instanceEdition,
+      tagline: env.instanceTagline || defaultTagline(env.instanceEdition),
       gravatar: env.gravatarEnabled,
       showArtifacts: env.showArtifacts,
     },
@@ -249,7 +250,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
         !!process.env.API_ENABLED
       );
     case "branding":
-      return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE || !!process.env.GRAVATAR || !!process.env.SHOW_ARTIFACTS;
+      return !!process.env.INSTANCE_NAME || !!process.env.INSTANCE_TAGLINE || !!process.env.INSTANCE_EDITION || !!process.env.GRAVATAR || !!process.env.SHOW_ARTIFACTS;
     case "ratelimit":
       return !!d.ratelimit.anonymous || !!d.ratelimit.authenticated || !!process.env.RATE_LIMIT_API_ANONYMOUS || !!process.env.RATE_LIMIT_API_AUTHENTICATED;
     case "scanner":

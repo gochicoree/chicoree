@@ -6,7 +6,9 @@ import { env } from "@/lib/env";
 import { BrandLockup } from "@/components/brand";
 import { buttonClasses } from "@/components/ui/button";
 import { getBranding } from "@/lib/branding";
+import { formatBytes } from "@/lib/format";
 import { getInstanceSettings } from "@/lib/instance-settings";
+import { userDefaultsConfigured } from "@/lib/quota-shared";
 
 // Landing: the docker-pull moment plus the layer strata — the two things this
 // product is about. Signed-in users go straight to work.
@@ -15,6 +17,19 @@ export default async function LandingPage() {
   const [brand, settings] = await Promise.all([getBranding(), getInstanceSettings()]);
   // Invitation-only and closed instances do not advertise sign-up.
   const canSignUp = settings.access.signUpMode === "open";
+  const hosted = brand.edition === "hosted";
+  // What a new account gets, from the instance's default limits (Administration → Limits).
+  const free = settings.quotas.user;
+  const freeLine = hosted && userDefaultsConfigured(settings.quotas)
+    ? [
+        free.maxOrganizations !== null ? `${free.maxOrganizations} organization${free.maxOrganizations === 1 ? "" : "s"}` : "unlimited organizations",
+        free.maxPrivateRepos !== null ? `${free.maxPrivateRepos} private repositories` : "unlimited private repositories",
+        free.maxStorageBytes !== null ? `${formatBytes(free.maxStorageBytes).replace(/\.0 /, " ")} of storage` : "",
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : null;
+  const plansUrl = hosted && settings.portal.url ? settings.portal.url.replace(/\/handoff\/?$/, "") : null;
 
   // A believable image, drawn as proportional layer strata.
   const strata = [4, 18, 3, 41, 9, 26, 6, 13];
@@ -43,21 +58,26 @@ export default async function LandingPage() {
       <main className="mx-auto max-w-5xl px-4 sm:px-6">
         <section className="grid items-center gap-10 py-10 sm:py-16 lg:grid-cols-2 lg:gap-12 lg:py-24">
           <div>
-            <div className="eyebrow mb-3">Self-hosted OCI registry</div>
+            <div className="eyebrow mb-3">{hosted ? "Container registry, hosted" : "Self-hosted OCI registry"}</div>
             <h1 className="font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">
               Every layer,
               <br />
               accounted for.
             </h1>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-2">
-              {brand.instanceName} stores your container images and shows you what's inside them: layers,
-              sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI
-              credentials included.
+              {hosted
+                ? `${brand.instanceName} hosts your container images and shows you what's inside them: layers, sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI credentials included; nothing to run yourself.`
+                : `${brand.instanceName} stores your container images and shows you what's inside them: layers, sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI credentials included.`}
             </p>
+            {freeLine && (
+              <p className="mt-3 max-w-md text-sm text-ink-2">
+                <span className="font-medium text-ink">Free to start:</span> {freeLine}, unlimited public repositories. Upgrade when you grow.
+              </p>
+            )}
             <div className="mt-6 flex flex-wrap gap-2">
               {canSignUp ? (
                 <Link href="/sign-up" className={buttonClasses("primary")}>
-                  Create the first account <ArrowRight className="size-4" />
+                  {hosted ? "Create your account" : "Create the first account"} <ArrowRight className="size-4" />
                 </Link>
               ) : (
                 <Link href="/sign-in" className={buttonClasses("primary")}>
@@ -67,6 +87,11 @@ export default async function LandingPage() {
               <Link href="/explore" className={buttonClasses("secondary")}>
                 Browse public images
               </Link>
+              {plansUrl && (
+                <a href={plansUrl} className={buttonClasses("ghost")}>
+                  See plans
+                </a>
+              )}
             </div>
           </div>
 
@@ -115,7 +140,7 @@ export default async function LandingPage() {
             {
               icon: ScanSearch,
               title: "Vulnerability scanning",
-              text: "Clair or Trivy scans every push; CVE reports, search and accepted risks live next to the tag.",
+              text: "Every push is scanned for known vulnerabilities; CVE reports, search and accepted risks live next to the tag.",
             },
             {
               icon: Users,
@@ -124,8 +149,10 @@ export default async function LandingPage() {
             },
             {
               icon: Fingerprint,
-              title: "Modern sign-in",
-              text: "Passkeys, magic links, TOTP and email codes, OAuth — plus service accounts for CI.",
+              title: hosted ? "Yours, safely" : "Modern sign-in",
+              text: hosted
+                ? "Passkeys, magic links and two-factor sign-in; service accounts and keyless CI credentials for your pipelines."
+                : "Passkeys, magic links, TOTP and email codes, OAuth — plus service accounts for CI.",
             },
           ].map((f) => (
             <div key={f.title}>
