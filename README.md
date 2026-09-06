@@ -191,14 +191,15 @@ names the worker (`{ "worker": { "name", "hostname", "version",
 | --- | --- | --- |
 | `/api/internal/worker/claim` | `worker`, `wait` (seconds, ≤ 20), `running` | `200 { task }` or `204` when nothing is due within `wait` |
 | `/api/internal/worker/heartbeat` | `worker`, `running` | `204` |
-| `/api/internal/worker/tasks/<id>/result` | `worker`, `result: { findings, raw, scannerVersion }` | `204`; `409` when the lease is gone |
+| `/api/internal/worker/tasks/<id>/result` | `worker`, `result: { raw, scannerVersion, findings? }` | `204`; `409` when the lease is gone |
 | `/api/internal/worker/tasks/<id>/fail` | `worker`, `error` | `204`; the task is retried, or failed after the third attempt |
 
 A task carries the digest, the repository path, the manifest and its layer
 list, the registry address (`REGISTRY_URL`, else `https://` +
 `REGISTRY_HOST`), a two-hour pull token for that repository, the lease
-length and the attempt number; `findings` use the same shape the built-in
-scanners produce (`lib/scanner-shared.ts`). A task whose worker does not
+length and the attempt number. `raw` is Trivy's JSON report, which the
+instance normalises itself; a worker may instead send `findings` in the
+shape the built-in scanners produce (`lib/scanner-shared.ts`). A task whose worker does not
 report back within twenty minutes is handed out again. While no worker has
 reported in for two minutes — none started, network down, option switched
 on before the first worker — the scheduler tick runs queued scans in the

@@ -14,6 +14,7 @@ import { systemPullToken } from "./registry-jwt";
 import { finishScan, runScan, scanTarget, setScanState } from "./scan";
 import { summarizeFindings, type Finding } from "./scanner-shared";
 import { getScanner } from "./scanners";
+import { normalizeTrivyReport, type TrivyReport } from "./scanners/trivy";
 
 /** A worker that has not reported in for this long no longer counts as online. */
 export const WORKER_ONLINE_SECONDS = 120;
@@ -47,7 +48,8 @@ export interface ScanTaskPayload {
 }
 
 export interface WorkerScanResult {
-  findings: Finding[];
+  /** Already normalised findings; omitted by thin workers, which send Trivy's report as `raw` and let the instance normalise it. */
+  findings?: Finding[];
   raw: unknown;
   scannerVersion: string | null;
 }
@@ -139,7 +141,8 @@ export async function completeScanTask(id: string, worker: WorkerIdentity, resul
   const task = await leasedTask(id, worker);
   if (!task) return false;
   const scanner = await getScanner();
-  await finishScan(task.repositoryId ?? "", task.digest, { ...result, summary: summarizeFindings(result.findings) }, { name: "trivy", label: scanner?.label ?? "Trivy" });
+  const findings = result.findings ?? normalizeTrivyReport((result.raw ?? {}) as TrivyReport);
+  await finishScan(task.repositoryId ?? "", task.digest, { findings, raw: result.raw, scannerVersion: result.scannerVersion, summary: summarizeFindings(findings) }, { name: "trivy", label: scanner?.label ?? "Trivy" });
   await db.update(scanTasks).set({ status: "done", lastError: null, updatedAt: new Date() }).where(eq(scanTasks.id, id));
   await db.update(scanWorkers).set({ completed: sql`${scanWorkers.completed} + 1`, lastSeenAt: new Date() }).where(eq(scanWorkers.name, worker.name));
   return true;
