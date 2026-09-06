@@ -58,7 +58,7 @@ export function toSarif(subject: ExportSubject, findings: AssessedFinding[]) {
         tool: {
           driver: {
             name: "Chicorée",
-            informationUri: "https://github.com/ruohki/chicoree",
+            informationUri: "https://github.com/gochicoree/chicoree",
             version: API_REVISION,
             ...(subject.scanner ? { properties: { scanner: subject.scanner, scannerVersion: subject.scannerVersion } } : {}),
             rules: [...rules.values()],

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Chicorée installer — one command from a fresh Linux host to a running registry.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/install.sh | sudo sh
+#   curl -fsSL https://raw.githubusercontent.com/gochicoree/chicoree/main/install.sh | sudo sh
 #
 # Asks a few questions (or reads them from CHICOREE_* variables — see below),
 # installs git and Docker when missing, clones the repository, writes .env
@@ -18,11 +18,11 @@
 #   CHICOREE_SMTP_HOST, CHICOREE_SMTP_PORT, CHICOREE_SMTP_USER, CHICOREE_SMTP_PASS, CHICOREE_SMTP_FROM
 #   CHICOREE_ADMIN_EMAIL, CHICOREE_ADMIN_PASSWORD
 #   CHICOREE_SIGNUP=closed|invite|open
-#   CHICOREE_REPO, CHICOREE_REF       source to clone (default github.com/ruohki/chicoree, main)
+#   CHICOREE_REPO, CHICOREE_REF       source to clone (default github.com/gochicoree/chicoree, main)
 #   CHICOREE_REGISTRY_PORT            local mode only: host port for the docker API (default 5000)
 set -eu
 
-REPO_DEFAULT="https://github.com/ruohki/chicoree.git"
+REPO_DEFAULT="https://github.com/gochicoree/chicoree.git"
 REF_DEFAULT="main"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -69,7 +69,7 @@ bold "Chicorée — self-hosted OCI registry"
 echo
 [ -n "${CHICOREE_DRY_RUN:-}" ] || [ "$(uname -s)" = Linux ] || die "this installer targets Linux hosts (from a workstation use scripts/deploy.sh)"
 if [ -z "${CHICOREE_DRY_RUN:-}" ] && [ "$(id -u)" -ne 0 ]; then
-  die "run it as root:   curl -fsSL https://raw.githubusercontent.com/ruohki/chicoree/main/install.sh | sudo sh"
+  die "run it as root:   curl -fsSL https://raw.githubusercontent.com/gochicoree/chicoree/main/install.sh | sudo sh"
 fi
 
 CH_MODE=${CHICOREE_MODE:-}

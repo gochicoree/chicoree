@@ -29,7 +29,7 @@ export interface AdminChecklist {
   open: number;
 }
 
-export const BACKUPS_DOC_URL = "https://github.com/ruohki/chicoree#operations";
+export const BACKUPS_DOC_URL = "https://github.com/gochicoree/chicoree#operations";
 
 export async function adminSetupChecklist(userId: string): Promise<AdminChecklist> {
   const [settings, schedules, health, dismissedRow, scanning, scanner] = await Promise.all([
