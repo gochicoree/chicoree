@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { SEVERITIES, SeverityChips, totalFindings } from "@/components/severity";
 import { CompareBar } from "./compare-bar";
 
+import { imagePath } from "@/lib/library-shared";
 function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
@@ -111,7 +112,7 @@ export default async function ComparePage({
     <div className="space-y-6">
       <div>
         <Link href={base} className="mb-3 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
-          <ArrowLeft className="size-4" /> {orgSlug}/{repoName}
+          <ArrowLeft className="size-4" /> {imagePath(orgSlug, repoName)}
         </Link>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

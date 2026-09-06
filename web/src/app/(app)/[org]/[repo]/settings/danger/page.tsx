@@ -10,6 +10,7 @@ import { RepoDangerForm } from "../repo-settings-form";
 import { RepoRenameForm, RepoTransferForm, type TransferTarget } from "../repo-tools-forms";
 import { repoSettingsContext } from "../context";
 
+import { imagePath } from "@/lib/library-shared";
 /** Organizations the caller may move the repository into: managed by them (all of them for instance admins), not the current one, not a proxy cache. */
 async function transferTargets(userId: string, isAdmin: boolean, currentOrgId: string): Promise<TransferTarget[]> {
   const proxies = new Set((await db.query.organizationProxies.findMany({ columns: { organizationId: true } })).map((p) => p.organizationId));
@@ -38,7 +39,7 @@ export default async function RepoDangerPage({ params }: { params: Promise<{ org
         name={repo.name}
         registryHost={env.registryHost}
         proxy={proxy}
-        formerNames={former.map((f) => `${f.orgSlug}/${f.name}`)}
+        formerNames={former.map((f) => imagePath(f.orgSlug, f.name))}
       />
       <RepoTransferForm
         repositoryId={repo.id}

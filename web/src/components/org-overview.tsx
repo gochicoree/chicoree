@@ -8,6 +8,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { logoRef } from "@/lib/logo-shared";
 import { MANAGER_ROLES, WRITER_ROLES, type OrgRole } from "@/lib/org-roles";
 
+import { isLibrary } from "@/lib/library-shared";
 /**
  * The dashboard's organization cards: one per organization the user belongs
  * to, with their role, the size of the place and how alive it is. The whole
@@ -83,7 +84,7 @@ function OrgCard({ org }: { org: OrgOverview }) {
         </div>
         <Badge tone={manages ? "accent" : "neutral"}>{org.role}</Badge>
       </div>
-      <div className="mt-1 truncate font-mono text-xs text-ink-3">{org.slug}/</div>
+      <div className="mt-1 truncate font-mono text-xs text-ink-3">{isLibrary(org.slug) ? "top-level images, no prefix" : `${org.slug}/`}</div>
 
       <dl className="mt-4 grid grid-cols-3 gap-2">
         <div>

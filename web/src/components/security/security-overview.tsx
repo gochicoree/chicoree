@@ -10,6 +10,7 @@ import { PaginationFooter } from "@/components/ui/pagination";
 import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { SeverityBar, SeverityChips, totalFindings } from "@/components/severity";
 
+import { imagePath, isLibrary } from "@/lib/library-shared";
 const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-3 first:pl-5 last:pr-5";
 const td = "border-t border-line px-4 py-2 first:pl-5 last:pr-5";
 const num = `${td} text-right font-mono tabular-nums`;
@@ -86,7 +87,7 @@ export function SecurityOverview({
                       <td className={`${td} min-w-0`}>
                         <span className="flex flex-wrap items-center gap-2">
                           <Link href={repoHref(r.orgSlug, r.name)} className="font-mono text-[13px] hover:underline">
-                            {showOrganization ? `${r.orgSlug}/${r.name}` : r.name}
+                            {showOrganization ? imagePath(r.orgSlug, r.name) : r.name}
                           </Link>
                           <VisibilityBadge visibility={r.visibility} />
                         </span>
@@ -129,7 +130,7 @@ export function SecurityOverview({
                         <td className={`${td} min-w-0`}>
                           <Link href={`${repoHref(b.orgSlug, b.repoName)}/tags/${encodeURIComponent(ref)}`} className="inline-flex items-center gap-1.5 font-mono text-[13px] hover:underline">
                             <ShieldBan className="size-3.5 text-danger" />
-                            {showOrganization ? `${b.orgSlug}/` : ""}
+                            {showOrganization && !isLibrary(b.orgSlug) ? `${b.orgSlug}/` : ""}
                             {b.repoName}
                             {b.tags.length ? `:${b.tags.join(",")}` : `@${b.digest.slice(7, 19)}`}
                           </Link>

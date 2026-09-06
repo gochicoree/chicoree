@@ -8,6 +8,7 @@ import { StarCount } from "@/components/star-button";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
 
+import { imagePath } from "@/lib/library-shared";
 /** Repository listing used on org pages and the explore page. */
 export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; showOrg?: boolean }) {
   if (repos.length === 0) return null;
@@ -31,7 +32,7 @@ export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; s
         </thead>
         <tbody>
           {repos.map((repo) => {
-            const path = showOrg && repo.orgSlug ? `${repo.orgSlug}/${repo.name}` : repo.name;
+            const path = showOrg ? imagePath(repo.orgSlug, repo.name) : repo.name;
             const href = repoHref(repo.orgSlug ?? "", repo.name);
             return (
               <tr key={repo.id} className="border-b border-line last:border-0 hover:bg-card-2">

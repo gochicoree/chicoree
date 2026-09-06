@@ -16,6 +16,7 @@ import { PaginationFooter } from "@/components/ui/pagination";
 import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { useActionToast } from "@/components/ui/toast";
 
+import { isLibrary } from "@/lib/library-shared";
 type Row = Omit<ExceptionView, "expiresAt" | "createdAt"> & { expiresAt: string | null; createdAt: string };
 
 const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-3 first:pl-5 last:pr-5";
@@ -88,7 +89,7 @@ export function ExceptionsTable({
                   <td className={`${td} text-xs`}>
                     {e.repoName ? (
                       <Link href={repoHref(e.orgSlug, e.repoName)} className="font-mono text-[13px] hover:underline">
-                        {showOrganization ? `${e.orgSlug}/` : ""}
+                        {showOrganization && !isLibrary(e.orgSlug) ? `${e.orgSlug}/` : ""}
                         {e.repoName}
                       </Link>
                     ) : (

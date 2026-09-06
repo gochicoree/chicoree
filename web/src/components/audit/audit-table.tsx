@@ -7,6 +7,7 @@ import { AUDIT_PAGE_SIZE, auditActionTone, auditFilterParams, type AuditFilter, 
 import { paginate, type PageState } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
 
+import { displayPath } from "@/lib/library-shared";
 function when(d: Date): string {
   return d.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
 }
@@ -74,7 +75,7 @@ export function AuditTable({
                   {r.targetLabel ? (
                     <>
                       {r.targetType && <span className="text-xs text-ink-3">{r.targetType} </span>}
-                      <span className="font-mono text-[13px] text-ink">{r.targetLabel}</span>
+                      <span className="font-mono text-[13px] text-ink">{displayPath(r.targetLabel)}</span>
                     </>
                   ) : r.targetId ? (
                     <span className="font-mono text-xs text-ink-3">{r.targetType ?? ""} {r.targetId.slice(0, 12)}</span>

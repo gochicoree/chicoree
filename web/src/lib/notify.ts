@@ -25,6 +25,7 @@ import { defaultEmailFor, type NotificationEvent } from "./notify-shared";
 import { getOrgLimits, getOrgUsage } from "./quota";
 import { emitOrganizationEvent, emitRepositoryEvent, tagsForDigest } from "./webhooks";
 
+import { imagePath } from "@/lib/library-shared";
 export type { NotificationEvent };
 
 export type QuotaKind = "storage" | "public repositories" | "private repositories";
@@ -148,7 +149,7 @@ async function repoContext(repositoryId: string): Promise<RepoContext | null> {
   if (!repo) return null;
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
   if (!org) return null;
-  return { repo, org, path: `${org.slug}/${repo.name}`, url: `${env.appUrl}/${org.slug}/${repo.name}` };
+  return { repo, org, path: imagePath(org.slug, repo.name), url: `${env.appUrl}/${org.slug}/${repo.name}` };
 }
 
 const FOOTER = "You receive this because you manage this organization. Change what is sent to you under Settings → Notifications.";

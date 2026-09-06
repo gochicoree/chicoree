@@ -17,6 +17,7 @@ import { StarCount } from "@/components/star-button";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
 
+import { imagePath, isLibrary } from "@/lib/library-shared";
 export const metadata: Metadata = { title: "Search" };
 
 export default async function SearchPage({
@@ -66,7 +67,7 @@ export default async function SearchPage({
                 <li key={`${d.orgSlug}/${d.repoName}@${d.digest}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
                   <Fingerprint className="size-4 shrink-0 text-ink-3" aria-hidden />
                   <Link href={digestHref(d)} className="min-w-0 break-all font-mono text-[13px] font-medium text-ink hover:underline">
-                    {d.orgSlug}/{d.repoName}@{shortDigest(d.digest, 19)}
+                    {imagePath(d.orgSlug, d.repoName)}@{shortDigest(d.digest, 19)}
                   </Link>
                   <VisibilityBadge visibility={d.visibility} />
                   {d.tags.map((t) => (
@@ -97,7 +98,7 @@ export default async function SearchPage({
                       fallback={<Container className="size-4 text-ink-3" />}
                     />
                     <Link href={repoHref(r.orgSlug ?? "", r.name)} className="min-w-0 break-all text-sm font-medium text-ink hover:underline">
-                      <span className="text-ink-2">{r.orgSlug}/</span>
+                      {!isLibrary(r.orgSlug) && <span className="text-ink-2">{r.orgSlug}/</span>}
                       {r.name}
                     </Link>
                     <VisibilityBadge visibility={r.visibility} />
@@ -126,7 +127,7 @@ export default async function SearchPage({
                 <li key={`${t.orgSlug}/${t.repoName}:${t.tag}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3 text-sm last:border-0 hover:bg-card-2 sm:px-5">
                   <TagIcon className="size-4 shrink-0 text-ink-3" aria-hidden />
                   <Link href={tagHref(t)} className="min-w-0 break-all font-mono text-[13px] font-medium text-ink hover:underline">
-                    {t.orgSlug}/{t.repoName}:{t.tag}
+                    {imagePath(t.orgSlug, t.repoName)}:{t.tag}
                   </Link>
                   <VisibilityBadge visibility={t.visibility} />
                   <span className="font-mono text-xs text-ink-3">{shortDigest(t.digest)}</span>

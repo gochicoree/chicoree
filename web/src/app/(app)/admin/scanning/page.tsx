@@ -15,6 +15,7 @@ import { AdminNav } from "../admin-nav";
 import { ScannerForm } from "./scanner-form";
 import { RescanButton } from "./rescan-button";
 
+import { imagePath } from "@/lib/library-shared";
 export const metadata: Metadata = { title: "Scanning" };
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export default async function AdminScanningPage() {
                       <td className={`${td} min-w-0 font-mono text-[13px]`}>
                         {s.orgSlug && s.repoName ? (
                           <Link href={`${repoHref(s.orgSlug, s.repoName)}/tags/${encodeURIComponent(s.tags[0] ?? s.digest)}`} className="hover:underline">
-                            {s.orgSlug}/{s.repoName}
+                            {imagePath(s.orgSlug, s.repoName)}
                             {s.tags.length ? `:${s.tags[0]}` : `@${s.digest.slice(7, 19)}`}
                           </Link>
                         ) : (

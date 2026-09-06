@@ -1,6 +1,9 @@
 import { headers } from "next/headers";
 import { Container, Globe } from "lucide-react";
+import { redirect } from "next/navigation";
 import { getOrgContext } from "@/lib/session";
+import { getRepoByPath } from "@/lib/data";
+import { LIBRARY_SLUG } from "@/lib/library-shared";
 import { Badge } from "@/components/ui/badge";
 import { OrgTabs } from "./org-tabs";
 import { isLibrary } from "@/lib/library";
@@ -25,6 +28,8 @@ export default async function OrgLayout({
     // request path comes from proxy.ts (layouts cannot see the URL).
     const pathname = (await headers()).get("x-pathname") ?? "";
     const suffix = pathname.startsWith(`/${slug}/`) ? pathname.slice(slug.length + 1) : "";
+    // `/nginx` is how a top-level image is pulled; open the repository behind it.
+    if (!suffix && (await getRepoByPath(LIBRARY_SLUG, slug))) redirect(`/${LIBRARY_SLUG}/${slug}`);
     return redirectMovedOrganization(slug, suffix);
   }
   const { org, role } = ctx;

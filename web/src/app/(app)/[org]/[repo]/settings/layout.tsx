@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { NavTabs } from "@/components/ui/nav-tabs";
 import { repoSettingsContext } from "./context";
 
+import { imagePath } from "@/lib/library-shared";
 export default async function RepoSettingsLayout({
   children,
   params,
@@ -14,7 +15,7 @@ export default async function RepoSettingsLayout({
   return (
     <div>
       <Link href={href} className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
-        <ArrowLeft className="size-4" /> {orgSlug}/{repoName}
+        <ArrowLeft className="size-4" /> {imagePath(orgSlug, repoName)}
       </Link>
       <div className="mb-4">
         <div className="eyebrow mb-1">Repository settings</div>

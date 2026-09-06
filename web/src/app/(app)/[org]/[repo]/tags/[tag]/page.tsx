@@ -47,6 +47,7 @@ import { scanInProgress } from "@/lib/scanner-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { showArtifactsFor } from "@/lib/artifact-visibility";
 
+import { imagePath } from "@/lib/library-shared";
 interface Descriptor {
   mediaType?: string;
   digest?: string;
@@ -332,7 +333,7 @@ export default async function TagDetailPage({
           href={base}
           className="mb-3 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink"
         >
-          <ArrowLeft className="size-4" /> {path}
+          <ArrowLeft className="size-4" /> {imagePath(orgSlug, repoName)}
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">

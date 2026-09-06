@@ -18,6 +18,7 @@ import { ConfirmModal } from "@/components/ui/modal";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 
+import { imagePath } from "@/lib/library-shared";
 export interface MoveOrgOption {
   id: string;
   name: string;
@@ -172,7 +173,7 @@ export function BulkMoveForm({
           )}
           {target && !target.proxy && (
             <p className="text-sm text-ink-2">
-              Images will be pulled as <code className="font-mono text-ink">{registryHost}/{target.slug}/&lt;name&gt;</code>.
+              Images will be pulled as <code className="font-mono text-ink">{registryHost}/{imagePath(target.slug, "<name>")}</code>.
             </p>
           )}
         </CardBody>
@@ -291,7 +292,7 @@ export function BulkMoveForm({
         >
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink-2">
             <li>
-              New references: <code className="font-mono text-ink">docker pull {registryHost}/{preview.target.slug}/&lt;name&gt;:&lt;tag&gt;</code>
+              New references: <code className="font-mono text-ink">docker pull {registryHost}/{imagePath(preview.target.slug, "<name>")}:&lt;tag&gt;</code>
             </li>
             <li>
               Each old <code className="font-mono">org/name</code> keeps working for <strong>pulls</strong> (and tag lists) through a
@@ -423,7 +424,7 @@ function OutcomeTable({
                 {r.ok && verb === "moved" && targetSlug && (
                   <div className="mt-1 text-xs">
                     <Link href={`/${targetSlug}/${r.name}`} className="text-action hover:underline">
-                      {targetSlug}/{r.name}
+                      {imagePath(targetSlug, r.name)}
                     </Link>
                   </div>
                 )}

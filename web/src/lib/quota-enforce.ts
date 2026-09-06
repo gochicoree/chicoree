@@ -15,6 +15,7 @@ import type { RetentionDetailLine } from "./retention";
 import { deleteTag } from "./tag-admin";
 import { effectiveTagRules } from "./tag-rules";
 
+import { imagePath } from "@/lib/library-shared";
 export interface Breach {
   targetType: "organization" | "user";
   targetId: string;
@@ -83,7 +84,7 @@ export async function findBreaches(organizationSlug?: string): Promise<Breach[]>
 export async function loadScope(repositoryIds: string[]): Promise<ScopeRepository[]> {
   if (repositoryIds.length === 0) return [];
   const [repos, manifests, refs, tags] = await Promise.all([
-    db.execute(sql`SELECT r.id, r.organization_id, o.slug || '/' || r.name AS path FROM repositories r JOIN organization o ON o.id = r.organization_id WHERE r.id IN ${sql`(${sql.join(repositoryIds.map((id) => sql`${id}`), sql`, `)})`}`),
+    db.execute(sql`SELECT r.id, r.organization_id, o.slug AS org_slug, r.name FROM repositories r JOIN organization o ON o.id = r.organization_id WHERE r.id IN ${sql`(${sql.join(repositoryIds.map((id) => sql`${id}`), sql`, `)})`}`),
     db.execute(sql`SELECT repository_id, digest, created_at, subject_digest FROM manifests WHERE repository_id IN ${sql`(${sql.join(repositoryIds.map((id) => sql`${id}`), sql`, `)})`}`),
     db.execute(sql`
       SELECT mr.repository_id, mr.manifest_digest, mr.ref_digest, b.size
@@ -111,7 +112,7 @@ export async function loadScope(repositoryIds: string[]): Promise<ScopeRepositor
       });
     out.push({
       id,
-      path: r.path as string,
+      path: imagePath(r.org_slug as string, r.name as string),
       manifests: ms,
       tags: tags.rows.filter((t) => t.repository_id === id).map((t) => ({ name: t.name as string, digest: t.manifest_digest as string, pushedAt: new Date(t.updated_at as string) })),
       rules,
