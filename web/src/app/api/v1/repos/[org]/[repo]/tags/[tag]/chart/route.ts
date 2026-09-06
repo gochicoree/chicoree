@@ -8,7 +8,7 @@ import { loadRepo } from "@/lib/api/access";
 import { route } from "@/lib/api/handler";
 import { iso, json, notFound } from "@/lib/api/respond";
 import { env } from "@/lib/env";
-import { readChartFiles } from "@/lib/helm";
+import { readChartFiles, readHelmProvenance } from "@/lib/helm";
 import { helmCommands, isHelmConfig, parseChartMeta } from "@/lib/helm-shared";
 import { imagePath } from "@/lib/library-shared";
 import { decodeRepoParam } from "@/lib/proxy-shared";
@@ -35,8 +35,9 @@ export const GET = route<{ org: string; repo: string; tag: string }>(async (_req
   if (!config && manifest.configDigest) config = await fetchBlobJson(path, manifest.configDigest);
   const chart = parseChartMeta(config);
   if (!chart) throw notFound("The chart's Chart.yaml could not be read.");
-  const files = await readChartFiles(path, payload.layers ?? []);
+  const [files, provenance] = await Promise.all([readChartFiles(path, payload.layers ?? []), readHelmProvenance(path, payload.layers ?? [])]);
   return json({
+    provenance,
     tag: tagName,
     digest: row.manifestDigest,
     pushedAt: iso(manifest.createdAt),

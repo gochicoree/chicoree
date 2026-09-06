@@ -49,7 +49,7 @@ import { showArtifactsFor } from "@/lib/artifact-visibility";
 import { imagePath } from "@/lib/library-shared";
 import { getRepoContext } from "@/lib/repo-access";
 import { helmCommands, isHelmConfig, parseChartMeta } from "@/lib/helm-shared";
-import { readChartFiles } from "@/lib/helm";
+import { readChartFiles, readHelmProvenance } from "@/lib/helm";
 import { renderReadme } from "@/lib/readme";
 
 interface Descriptor {
@@ -176,9 +176,13 @@ export default async function TagDetailPage({
   }
 
   // Helm charts: Chart.yaml is the config blob; values and README come from the archive.
-  const chart = !isIndex && isHelmConfig(payload.config?.mediaType) ? parseChartMeta(config) : null;
-  const chartFiles = chart ? await readChartFiles(path, payload.layers ?? []) : null;
-  const helm = chart ? helmCommands(env.registryHost, imagePath(orgSlug, repoName), chart.version, chart.name) : null;
+  // A chart is a chart by its config media type, whether or not Chart.yaml could be read:
+  // the image-only sections (scan, layers, docker pull) stay away either way.
+  const isChart = !isIndex && isHelmConfig(payload.config?.mediaType);
+  const chart = isChart ? parseChartMeta(config) : null;
+  const chartFiles = isChart ? await readChartFiles(path, payload.layers ?? []) : null;
+  const helmProvenance = isChart ? await readHelmProvenance(path, payload.layers ?? []) : null;
+  const helm = isChart ? helmCommands(env.registryHost, imagePath(orgSlug, repoName), chart?.version ?? (isDigestRef ? null : reference), chart?.name ?? repoName) : null;
 
   const layers = (payload.layers ?? []).map((l) => ({
     digest: l.digest ?? "",
@@ -209,7 +213,7 @@ export default async function TagDetailPage({
   const blocked = await manifestBlockReason(found.repo.id, digest);
   const scanner = await getScanner();
   // Helm charts carry no software to scan: the vulnerability tab, chips and re-scan stay away.
-  const scanning = !!scanner && !chart;
+  const scanning = !!scanner && !isChart;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
   // A scan already running: the button waits rather than queueing a second one.
@@ -249,7 +253,7 @@ export default async function TagDetailPage({
   const hiddenVariants = showArtifacts ? 0 : children.filter(isAttestationChild).length;
   const visibleChildren = showArtifacts ? children : children.filter((c) => !isAttestationChild(c));
   // Provenance / SBOM BuildKit stored next to this image inside the index.
-  const buildkit = !isIndex && !isArtifact && !chart ? await buildkitAttestationsFor(found.repo.id, digest) : [];
+  const buildkit = !isIndex && !isArtifact && !isChart ? await buildkitAttestationsFor(found.repo.id, digest) : [];
   // Findings (legacy Clair rows are normalised on first read) and the exceptions that may accept them.
   const findings = scan?.status === "scanned" ? await ensureFindings(scan) : [];
   const exceptionRules = scanning
@@ -284,6 +288,8 @@ export default async function TagDetailPage({
       canReverify={canReverify}
       canPush={canReverify && !sourceIsProxy}
       signaturesRequired={signaturesRequired}
+      subjectKind={isChart ? "chart" : "image"}
+      helmProvenance={helmProvenance}
     />
   );
   const blockedBySignature = isSignatureBlockReason(blocked);
@@ -534,7 +540,7 @@ export default async function TagDetailPage({
         </div>
       )}
 
-      {helm && chart ? (
+      {helm ? (
         <div className="space-y-2">
           <CommandLine command={helm.pull} />
           <CommandLine command={helm.install} />
@@ -647,6 +653,12 @@ export default async function TagDetailPage({
         </Card>
       )}
 
+      {isChart && !chart && (
+        <Card>
+          <CardHeader eyebrow="Helm chart" title="Chart details unavailable" description="This tag is a Helm chart, but its Chart.yaml could not be read from the registry just now. Reload to try again." />
+        </Card>
+      )}
+
       {chart && chartFiles?.readme && (
         <Card>
           <CardHeader eyebrow="Helm chart" title="README" description="From the chart archive" />
@@ -666,7 +678,7 @@ export default async function TagDetailPage({
               </div>
             ))}
           </dl>
-          {!isIndex && !chart && layersWithCommands.length > 0 && (
+          {!isIndex && !isChart && layersWithCommands.length > 0 && (
             <div className="mt-5 border-t border-line pt-4">
               <div className="eyebrow mb-2">Cargo plan</div>
               <StrataBar layers={layersWithCommands} />
@@ -745,7 +757,7 @@ export default async function TagDetailPage({
         <Tabs
           tabs={[
             // A chart's single layer is the archive, already described by the chart card.
-            ...(chart
+            ...(isChart
               ? []
               : [
                   {
@@ -786,9 +798,8 @@ export default async function TagDetailPage({
                 ]
               : []),
             // Charts can be signed (cosign, Notation, helm provenance) but usually are not:
-            // the tab appears only once something is attached, so an unsigned chart is not
-            // greeted with image-signing instructions.
-            ...(chart && attestations.total === 0
+            // visitors of an unsigned chart see no tab; people who may push see how to sign it.
+            ...(isChart && attestations.total === 0 && !helmProvenance && !(canReverify && !sourceIsProxy)
               ? []
               : [
                   {

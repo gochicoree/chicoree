@@ -1108,9 +1108,14 @@ layer compare either — only what a chart has. They are never hidden as
 attached artifacts. The API exposes the same: `kind` and `helmReference` on
 repositories, `chart` on tags, `chart` and `helm` on tag and manifest
 details, and `GET /repos/{org}/{repo}/tags/{tag}/chart` with Chart.yaml,
-values, README and the file list. Signing charts works as for images —
-`helm push` can attach a provenance layer, and cosign or Notation signatures
-on the chart manifest show up on its Attestations tab.
+values, README and the file list. Signing charts works as for images: cosign or Notation signatures on the
+chart manifest show up on its Attestations tab, and a provenance file
+pushed next to the archive (`helm package --sign`, then `helm push` with the
+`.prov` file beside the `.tgz`) appears there as *Helm provenance* — which
+files it names, whether the archive matches, and the PGP key id; PGP
+verification itself stays with `helm pull --verify`. Visitors of an unsigned
+chart see no Attestations tab; people who may push see chart-specific
+signing commands.
 
 ## Layer deduplication
 

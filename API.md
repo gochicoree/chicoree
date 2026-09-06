@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-07.2` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-07.3` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.2`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.3`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -1809,7 +1809,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ### <a id="get-repos-org-repo-tags-tag-chart"></a>`GET /api/v1/repos/{org}/{repo}/tags/{tag}/chart`
 
-Helm chart details — For a tag that is a Helm chart (config media type application/vnd.cncf.helm.config.v1+json): Chart.yaml as JSON, values.yaml, the README and the file list from the archive (files is null when the archive cannot be read), and the helm commands. 404 for images.
+Helm chart details — For a tag that is a Helm chart (config media type application/vnd.cncf.helm.config.v1+json): Chart.yaml as JSON, values.yaml, the README and the file list from the archive (files is null when the archive cannot be read), the helm commands, and `provenance` when the chart was pushed with a `.prov` file — { layerDigest, chartName, chartVersion, files: [{ name, digest }], matchesArchive, signedBy } (PGP key id when readable; the registry does not verify PGP). 404 for images.
 
 **Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-07.2
 
@@ -1860,6 +1860,7 @@ Response `200`:
     ],
     "truncated": false
   },
+  "provenance": null,
   "commands": {
     "pull": "helm pull oci://registry.example.com/acme/api --version 1.4.2",
     "install": "helm install api oci://registry.example.com/acme/api --version 1.4.2",
@@ -3768,6 +3769,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-07.3
+
+- Helm charts: `GET /repos/{org}/{repo}/tags/{tag}/chart` carries `provenance` when the chart was pushed with its `.prov` file (which files it names, whether the archive matches, the PGP key id). Tag and manifest details treat a manifest as a chart by its config media type even when Chart.yaml cannot be read.
 
 ### 2026-09-07.2
 
