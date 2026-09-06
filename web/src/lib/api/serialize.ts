@@ -9,6 +9,7 @@ import type { UntaggedManifest } from "@/lib/manifests";
 import type { AuditRow } from "@/lib/audit-shared";
 import type { SeveritySummary } from "@/components/severity";
 import { iso } from "./respond";
+import { helmReference } from "@/lib/helm-shared";
 
 /** Absolute URL into the web app. */
 export function absolute(path: string): string {
@@ -32,6 +33,8 @@ export function repoJson(r: RepoListItem, orgSlug: string = r.orgSlug ?? "") {
     updatedAt: iso(r.updatedAt),
     proxy: r.proxy,
     lastCheckedAt: iso(r.lastCheckedAt),
+    kind: r.kind,
+    helmReference: r.kind === "chart" ? helmReference(env.registryHost, imagePath(orgSlug, r.name)) : null,
     url: absolute(repoHref(orgSlug, r.name)),
   };
 }
@@ -50,6 +53,8 @@ export function tagJson(t: TagListItem, orgSlug: string, repoName: string) {
     blocked: t.blocked,
     scan: t.scanStatus ? { status: t.scanStatus, summary: compactSummary(t.scanSummary) } : null,
     proxyCheckedAt: iso(t.proxyCheckedAt),
+    chart: t.chart,
+    helmReference: t.chart ? helmReference(env.registryHost, imagePath(orgSlug, repoName)) : null,
     reference: imageReference(env.registryHost, orgSlug, repoName, t.name),
     url: absolute(`${repoHref(orgSlug, repoName)}/tags/${encodeURIComponent(t.name)}`),
   };

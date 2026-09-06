@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Globe, Settings, Tag as TagIcon } from "lucide-react";
+import { Globe, Settings, Tag as TagIcon, Package } from "lucide-react";
 import { getOrgContext } from "@/lib/session";
 import { countArtifactTags, egressSeries, getRepoByPath, listRepoTags, pullSeries, repoTagOverview, sizeSeries, trafficSummary } from "@/lib/data";
 import { PAGE_SIZES, pageParam } from "@/lib/paginate-shared";
@@ -36,6 +36,8 @@ import { EntityLogo } from "@/components/entity-logo";
 import { logoVersionOf } from "@/lib/logo";
 import { logoRef } from "@/lib/logo-shared";
 import { getRepoContext } from "@/lib/repo-access";
+import { helmCommands } from "@/lib/helm-shared";
+import { imagePath } from "@/lib/library-shared";
 
 export default async function RepoPage({
   params,
@@ -106,6 +108,8 @@ export default async function RepoPage({
   const base = repoHref(orgSlug, repoName);
   const tagList = tags.rows;
   const lastChecked = overview.lastCheckedAt;
+  // Helm charts: the newest tag's chart metadata drives the commands shown.
+  const latestChart = tags.rows.find((t) => t.chart)?.chart ?? null;
   const scanning = await scanningEnabled();
   // Deleting tags follows the registry access model: admin permission (role or grant; instance admins act as owners).
   const canDelete = !!access?.can.delete;
@@ -169,7 +173,14 @@ export default async function RepoPage({
         </div>
       </div>
 
-      <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, overview.names[0])}`} />
+      {latestChart ? (
+        <div className="space-y-2">
+          <CommandLine command={helmCommands(env.registryHost, imagePath(orgSlug, repoName), latestChart.version, latestChart.name).pull} />
+          <CommandLine command={helmCommands(env.registryHost, imagePath(orgSlug, repoName), latestChart.version, latestChart.name).install} />
+        </div>
+      ) : (
+        <CommandLine command={`docker pull ${imageReference(env.registryHost, orgSlug, repoName, overview.names[0])}`} />
+      )}
 
       <Card>
         <CardHeader
@@ -223,6 +234,11 @@ export default async function RepoPage({
                         <TagIcon className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
                         {tag.name}
                       </Link>
+                      {tag.chart && (
+                        <Badge tone="info" className="ml-2 align-middle" title={`Helm chart ${tag.chart.name} ${tag.chart.version}${tag.chart.appVersion ? `, app ${tag.chart.appVersion}` : ""}`}>
+                          <Package className="size-3" /> chart {tag.chart.version}
+                        </Badge>
+                      )}
                       {tag.isIndex && (
                         <span className="ml-2 rounded bg-card-2 px-1.5 py-0.5 text-[11px] text-ink-2">
                           multi-arch

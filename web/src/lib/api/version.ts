@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.2",
+    changes: [
+      "Helm charts: repositories carry `kind` (`image` | `chart` | `empty`, from the newest tag) and `helmReference` (`oci://…`) for charts; tags carry `chart: { name, version, appVersion }`; manifest and tag details carry `kind`, `chart` (Chart.yaml) and `helm` commands. New `GET /repos/{org}/{repo}/tags/{tag}/chart` returns Chart.yaml, values.yaml, the README and the file list from the archive.",
+    ],
+  },
+  {
     revision: "2026-09-07.1",
     changes: [
       "Teams: `GET/POST /orgs/{org}/teams`, `GET/PATCH/DELETE /orgs/{org}/teams/{team}`, `GET /orgs/{org}/teams/{team}/members`, `PUT/DELETE /orgs/{org}/teams/{team}/members/{userId}`. Teams group members of an organization so repository access can be granted to all of them at once.",

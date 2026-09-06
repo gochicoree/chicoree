@@ -49,6 +49,7 @@ export function TrendingGrid({ repos }: { repos: TrendingRepo[] }) {
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
                 <span className="font-mono">#{i + 1}</span>
                 {repo.visibility === "private" && <VisibilityBadge visibility="private" />}
+                {repo.kind === "chart" && <Badge tone="info">chart</Badge>}
                 {repo.proxy && <Badge tone="accent">cached</Badge>}
               </div>
             </div>
