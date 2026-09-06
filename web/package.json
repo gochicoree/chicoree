@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:worker": "esbuild src/worker/main.ts --bundle --platform=node --format=esm --target=node22 --alias:@=./src --outfile=dist/worker.mjs --log-level=warning",
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -51,7 +50,6 @@
     "@types/react-dom": "^19.2.3",
     "@types/sanitize-html": "^2.16.1",
     "drizzle-kit": "0.31.10",
-    "esbuild": "^0.25.12",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"

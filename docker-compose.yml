@@ -38,7 +38,7 @@ services:
       # Trivy runs inside this container and downloads its own database unless
       # TRIVY_SERVER_URL points at the optional trivy service (profile "trivy").
       TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
-      # Scan workers (docker-compose.worker.yml): their token, and whether scans wait for them.
+      # Scan workers (chicoree-scan-worker): their token, and whether scans wait for them.
       SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:-}
       SCAN_WORKERS: ${SCAN_WORKERS:-false}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy

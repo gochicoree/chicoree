@@ -1,10 +1,11 @@
 // Vulnerability scanning types and pure helpers, safe for client components:
 // the normalised finding shape every scanner backend produces, severity
 // summaries, VEX-style exceptions, and the filters of the vulnerabilities tab.
-import type { SeveritySummary } from "@/components/severity";
-
 export const SEVERITY_ORDER = ["Critical", "High", "Medium", "Low", "Negligible", "Unknown"] as const;
 export type Severity = (typeof SEVERITY_ORDER)[number];
+
+/** Finding counts per severity as stored on a scan (missing = 0); components/severity.tsx renders it. */
+export type SeveritySummary = Partial<Record<Severity, number>>;
 
 export const SCANNER_BACKENDS = ["off", "clair", "trivy"] as const;
 export type ScannerBackend = (typeof SCANNER_BACKENDS)[number];

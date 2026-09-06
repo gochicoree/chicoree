@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { ShieldCheck, ShieldQuestion, Loader2, ShieldAlert } from "lucide-react";
+import type { SeveritySummary } from "@/lib/scanner-shared";
 
 // Severity display. Status colors never carry meaning alone: every rendering
 // pairs the color with the severity's letter and count.
@@ -13,7 +14,7 @@ export const SEVERITIES = [
   { key: "Unknown", letter: "?", varName: "--sev-unknown" },
 ] as const;
 
-export type SeveritySummary = Partial<Record<(typeof SEVERITIES)[number]["key"], number>>;
+export type { SeveritySummary };
 
 /** Why a finding can lack a rating; shown wherever "unrated" appears. */
 export const UNRATED_HINT =

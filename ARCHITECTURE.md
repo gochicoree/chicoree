@@ -411,8 +411,9 @@ through an old name get no grant at all.
   otherwise. A row saved before `tokenHash` existed counts as disabled until
   the section is saved again.
 - **Scan workers** (`lib/scan-tasks.ts`, `lib/scan-worker-auth.ts`,
-  `app/api/internal/worker/*`, `src/worker/main.ts` bundled by esbuild to
-  `worker.mjs` in the image): with *Offload scans to workers* on, a push's
+  `app/api/internal/worker/*`; the worker program itself is a separate
+  repository, `chicoree-scan-worker`, built against `lib/scanners/trivy.ts`):
+  with *Offload scans to workers* on, a push's
   scan becomes a `scan_tasks` row instead of running trivy in the web
   container. Workers authenticate with `SCAN_WORKER_TOKEN`, claim the oldest
   due row atomically (`FOR UPDATE SKIP LOCKED`, twenty-minute lease), get the

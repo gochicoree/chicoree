@@ -15,7 +15,7 @@ export function WorkersCard({ stats, enabled, tokenSet }: { stats: ScanWorkerSta
       <CardHeader
         eyebrow="Workers"
         title="Scan workers"
-        description="Machines running the web image's worker.mjs take Trivy scans off this host. Without one online for two minutes, queued scans run here."
+        description="Scan workers on other machines take Trivy scans off this host. Without one online for two minutes, queued scans run here."
         action={<Badge tone={enabled && tokenSet && online > 0 ? "ok" : enabled && tokenSet ? "accent" : "neutral"}>{state}</Badge>}
       />
       <CardBody className="space-y-3">
@@ -36,7 +36,7 @@ export function WorkersCard({ stats, enabled, tokenSet }: { stats: ScanWorkerSta
         {stats.workers.length === 0 ? (
           <p className="text-sm text-ink-3">
             No worker has reported in yet.{" "}
-            {tokenSet ? "Start one with docker-compose.worker.yml, pointing CHICOREE_URL at this instance." : "Set SCAN_WORKER_TOKEN in the environment first."}
+            {tokenSet ? "Start a chicoree-scan-worker with CHICOREE_URL pointing at this instance and the same SCAN_WORKER_TOKEN." : "Set SCAN_WORKER_TOKEN in the environment first."}
           </p>
         ) : (
           <div className="-mx-5 overflow-x-auto">

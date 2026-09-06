@@ -87,7 +87,7 @@ services:
       TRIVY_SERVER_URL: ${TRIVY_SERVER_URL:-}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}
-      # Scan workers (docker-compose.worker.yml on other machines): the token they
+      # Scan workers (chicoree-scan-worker on other machines): the token they
       # present, and whether Trivy scans wait for them (Administration → Scanning overrides).
       SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:-}
       SCAN_WORKERS: ${SCAN_WORKERS:-false}
