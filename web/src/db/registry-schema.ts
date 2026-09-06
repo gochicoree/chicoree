@@ -429,7 +429,7 @@ export const repositoryWebhooks = pgTable(
     organizationId: text("organization_id").references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     url: text("url").notNull(),
-    method: text("method", { enum: ["POST", "PUT", "PATCH"] }).notNull().default("POST"),
+    method: text("method", { enum: ["GET", "POST", "PUT", "PATCH"] }).notNull().default("POST"),
     /** Extra request headers. */
     headers: jsonb("headers").$type<Record<string, string>>().notNull().default({}),
     authType: text("auth_type", { enum: ["none", "bearer", "basic", "header"] })

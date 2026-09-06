@@ -259,9 +259,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Promise<void> {
   // Chat formats render the event as a message; the JSON format sends the
   // payload itself. Signing and authentication apply to whatever is sent.
-  const body = hook.format && hook.format !== "json" ? JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload))) : JSON.stringify(payload);
+  // GET carries no body: the receiver acts on the request itself (a deploy
+  // hook, for instance); the event still travels in the headers.
+  const sendsBody = hook.method !== "GET";
+  const body = !sendsBody ? "" : hook.format && hook.format !== "json" ? JSON.stringify(encodeChatMessage(hook.format, chatMessage(payload))) : JSON.stringify(payload);
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(sendsBody ? { "Content-Type": "application/json" } : {}),
     "User-Agent": "Chicoree-Webhooks/1.0",
     "X-Chicoree-Event": payload.event,
     "X-Chicoree-Delivery": payload.deliveryId,
@@ -289,7 +292,7 @@ export async function deliverWebhook(hook: Hook, payload: WebhookEnvelope): Prom
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch(hook.url, { method: hook.method, headers, body, signal: controller.signal, redirect: "manual" });
+      const res = await fetch(hook.url, { method: hook.method, headers, body: sendsBody ? body : undefined, signal: controller.signal, redirect: "manual" });
       statusCode = res.status;
       snippet = (await res.text()).slice(0, 500);
       error = null;

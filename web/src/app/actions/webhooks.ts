@@ -100,7 +100,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   }
   if (!["http:", "https:"].includes(parsedUrl.protocol)) return { error: "Webhook URLs must be http(s)." };
   if (!isWebhookFormat(format)) return { error: "Invalid format." };
-  if (!["POST", "PUT", "PATCH"].includes(method)) return { error: "Invalid method." };
+  if (!["GET", "POST", "PUT", "PATCH"].includes(method)) return { error: "Invalid method." };
   if (!["none", "bearer", "basic", "header"].includes(authType)) return { error: "Invalid authentication type." };
   if (authType === "header" && !/^[A-Za-z0-9-]+$/.test(authHeaderName)) return { error: "Enter a valid header name." };
   if (events.length === 0) return { error: "Subscribe the webhook to at least one event." };
@@ -108,7 +108,7 @@ export async function saveWebhook(_prev: WebhookResult | null, formData: FormDat
   const base = {
     name,
     url,
-    method: method as "POST" | "PUT" | "PATCH",
+    method: method as "GET" | "POST" | "PUT" | "PATCH",
     format,
     headers: parseHeaders(String(formData.get("headers") ?? "")),
     authType: authType as "none" | "bearer" | "basic" | "header",
