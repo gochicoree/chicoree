@@ -123,7 +123,7 @@ const LIMIT_BODY_COMMON: ApiParam[] = [
   { name: "maxPublicRepositories", in: "body", type: "integer | null", description: "null lifts the limit." },
   { name: "maxPrivateRepositories", in: "body", type: "integer | null", description: "null lifts the limit." },
   { name: "maxStorageBytes", in: "body", type: "integer | null", description: "Deduplicated bytes; null lifts the limit." },
-  { name: "label", in: "body", type: "string", description: "Shown to the owner next to their usage (a plan name, say); at most 80 characters, empty hides it." },
+  { name: "label", in: "body", type: "string", description: "Shown to the owner next to their usage while an account portal is configured (a plan name, say); at most 80 characters, empty hides it." },
   { name: "note", in: "body", type: "string", description: "For administrators only." },
 ];
 const REPO_PARAM: ApiParam = {

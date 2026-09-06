@@ -4,9 +4,13 @@ import { PortalButton } from "@/components/portal-button";
 import type { Limits, Usage } from "@/lib/quota";
 import type { PortalSettings } from "@/lib/quota-shared";
 
-/** Whether the card has anything to say: a label, a portal, or at least one limit. */
-export function showPlanCard(label: string, limits: Limits, portal: PortalSettings): boolean {
-  return !!label || !!portal.url || Object.values(limits).some((v) => v !== null);
+/**
+ * The card belongs to hosted instances: it appears only while an account
+ * portal is configured. Self-hosted registries with plain limits show
+ * nothing here; administrators see limits and usage under Administration.
+ */
+export function showPlanCard(_label: string, _limits: Limits, portal: PortalSettings): boolean {
+  return !!portal.url;
 }
 
 /**
