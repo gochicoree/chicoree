@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.1",
+    changes: [
+      "Changed: the plan card on Settings and Organization → Settings appears only while an account portal is configured; a self-hosted registry with plain limits shows users nothing about them. The label on limits rows is documented accordingly.",
+    ],
+  },
+  {
     revision: "2026-09-05.5",
     changes: [
       "Changed: an organization's own limit governs it alone. When an organization has a storage or repository limit of its own, the owners' account limits are not consulted for it and its usage does not count against their accounts; account limits cover the owner's organizations without such a limit. GET /me/usage and GET /users/{userId}/usage report that pool. Enforced the same way by registryd at push time.",

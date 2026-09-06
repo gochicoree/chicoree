@@ -1543,9 +1543,11 @@ are untouched). `DEFAULT_USER_MAX_ORGANIZATIONS`, `DEFAULT_USER_MAX_PUBLIC_REPOS
 defaults for that section. Without defaults, accounts and organizations stay
 unlimited until an administrator sets limits by hand — as before.
 
-**Label.** Each limits row carries a label ("Team", say) that owners see next
-to their usage on *Settings* and *Organization → Settings*, and a note only
-administrators see. The [REST API](#rest-api) reads and writes limits rows
+**Label.** Each limits row carries a label ("Team", say) and a note only
+administrators see. While an [account portal](#account-portal) is configured,
+owners see the label with their usage on *Settings* and *Organization →
+Settings*; without one, nothing about limits is shown to users — a
+self-hosted registry keeps its limits an administration matter. The [REST API](#rest-api) reads and writes limits rows
 (`GET/PATCH/DELETE /api/v1/orgs/{org}/limits`, `/api/v1/users/{userId}/limits`),
 looks accounts up (`GET /api/v1/users?email=…`) and reports usage with the
 month's traffic (`GET /api/v1/orgs/{org}/usage`, `GET /api/v1/me/usage`), so
