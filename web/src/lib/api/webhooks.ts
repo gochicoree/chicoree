@@ -58,7 +58,7 @@ async function rowById(scope: WebhookScope, id: string): Promise<WebhookRow> {
   return row;
 }
 
-const METHODS = ["POST", "PUT", "PATCH"] as const;
+const METHODS = ["GET", "POST", "PUT", "PATCH"] as const;
 const AUTH_TYPES = ["none", "bearer", "basic", "header"] as const;
 
 interface Validated {

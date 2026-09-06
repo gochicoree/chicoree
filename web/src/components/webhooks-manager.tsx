@@ -20,6 +20,7 @@ export type { WebhookRow };
 const METHODS = [
   { value: "POST", label: "POST" },
   { value: "PUT", label: "PUT" },
+  { value: "GET", label: "GET", description: "No body; for endpoints that act on the request itself, e.g. a deploy hook" },
   { value: "PATCH", label: "PATCH" },
 ];
 const AUTH_TYPES = [

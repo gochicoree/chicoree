@@ -901,7 +901,9 @@ Settings → Webhooks*, up to five) fire for events in that repository;
 **organization webhooks** (*Organization → Settings → Webhooks*, up to ten)
 fire for events in every repository of the organization, plus the
 organization-level `quota.warning`, `quota.exceeded` and `quota.pruned`. Both share the same form — HTTP method
-(POST/PUT/PATCH), extra headers, authentication (bearer token, basic auth or a
+(POST/PUT/PATCH with the payload, or GET without a body for receivers that
+act on the request itself, such as a deploy hook), extra headers,
+authentication (bearer token, basic auth or a
 custom header; secrets are encrypted at rest) and an optional signing secret
 that adds `X-Chicoree-Signature: sha256=<hmac>` so receivers can verify the
 body — the same delivery log (the last 50 attempts per hook), retries on
