@@ -785,11 +785,18 @@ export default async function TagDetailPage({
                   },
                 ]
               : []),
-            {
-              label: "Attestations",
-              badge: attestations.total || undefined,
-              content: attestationsPanel,
-            },
+            // Charts can be signed (cosign, Notation, helm provenance) but usually are not:
+            // the tab appears only once something is attached, so an unsigned chart is not
+            // greeted with image-signing instructions.
+            ...(chart && attestations.total === 0
+              ? []
+              : [
+                  {
+                    label: "Attestations",
+                    badge: attestations.total || undefined,
+                    content: attestationsPanel,
+                  },
+                ]),
             {
               label: "Manifest",
               content: (
