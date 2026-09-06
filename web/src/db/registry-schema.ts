@@ -447,7 +447,7 @@ export const repositoryWebhooks = pgTable(
      * incoming webhook, or as a plain {text} document (Mattermost, Google
      * Chat, Rocket.Chat). See lib/webhook-chat.ts.
      */
-    format: text("format", { enum: ["json", "slack", "discord", "teams", "text"] }).notNull().default("json"),
+    format: text("format", { enum: ["json", "none", "slack", "discord", "teams", "text"] }).notNull().default("json"),
     events: jsonb("events").$type<string[]>().notNull().default(["push"]),
     enabled: boolean("enabled").notNull().default(true),
     createdBy: text("created_by"),

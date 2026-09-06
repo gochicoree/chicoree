@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.8",
+    changes: [
+      "Webhook format `none`: the delivery is the bare request (method of your choice, headers, authentication) with no body — for deploy hooks that read their parameters from the URL and would misread the payload, such as the PaaS's POST /api/v1/deploy.",
+    ],
+  },
+  {
     revision: "2026-09-06.7",
     changes: [
       "Webhooks accept `method: GET`: the delivery carries no body (event and delivery id stay in the headers, authentication applies as before), for receivers that act on the request itself — a deploy hook such as the PaaS's.",
