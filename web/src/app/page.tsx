@@ -66,8 +66,8 @@ export default async function LandingPage() {
             </h1>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-2">
               {hosted
-                ? `${brand.instanceName} hosts your container images and shows you what's inside them: layers, sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI credentials included; nothing to run yourself.`
-                : `${brand.instanceName} stores your container images and shows you what's inside them: layers, sizes, platforms, vulnerabilities. Organizations, fine-grained access and CI credentials included.`}
+                ? `${brand.instanceName} hosts your container images and Helm charts and shows you what's inside them: layers, sizes, platforms, vulnerabilities, chart values. Organizations, fine-grained access and CI credentials included; nothing to run yourself.`
+                : `${brand.instanceName} stores your container images and Helm charts and shows you what's inside them: layers, sizes, platforms, vulnerabilities, chart values. Organizations, fine-grained access and CI credentials included.`}
             </p>
             {freeLine && (
               <p className="mt-3 max-w-md text-sm text-ink-2">
@@ -110,6 +110,10 @@ export default async function LandingPage() {
                 Digest: <span className="text-ink">sha256:9f8e2a41c7b3</span>…
               </p>
               <p className="text-ok">Status: image is up to date</p>
+              <p className="pt-1.5">
+                <span className="text-accent">$</span> helm pull oci://{env.registryHost}/acme/api-chart --version 1.4.2
+              </p>
+              <p className="text-ok">Pulled: {env.registryHost}/acme/api-chart:1.4.2</p>
             </div>
             <div className="mt-5 border-t border-line pt-4">
               <div className="eyebrow mb-2">Cargo plan · 8 layers · 142 MiB</div>
@@ -134,8 +138,8 @@ export default async function LandingPage() {
           {[
             {
               icon: Layers,
-              title: "Layer intelligence",
-              text: "Layer-by-layer sizes, instructions and dedup savings for every tag.",
+              title: "Images and Helm charts",
+              text: "Layer-by-layer sizes, instructions and dedup savings for images; Chart.yaml, values and README for charts. One registry, one set of rules.",
             },
             {
               icon: ScanSearch,
@@ -145,7 +149,7 @@ export default async function LandingPage() {
             {
               icon: Users,
               title: "Organizations",
-              text: "Namespaces with roles, invitations, and public or private repositories.",
+              text: "Namespaces with roles, teams and per-repository access; public or private repositories.",
             },
             {
               icon: Fingerprint,

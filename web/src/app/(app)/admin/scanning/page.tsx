@@ -36,7 +36,8 @@ export default async function AdminScanningPage() {
     db.execute(sql`
       SELECT count(DISTINCT t.manifest_digest)::int AS n FROM tags t
       JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
-      WHERE m.media_type NOT LIKE '%index%' AND m.media_type NOT LIKE '%list%'`),
+      WHERE m.media_type NOT LIKE '%index%' AND m.media_type NOT LIKE '%list%'
+        AND coalesce(m.payload::jsonb->'config'->>'mediaType', '') <> 'application/vnd.cncf.helm.config.v1+json'`),
   ]);
   const images = Number(tagged.rows[0]?.n ?? 0);
   const off = settings.scanner.backend === "off";

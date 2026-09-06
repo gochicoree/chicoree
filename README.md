@@ -1102,7 +1102,9 @@ pull`, and the tag page adds a chart card — name, version, app version,
 Kubernetes constraint, home, sources, maintainers, keywords, dependencies —
 plus `values.yaml` and the chart's README read from the archive (up to 8 MB;
 values and README trimmed to 64 KB and 128 KB). Charts are not scanned for
-vulnerabilities (they carry no filesystem) and are never hidden as
+vulnerabilities (they carry no filesystem), so chart repositories and tags
+show no vulnerability column, tab or re-scan button, no layer table or
+layer compare either — only what a chart has. They are never hidden as
 attached artifacts. The API exposes the same: `kind` and `helmReference` on
 repositories, `chart` on tags, `chart` and `helm` on tag and manifest
 details, and `GET /repos/{org}/{repo}/tags/{tag}/chart` with Chart.yaml,

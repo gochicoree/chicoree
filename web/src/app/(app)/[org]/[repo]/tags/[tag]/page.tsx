@@ -208,7 +208,8 @@ export default async function TagDetailPage({
   const actor = await resolveActor(manifest.pushedBy);
   const blocked = await manifestBlockReason(found.repo.id, digest);
   const scanner = await getScanner();
-  const scanning = !!scanner;
+  // Helm charts carry no software to scan: the vulnerability tab, chips and re-scan stay away.
+  const scanning = !!scanner && !chart;
   const session = await getSession();
   const canRescan = session?.user.role === "admin" && !isIndex && scanning;
   // A scan already running: the button waits rather than queueing a second one.
@@ -248,7 +249,7 @@ export default async function TagDetailPage({
   const hiddenVariants = showArtifacts ? 0 : children.filter(isAttestationChild).length;
   const visibleChildren = showArtifacts ? children : children.filter((c) => !isAttestationChild(c));
   // Provenance / SBOM BuildKit stored next to this image inside the index.
-  const buildkit = !isIndex && !isArtifact ? await buildkitAttestationsFor(found.repo.id, digest) : [];
+  const buildkit = !isIndex && !isArtifact && !chart ? await buildkitAttestationsFor(found.repo.id, digest) : [];
   // Findings (legacy Clair rows are normalised on first read) and the exceptions that may accept them.
   const findings = scan?.status === "scanned" ? await ensureFindings(scan) : [];
   const exceptionRules = scanning
@@ -665,7 +666,7 @@ export default async function TagDetailPage({
               </div>
             ))}
           </dl>
-          {!isIndex && layersWithCommands.length > 0 && (
+          {!isIndex && !chart && layersWithCommands.length > 0 && (
             <div className="mt-5 border-t border-line pt-4">
               <div className="eyebrow mb-2">Cargo plan</div>
               <StrataBar layers={layersWithCommands} />
@@ -743,11 +744,16 @@ export default async function TagDetailPage({
       ) : (
         <Tabs
           tabs={[
-            {
-              label: "Layers",
-              badge: layersWithCommands.length,
-              content: <LayerTable layers={layersWithCommands} shared={shared} />,
-            },
+            // A chart's single layer is the archive, already described by the chart card.
+            ...(chart
+              ? []
+              : [
+                  {
+                    label: "Layers",
+                    badge: layersWithCommands.length,
+                    content: <LayerTable layers={layersWithCommands} shared={shared} />,
+                  },
+                ]),
             ...(scanning
               ? [
                   {

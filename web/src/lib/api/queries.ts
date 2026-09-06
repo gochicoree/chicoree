@@ -305,8 +305,10 @@ export async function manifestDetail(a: RepoAccess, digest: string) {
     sizeBytes: isIndex ? indexBytes : imageBytes,
     pushedAt: iso(manifest.createdAt),
     pushedBy,
-    platform,
-    config: config
+    platform: chart ? null : platform,
+    config: chart
+      ? null
+      : config
       ? {
           created: config.created ?? null,
           os: config.os ?? null,
@@ -326,7 +328,7 @@ export async function manifestDetail(a: RepoAccess, digest: string) {
     variants,
     indexes: parents.map((p) => ({ digest: p.parentDigest, tags: p.parentTags, platform: p.platform, attestation: !!p.attestation })),
     subjectDigest: manifest.subjectDigest ?? payload.subject?.digest ?? null,
-    scan: scanDoc,
+    scan: chart ? null : scanDoc,
     signed: !!signedRow,
     blocked,
     canDelete: deletable ? { ok: !deletable.reason, reason: deletable.reason } : { ok: false, reason: a.can.delete ? null : "You cannot delete images in this repository." },
