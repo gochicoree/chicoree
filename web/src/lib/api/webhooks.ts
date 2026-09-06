@@ -11,7 +11,7 @@ import { recordAudit } from "@/lib/audit";
 import { encryptSecret } from "@/lib/crypto";
 import { decodeRepoParam } from "@/lib/proxy-shared";
 import { countWebhooks, findScopedWebhook, listWebhookRows, maxWebhooks, sendTestDelivery, type Hook } from "@/lib/webhooks";
-import { eventsForScope, isWebhookEvent, isWebhookFormat, WEBHOOK_FORMATS, type WebhookRow, type WebhookScope } from "@/lib/webhooks-shared";
+import { eventsForScope, isWebhookEvent, isWebhookFormat, WEBHOOK_FORMATS, type WebhookRow, type WebhookScope, formatAllowsMethod, validatePayloadTemplate, PAYLOAD_TEMPLATE_MAX } from "@/lib/webhooks-shared";
 import { loadOrg, loadRepo, requireManage, requireOrgManager, type OrgRow, type RepoRow } from "./access";
 import type { ApiCaller } from "./auth";
 import { route } from "./handler";
@@ -69,6 +69,7 @@ interface Validated {
   headers: Record<string, string>;
   authType: (typeof AUTH_TYPES)[number];
   authHeaderName: string | null;
+  payloadTemplate: string | null;
   events: string[];
   enabled: boolean;
 }
@@ -99,7 +100,12 @@ function validate(kind: Kind, body: Record<string, unknown>, existing: Hook | nu
   if (!isWebhookFormat(format)) throw unprocessable(`"format" must be one of ${WEBHOOK_FORMATS.map((f) => f.value).join(", ")}.`, { field: "format" });
   // Chat services accept POST only; the method field is for JSON receivers.
   const methodRaw = (str("method", 10) ?? existing?.method ?? "POST").toUpperCase();
-  const method = format === "json" || format === "none" ? methodRaw : "POST";
+  const method = formatAllowsMethod(format) ? methodRaw : "POST";
+  const payloadTemplate = format === "custom" ? (str("payloadTemplate", PAYLOAD_TEMPLATE_MAX + 1) ?? existing?.payloadTemplate ?? "") : null;
+  if (format === "custom") {
+    const problem = validatePayloadTemplate(payloadTemplate ?? "");
+    if (problem) throw unprocessable(problem, { field: "payloadTemplate" });
+  }
   if (!(METHODS as readonly string[]).includes(method)) throw unprocessable(`"method" must be one of ${METHODS.join(", ")}.`, { field: "method" });
   const authType = str("authType", 10) ?? existing?.authType ?? "none";
   if (!(AUTH_TYPES as readonly string[]).includes(authType)) throw unprocessable(`"authType" must be one of ${AUTH_TYPES.join(", ")}.`, { field: "authType" });
@@ -137,6 +143,7 @@ function validate(kind: Kind, body: Record<string, unknown>, existing: Hook | nu
     headers,
     authType: authType as Validated["authType"],
     authHeaderName: authType === "header" ? authHeaderName : null,
+    payloadTemplate,
     events,
     enabled,
   };

@@ -1,0 +1,1 @@
+ALTER TABLE "repository_webhooks" ADD COLUMN "payload_template" text;
