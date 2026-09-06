@@ -5,6 +5,7 @@ import { relativeTime, shortDigest } from "@/lib/format";
 import { repoHref } from "@/lib/proxy-shared";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
+import { displayPath } from "@/lib/library-shared";
 
 function activityHref(repoPath: string): string {
   const slash = repoPath.indexOf("/");
@@ -25,16 +26,16 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
       {items.map((item) => (
         <li key={item.id} className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-card-2">
           <span
-            className={`flex size-7 shrink-0 items-center justify-center rounded-md ${
+            className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md ${
               item.type === "push" ? "bg-ok-soft text-ok" : "bg-danger-soft text-danger"
             }`}
           >
             {item.type === "push" ? <ArrowUpFromLine className="size-3.5" /> : <Trash2 className="size-3.5" />}
           </span>
-          <div className="min-w-0 flex-1 text-[13px] leading-snug [overflow-wrap:anywhere]">
-            {/* Avatar and name are one inline group so a narrow column never breaks between them. */}
+          {/* A wrapping flex row keeps avatar, name, verb and image on one vertical centre line; a narrow column wraps whole tokens. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1 text-[13px] leading-snug [overflow-wrap:anywhere]">
             {item.actorUserId ? (
-              <span className="inline-flex items-center gap-1 align-[-4px] text-ink-2">
+              <span className="inline-flex items-center gap-1.5 text-ink-2">
                 <EntityLogo
                   kind="user"
                   name={item.actorName ?? ""}
@@ -45,18 +46,20 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
               </span>
             ) : (
               <span className="text-ink-2">{item.actorName ?? (item.actorType === "proxy" ? "proxy cache" : item.actorType === "mirror" ? "mirror" : "someone")}</span>
-            )}{" "}
-            <span className="text-ink-2">{item.type === "push" ? (item.actorType === "proxy" ? "cached" : "pushed") : "deleted"}</span>{" "}
-            <Link href={activityHref(item.repoPath)} className="font-medium text-ink hover:underline">
-              {item.repoPath}
-            </Link>
-            {item.tag ? (
-              <span className="font-mono text-ink-2">:{item.tag}</span>
-            ) : item.digest ? (
-              <span className="font-mono text-ink-3"> @{shortDigest(item.digest, 8)}</span>
-            ) : null}
+            )}
+            <span className="text-ink-2">{item.type === "push" ? (item.actorType === "proxy" ? "cached" : "pushed") : "deleted"}</span>
+            <span className="min-w-0">
+              <Link href={activityHref(item.repoPath)} className="font-medium text-ink hover:underline">
+                {displayPath(item.repoPath)}
+              </Link>
+              {item.tag ? (
+                <span className="font-mono text-ink-2">:{item.tag}</span>
+              ) : item.digest ? (
+                <span className="font-mono text-ink-3"> @{shortDigest(item.digest, 8)}</span>
+              ) : null}
+            </span>
           </div>
-          <span className="shrink-0 pt-0.5 text-xs text-ink-3">{relativeTime(item.createdAt)}</span>
+          <span className="shrink-0 py-1 text-xs leading-snug text-ink-3">{relativeTime(item.createdAt)}</span>
         </li>
       ))}
     </ul>
