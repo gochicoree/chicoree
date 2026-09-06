@@ -3771,7 +3771,7 @@ This API follows the registry's features: whenever a feature is added, changed o
 
 ### 2026-09-07.2
 
-- Helm charts: repositories carry `kind` (`image` | `chart` | `empty`, from the newest tag) and `helmReference` (`oci://…`) for charts; tags carry `chart: { name, version, appVersion }`; manifest and tag details carry `kind`, `chart` (Chart.yaml) and `helm` commands. New `GET /repos/{org}/{repo}/tags/{tag}/chart` returns Chart.yaml, values.yaml, the README and the file list from the archive.
+- Helm charts: repositories carry `kind` (`image` | `chart` | `empty`, from the newest tag) and `helmReference` (`oci://…`) for charts; tags carry `chart: { name, version, appVersion }`; manifest and tag details carry `kind`, `chart` (Chart.yaml) and `helm` commands. New `GET /repos/{org}/{repo}/tags/{tag}/chart` returns Chart.yaml, values.yaml, the README and the file list from the archive. For charts, `platform`, `config` and `scan` are null in tag and manifest details.
 
 ### 2026-09-07.1
 

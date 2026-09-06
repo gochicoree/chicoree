@@ -108,9 +108,10 @@ export default async function RepoPage({
   const base = repoHref(orgSlug, repoName);
   const tagList = tags.rows;
   const lastChecked = overview.lastCheckedAt;
-  // Helm charts: the newest tag's chart metadata drives the commands shown.
+  // Helm charts: the newest tag's chart metadata drives the commands shown; chart
+  // repositories skip the image-only columns (layers, vulnerabilities, layer compare).
   const latestChart = tags.rows.find((t) => t.chart)?.chart ?? null;
-  const scanning = await scanningEnabled();
+  const scanning = (await scanningEnabled()) && !latestChart;
   // Deleting tags follows the registry access model: admin permission (role or grant; instance admins act as owners).
   const canDelete = !!access?.can.delete;
   const latestDigest = overview.latestDigest;
@@ -187,7 +188,7 @@ export default async function RepoPage({
           eyebrow="Tags"
           title={`Tags (${overview.total.toLocaleString("en-US")})`}
           action={
-            overview.names.length >= 2 ? (
+            overview.names.length >= 2 && !latestChart ? (
               <CompareBar base={base} tags={overview.names} from={overview.names[1]} to={overview.names[0]} compact />
             ) : undefined
           }
@@ -217,7 +218,7 @@ export default async function RepoPage({
                   <th className="px-4 py-2.5 text-xs font-medium text-ink-2 sm:px-5">Tag</th>
                   <th className="hidden px-4 py-2.5 text-xs font-medium text-ink-2 md:table-cell">Digest</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-ink-2">Size</th>
-                  <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 lg:table-cell">Layers</th>
+                  {!latestChart && <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 lg:table-cell">Layers</th>}
                   {scanning && <th className="px-4 py-2.5 text-xs font-medium text-ink-2">Vulnerabilities</th>}
                   <th className="hidden px-4 py-2.5 text-right text-xs font-medium text-ink-2 sm:table-cell">Pushed</th>
                   {canDelete && <th className="w-10 px-2 py-2.5" aria-label="Actions" />}
@@ -276,9 +277,11 @@ export default async function RepoPage({
                     <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2">
                       {tag.isIndex ? "—" : formatBytes(tag.sizeBytes)}
                     </td>
-                    <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 lg:table-cell">
-                      {tag.isIndex ? "—" : (tag.layerCount ?? "—")}
-                    </td>
+                    {!latestChart && (
+                      <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 lg:table-cell">
+                        {tag.isIndex ? "—" : (tag.layerCount ?? "—")}
+                      </td>
+                    )}
                     {scanning && (
                       <td className="px-4 py-3">
                         <SeverityChips summary={tag.scanSummary} status={tag.scanStatus} />
@@ -429,7 +432,11 @@ export default async function RepoPage({
           )}
           {sizes && sizes.some((d) => d.bytes > 0) && (
             <Card className="lg:col-span-2">
-              <CardHeader eyebrow="Size" title="Image size over time" description="Compressed size of the newest image pushed each day, last 90 days; indexes and attached artifacts are left out" />
+              <CardHeader
+                eyebrow="Size"
+                title={latestChart ? "Chart size over time" : "Image size over time"}
+                description={latestChart ? "Compressed size of the newest chart pushed each day, last 90 days" : "Compressed size of the newest image pushed each day, last 90 days; indexes and attached artifacts are left out"}
+              />
               <CardBody>
                 <PullsChart data={sizes.map((d) => ({ day: d.day, count: d.bytes }))} height={130} kind="bytes" emptyLabel="No images pushed in the last 90 days." />
               </CardBody>
