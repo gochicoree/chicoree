@@ -17,8 +17,8 @@ import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
-
 import { imagePath } from "@/lib/library-shared";
+
 export interface MoveOrgOption {
   id: string;
   name: string;

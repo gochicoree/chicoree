@@ -13,8 +13,8 @@ import { repoHref } from "./proxy-shared";
 import { PAGE_SIZES, paginate, paginatedQuery, type PageState } from "./paginate-shared";
 import { digestQuery, likeEscape, normalizeQuery, splitTagQuery, type SearchHit } from "./search-shared";
 import { memberOfOrganizationFilter, visibleRepositoriesFilter, type Viewer } from "./viewer";
-
 import { imagePath } from "@/lib/library-shared";
+
 export interface TagHit {
   orgSlug: string;
   repoName: string;

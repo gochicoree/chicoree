@@ -16,8 +16,8 @@ import { SearchBox } from "@/components/shell/search-box";
 import { StarCount } from "@/components/star-button";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
-
 import { imagePath, isLibrary } from "@/lib/library-shared";
+
 export const metadata: Metadata = { title: "Search" };
 
 export default async function SearchPage({

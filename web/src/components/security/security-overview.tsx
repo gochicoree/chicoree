@@ -9,8 +9,8 @@ import { Badge, VisibilityBadge } from "@/components/ui/badge";
 import { PaginationFooter } from "@/components/ui/pagination";
 import type { PageState, QueryLike } from "@/lib/paginate-shared";
 import { SeverityBar, SeverityChips, totalFindings } from "@/components/severity";
-
 import { imagePath, isLibrary } from "@/lib/library-shared";
+
 const th = "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-ink-3 first:pl-5 last:pr-5";
 const td = "border-t border-line px-4 py-2 first:pl-5 last:pr-5";
 const num = `${td} text-right font-mono tabular-nums`;

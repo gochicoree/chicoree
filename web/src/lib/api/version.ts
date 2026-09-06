@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.5",
+    changes: [
+      "The Attestations tab shows the cosign/oras sign-and-attach commands only to viewers who may push to the repository (owner, admin or member of a non-proxy organization, instance administrators); everyone else sees a plain note. No API change.",
+    ],
+  },
+  {
     revision: "2026-09-06.4",
     changes: [
       "The library organization is virtual in the UI: no list, search result, dashboard entry, notification, audit label or job result shows a `library/` prefix, and `/<name>` opens the top-level repository. Storage and the `/orgs/library/…` routes are unchanged; `path` and `reference` fields already omitted the prefix.",

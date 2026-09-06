@@ -24,8 +24,8 @@ import { imageReference } from "./library";
 import { defaultEmailFor, type NotificationEvent } from "./notify-shared";
 import { getOrgLimits, getOrgUsage } from "./quota";
 import { emitOrganizationEvent, emitRepositoryEvent, tagsForDigest } from "./webhooks";
-
 import { imagePath } from "@/lib/library-shared";
+
 export type { NotificationEvent };
 
 export type QuotaKind = "storage" | "public repositories" | "private repositories";

@@ -14,8 +14,8 @@ import { triggerGarbageCollection } from "./registry-client";
 import type { RetentionDetailLine } from "./retention";
 import { deleteTag } from "./tag-admin";
 import { effectiveTagRules } from "./tag-rules";
-
 import { imagePath } from "@/lib/library-shared";
+
 export interface Breach {
   targetType: "organization" | "user";
   targetId: string;
