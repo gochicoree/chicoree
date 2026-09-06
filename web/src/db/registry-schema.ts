@@ -318,6 +318,30 @@ export const organizationLimits = pgTable("organization_limits", {
   updatedBy: text("updated_by"),
 });
 
+/**
+ * Organizations and accounts found above their storage limit by the
+ * `quota-enforce` job: when it first saw them over, what it told the owners,
+ * and when it pruned. Rows go when the target fits again.
+ */
+export const quotaBreaches = pgTable(
+  "quota_breaches",
+  {
+    targetType: text("target_type").$type<"organization" | "user">().notNull(),
+    targetId: text("target_id").notNull(),
+    firstOverAt: timestamp("first_over_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    usedBytes: bigint("used_bytes", { mode: "number" }).notNull(),
+    limitBytes: bigint("limit_bytes", { mode: "number" }).notNull(),
+    /** First notice sent (the grace period started). */
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    /** Reminder sent shortly before pruning. */
+    finalNoticeAt: timestamp("final_notice_at", { withTimezone: true }),
+    /** Last time images were removed to fit. */
+    prunedAt: timestamp("pruned_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.targetType, t.targetId] })],
+);
+
 // --- Background jobs (garbage collection, scans, pruning) ---
 
 export const jobRuns = pgTable(

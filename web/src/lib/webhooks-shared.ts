@@ -12,7 +12,9 @@ export type WebhookEvent =
   | "retention.completed"
   | "repository.renamed"
   | "repository.transferred"
-  | "quota.warning";
+  | "quota.warning"
+  | "quota.exceeded"
+  | "quota.pruned";
 
 export interface WebhookEventInfo {
   value: WebhookEvent;
@@ -34,6 +36,8 @@ export const WEBHOOK_EVENTS: WebhookEventInfo[] = [
   { value: "repository.renamed", label: "Repository renamed", description: "The repository got a new name (the old one redirects)" },
   { value: "repository.transferred", label: "Repository transferred", description: "The repository moved to another organization" },
   { value: "quota.warning", label: "Quota warning", description: "Usage reached 80 % / 95 % of a limit", organizationOnly: true },
+  { value: "quota.exceeded", label: "Storage limit exceeded", description: "Storage is above the limit; images are removed after the grace period", organizationOnly: true },
+  { value: "quota.pruned", label: "Images removed to fit", description: "The registry removed the oldest images to meet the storage limit", organizationOnly: true },
 ];
 
 export const WEBHOOK_EVENT_NAMES = WEBHOOK_EVENTS.map((e) => e.value);

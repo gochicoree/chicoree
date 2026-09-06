@@ -8,6 +8,8 @@ export type NotificationEvent =
   | "mirror.failed"
   | "webhook.failed"
   | "quota.warning"
+  | "quota.exceeded"
+  | "quota.pruned"
   | "job.failed"
   | "token.expiring";
 
@@ -61,6 +63,20 @@ export const NOTIFICATION_EVENTS: NotificationEventInfo[] = [
     event: "quota.warning",
     label: "Quota warning",
     description: "Storage or repository usage reached 80 % or 95 % of a limit.",
+    scope: "organization",
+    defaultEmail: true,
+  },
+  {
+    event: "quota.exceeded",
+    label: "Storage limit exceeded",
+    description: "Storage is above the limit; the oldest images are removed once the grace period ends unless space is freed.",
+    scope: "organization",
+    defaultEmail: true,
+  },
+  {
+    event: "quota.pruned",
+    label: "Images removed to fit the storage limit",
+    description: "What the registry removed after the grace period ran out.",
     scope: "organization",
     defaultEmail: true,
   },

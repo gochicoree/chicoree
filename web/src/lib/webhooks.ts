@@ -398,7 +398,7 @@ export async function dispatchOrganizationWebhooks(organizationId: string, paylo
  */
 export async function emitRepositoryEvent(
   repositoryId: string,
-  event: Exclude<WebhookEvent, "push" | "quota.warning">,
+  event: Exclude<WebhookEvent, "push" | "quota.warning" | "quota.exceeded" | "quota.pruned">,
   data: Record<string, unknown>,
 ): Promise<void> {
   const info = await repositoryInfo(repositoryId);
@@ -410,7 +410,7 @@ export async function emitRepositoryEvent(
 /** Organization-level event (no repository); reaches organization hooks only. */
 export async function emitOrganizationEvent(
   organizationId: string,
-  event: "quota.warning",
+  event: "quota.warning" | "quota.exceeded" | "quota.pruned",
   data: Record<string, unknown>,
 ): Promise<void> {
   const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
