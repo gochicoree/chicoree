@@ -20,6 +20,13 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-06.3",
+    changes: [
+      "Editions: Administration → Branding (INSTANCE_EDITION as default) switches the landing page between self-hosted wording and a hosted service — sign-up as the call to action, the free plan named from the default limits, a link to the account portal's plans. No API change.",
+      "Browsing without an account: Explore, search, organization pages and public repositories open for visitors without a session, in a reduced shell with sign-in and sign-up; pages that need a user still redirect to sign-in. No API change.",
+    ],
+  },
+  {
     revision: "2026-09-06.2",
     changes: [
       "Storage enforcement: the quota-enforce job (Administration → Jobs, POST /api/jobs/quota-enforce) notifies organizations and accounts above their storage limit and, after graceDays, removes the oldest images until the limit is met, protected tags excepted, then runs garbage collection. New notification and organization webhook events quota.exceeded and quota.pruned.",

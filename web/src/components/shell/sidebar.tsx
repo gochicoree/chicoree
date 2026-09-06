@@ -8,6 +8,7 @@ import {
   Compass,
   KeyRound,
   LayoutDashboard,
+  LogIn,
   LogOut,
   MoreHorizontal,
   Plus,
@@ -69,16 +70,20 @@ export function Sidebar({
   isAdmin,
   branding,
   canCreateOrgs = true,
+  canSignUp = false,
   showApi = true,
 }: {
   orgs: NavOrg[];
   /** How many organizations the user is in; more than `orgs` means the list is capped. */
   orgCount?: number;
-  user: NavUser;
+  /** null: a visitor without a session, browsing public repositories. */
+  user: NavUser | null;
   isAdmin: boolean;
   branding?: NavBranding;
   /** Sign-up controls can restrict organization creation to administrators. */
   canCreateOrgs?: boolean;
+  /** Whether visitors may create an account (sign-up mode open). */
+  canSignUp?: boolean;
   /** The REST API entry (hidden while the API is switched off). */
   showApi?: boolean;
 }) {
@@ -93,7 +98,7 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pb-4 pt-5">
+      <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2.5 px-4 pb-4 pt-5">
         <BrandLockup name={branding?.name ?? "Chicorée"} logoDataUrl={branding?.logoDataUrl} />
       </Link>
       <div className="px-2.5 pb-4">
@@ -102,9 +107,11 @@ export function Sidebar({
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5">
         <div className="space-y-0.5">
-          <NavLink href="/dashboard" active={pathname === "/dashboard"}>
-            <LayoutDashboard className="size-4" /> Dashboard
-          </NavLink>
+          {user && (
+            <NavLink href="/dashboard" active={pathname === "/dashboard"}>
+              <LayoutDashboard className="size-4" /> Dashboard
+            </NavLink>
+          )}
           <NavLink href="/explore" active={pathname === "/explore"}>
             <Compass className="size-4" /> Explore
           </NavLink>
@@ -115,6 +122,7 @@ export function Sidebar({
           )}
         </div>
 
+        {user && (
         <div>
           <div className="eyebrow mb-1.5 flex items-center justify-between px-2.5">
             <Link href="/orgs" className="transition-colors hover:text-ink">
@@ -164,7 +172,9 @@ export function Sidebar({
             )}
           </div>
         </div>
+        )}
 
+        {user && (
         <div className="space-y-0.5">
           <div className="eyebrow mb-1.5 px-2.5">Account</div>
           <NavLink
@@ -182,8 +192,29 @@ export function Sidebar({
             </NavLink>
           )}
         </div>
+        )}
       </nav>
 
+      {!user && (
+        <div className="space-y-2 border-t border-line p-3">
+          <p className="px-1.5 text-xs text-ink-3">You are browsing public images. Sign in to see your organizations and push.</p>
+          <Link
+            href="/sign-in"
+            className="flex h-9 items-center justify-center gap-2 rounded-lg bg-action px-3 text-[13px] font-medium text-action-ink transition-colors hover:opacity-90"
+          >
+            <LogIn className="size-4" /> Sign in
+          </Link>
+          {canSignUp && (
+            <Link
+              href="/sign-up"
+              className="flex h-9 items-center justify-center rounded-lg border border-line-2 bg-card px-3 text-[13px] font-medium text-ink transition-colors hover:bg-card-2"
+            >
+              Create an account
+            </Link>
+          )}
+        </div>
+      )}
+      {user && (
       <div className="border-t border-line p-3">
         <div className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">
           <EntityLogo
@@ -210,6 +241,7 @@ export function Sidebar({
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

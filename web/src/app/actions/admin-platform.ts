@@ -16,6 +16,8 @@ import {
   TAGLINE_MAX,
   validateLogoDataUrl,
   type AnnouncementLevel,
+  defaultTagline,
+  type Edition,
 } from "@/lib/branding-shared";
 import { recordAudit } from "@/lib/audit";
 import type { SettingsResult } from "./instance-settings";
@@ -59,7 +61,10 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
 export async function saveBrandingSettings(_prev: SettingsResult | null, fd: FormData): Promise<SettingsResult> {
   await requireAdmin();
   const instanceName = str(fd, "instanceName").slice(0, INSTANCE_NAME_MAX) || DEFAULT_BRANDING.instanceName;
-  const tagline = str(fd, "tagline").slice(0, TAGLINE_MAX);
+  const edition: Edition = str(fd, "edition") === "hosted" ? "hosted" : "self-hosted";
+  let tagline = str(fd, "tagline").slice(0, TAGLINE_MAX);
+  // An untouched default tagline follows the edition; anything the admin wrote stays.
+  if (tagline === defaultTagline(edition === "hosted" ? "self-hosted" : "hosted")) tagline = defaultTagline(edition);
   const accentColor = str(fd, "accentColor");
   if (accentColor && !isHexColor(accentColor)) return { error: "The accent colour must be a hex value like #3d68c7." };
   const logoDataUrl = String(fd.get("logoDataUrl") ?? "").trim();
@@ -78,6 +83,7 @@ export async function saveBrandingSettings(_prev: SettingsResult | null, fd: For
   const branding: BrandingSettings = {
     instanceName,
     tagline,
+    edition,
     logoDataUrl,
     accentColor: accentColor.toLowerCase(),
     footerLinks,
@@ -91,7 +97,7 @@ export async function saveBrandingSettings(_prev: SettingsResult | null, fd: For
     targetType: "settings",
     targetId: "branding",
     targetLabel: "branding",
-    details: { instanceName, tagline, accentColor: branding.accentColor, logoBytes: logoDataUrl ? Math.round((logoDataUrl.length - logoDataUrl.indexOf(",") - 1) * 0.75) : 0, footerLinks: footerLinks.length, announcement: enabled ? level : "off", gravatar: branding.gravatar, showArtifacts: branding.showArtifacts },
+    details: { instanceName, tagline, edition, accentColor: branding.accentColor, logoBytes: logoDataUrl ? Math.round((logoDataUrl.length - logoDataUrl.indexOf(",") - 1) * 0.75) : 0, footerLinks: footerLinks.length, announcement: enabled ? level : "off", gravatar: branding.gravatar, showArtifacts: branding.showArtifacts },
   });
   revalidatePath("/", "layout");
   return { saved: true, message: "Branding saved" };

@@ -18,6 +18,9 @@ import {
   type AnnouncementLevel,
   type BrandingSettings,
   type FooterLink,
+  EDITIONS,
+  defaultTagline,
+  type Edition,
 } from "@/lib/branding-shared";
 import { BrandMark } from "@/components/brand";
 import { AnnouncementBar } from "@/components/shell/announcement-bar";
@@ -33,6 +36,7 @@ export function BrandingForm({ branding, source }: { branding: BrandingSettings;
 
   const [name, setName] = useState(branding.instanceName);
   const [tagline, setTagline] = useState(branding.tagline);
+  const [edition, setEdition] = useState<Edition>(branding.edition);
   const [logo, setLogo] = useState(branding.logoDataUrl);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [accent, setAccent] = useState(branding.accentColor);
@@ -116,6 +120,23 @@ export function BrandingForm({ branding, source }: { branding: BrandingSettings;
             <Field label="Tagline" htmlFor="brand-tagline" hint={`Up to ${TAGLINE_MAX} characters; shown under the sign-in card and in the footer.`}>
               <Input id="brand-tagline" name="tagline" value={tagline} maxLength={TAGLINE_MAX} onChange={(e) => setTagline(e.target.value)} />
             </Field>
+            <div className="sm:col-span-2">
+              <Field label="Edition" htmlFor="brand-edition" hint="Who the landing page speaks to. INSTANCE_EDITION is the environment default; nothing about the registry itself changes.">
+                <Select
+                  id="brand-edition"
+                  name="edition"
+                  value={edition}
+                  onChange={(v) => {
+                    const next: Edition = v === "hosted" ? "hosted" : "self-hosted";
+                    // An untouched default tagline follows the edition.
+                    if (tagline === defaultTagline(edition)) setTagline(defaultTagline(next));
+                    setEdition(next);
+                  }}
+                  options={EDITIONS.map((e) => ({ value: e.value, label: e.label, description: e.description }))}
+                  className="sm:w-80"
+                />
+              </Field>
+            </div>
 
             <div>
               <div className="mb-1.5 block text-[13px] font-medium text-ink">Logo</div>
