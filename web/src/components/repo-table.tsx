@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Container, Globe } from "lucide-react";
+import { Container, Globe, Package } from "lucide-react";
 import type { RepoListItem } from "@/lib/data";
 import { formatBytes, formatCount, relativeTime } from "@/lib/format";
 import { Badge, VisibilityBadge } from "@/components/ui/badge";
@@ -57,6 +57,11 @@ export function RepoTable({ repos, showOrg = false }: { repos: RepoListItem[]; s
                           {path}
                         </Link>
                         <VisibilityBadge visibility={repo.visibility} />
+                        {repo.kind === "chart" && (
+                          <Badge tone="info" title="Helm chart (helm push)">
+                            <Package className="size-3" /> chart
+                          </Badge>
+                        )}
                         <StarCount count={repo.starCount} />
                         {repo.proxy && (
                           <Badge

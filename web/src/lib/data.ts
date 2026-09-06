@@ -15,6 +15,7 @@ import type { SeveritySummary } from "@/components/severity";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 import { logoVersionSql, userLogoVersionSql } from "./logo";
 import { getInstanceSettings } from "./instance-settings";
+import { isHelmConfig, type RepoKind } from "./helm-shared";
 
 export interface OrgWithMeta {
   id: string;
@@ -167,6 +168,8 @@ export interface RepoListItem {
   starCount: number;
   /** Cache-busting version of the repository picture; null when it has none. */
   logoVersion: string | null;
+  /** Helm chart, container images, or empty — from the newest tag. */
+  kind: RepoKind;
 }
 
 export const repoListSelect = sql`
@@ -178,7 +181,9 @@ export const repoListSelect = sql`
     WHERE rb.repository_id = r.id), 0) AS size_bytes,
   (SELECT max(m.created_at) FROM manifests m WHERE m.repository_id = r.id) AS last_pushed_at,
   EXISTS (SELECT 1 FROM organization_proxies p WHERE p.organization_id = r.organization_id) AS is_proxy,
-  (SELECT max(t.proxy_checked_at) FROM tags t WHERE t.repository_id = r.id) AS last_checked_at`;
+  (SELECT max(t.proxy_checked_at) FROM tags t WHERE t.repository_id = r.id) AS last_checked_at,
+  (SELECT m.payload::jsonb->'config'->>'mediaType' FROM tags t JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
+    WHERE t.repository_id = r.id ORDER BY t.updated_at DESC LIMIT 1) AS latest_config_media_type`;
 
 export function mapRepoRow(r: Record<string, unknown>): RepoListItem {
   return {
@@ -196,7 +201,14 @@ export function mapRepoRow(r: Record<string, unknown>): RepoListItem {
     lastCheckedAt: r.last_checked_at ? new Date(r.last_checked_at as string) : null,
     starCount: Number(r.star_count ?? 0),
     logoVersion: (r.logo_version as string | null) ?? null,
+    kind: r.latest_config_media_type === undefined ? "image" : repoKindOf(r.latest_config_media_type as string | null),
   };
+}
+
+/** What a repository holds, judged from its newest tag: a Helm chart, container images, or nothing yet. */
+export function repoKindOf(latestConfigMediaType: string | null): RepoKind {
+  if (latestConfigMediaType === null) return "empty";
+  return isHelmConfig(latestConfigMediaType) ? "chart" : "image";
 }
 
 export async function listOrgRepos(orgId: string, includePrivate: boolean): Promise<RepoListItem[]> {
@@ -290,6 +302,8 @@ export interface TagListItem {
   proxyCheckedAt: Date | null;
   /** A cosign signature from a trusted key verifies this image (manifest_signatures). */
   signed: boolean;
+  /** Helm chart metadata when the manifest is a chart (config media type application/vnd.cncf.helm.config.v1+json). */
+  chart: { name: string; version: string; appVersion: string | null } | null;
 }
 
 /** Tag names offered in the compare selector (a dropdown, not a list). */
@@ -347,6 +361,8 @@ export async function listRepoTags(
     rows: async (limit, offset) => {
       const { rows } = await db.execute(sql`
     SELECT t.name, t.manifest_digest, t.updated_at, t.proxy_checked_at, m.media_type, m.size AS manifest_size,
+      m.payload::jsonb->'config'->>'mediaType' AS config_media_type,
+      m.config->>'name' AS chart_name, m.config->>'version' AS chart_version, m.config->>'appVersion' AS chart_app_version,
       EXISTS (SELECT 1 FROM manifest_signatures ms WHERE ms.repository_id = t.repository_id
         AND ms.manifest_digest = t.manifest_digest AND ms.kind = 'signature' AND ms.status = 'verified') AS signed,
       (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
@@ -384,6 +400,10 @@ export async function listRepoTags(
           blocked: (r.blocked as string | null) ?? null,
           proxyCheckedAt: r.proxy_checked_at ? new Date(r.proxy_checked_at as string) : null,
           signed: Boolean(r.signed),
+      chart:
+        isHelmConfig(r.config_media_type as string | null) && r.chart_name && r.chart_version
+          ? { name: String(r.chart_name), version: String(r.chart_version), appVersion: (r.chart_app_version as string | null) ?? null }
+          : null,
         };
       });
     },

@@ -604,6 +604,17 @@ through an old name get no grant at all.
   `searchFindings` (`vulnerability_id ILIKE %q% OR package ILIKE %q%`, 200
   rows) behind `/<org>/security` and `/admin/security`. Index (multi-arch)
   manifests aggregate their children's scans in the UI.
+- **Helm charts** (`lib/helm-shared.ts`, `lib/helm.ts`): a manifest whose
+  config media type is `application/vnd.cncf.helm.config.v1+json` is a chart;
+  the config blob — cached on the manifest row like an image config — is
+  `Chart.yaml` as JSON (`parseChartMeta`). `repoListSelect` derives the
+  repository `kind` from the newest tag's config media type, tag lists carry
+  `chart {name, version, appVersion}` from the cached config, and
+  `readChartFiles` gunzips the archive layer (≤ 8 MiB) and walks the tar
+  (ustar, pax `path=`, GNU `L` long names) for values.yaml, Chart.yaml and
+  the README on demand. Charts are excluded from scanning by
+  `isArtifactManifest` (no image layers) and are not treated as attached
+  artifacts by `looksLikeArtifact`.
 - **Notation** (`lib/notation.ts`): a referrer of artifact type
   `application/vnd.cncf.notary.signature` with a JWS layer is parsed
   (`parseNotationJws`, pure), the signature checked with the leaf certificate

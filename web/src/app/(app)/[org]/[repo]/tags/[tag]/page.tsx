@@ -48,6 +48,9 @@ import { getInstanceSettings } from "@/lib/instance-settings";
 import { showArtifactsFor } from "@/lib/artifact-visibility";
 import { imagePath } from "@/lib/library-shared";
 import { getRepoContext } from "@/lib/repo-access";
+import { helmCommands, isHelmConfig, parseChartMeta } from "@/lib/helm-shared";
+import { readChartFiles } from "@/lib/helm";
+import { renderReadme } from "@/lib/readme";
 
 interface Descriptor {
   mediaType?: string;
@@ -171,6 +174,11 @@ export default async function TagDetailPage({
   if (!config && !isIndex && manifest.configDigest) {
     config = (await fetchBlobJson(path, manifest.configDigest)) as ImageConfig | null;
   }
+
+  // Helm charts: Chart.yaml is the config blob; values and README come from the archive.
+  const chart = !isIndex && isHelmConfig(payload.config?.mediaType) ? parseChartMeta(config) : null;
+  const chartFiles = chart ? await readChartFiles(path, payload.layers ?? []) : null;
+  const helm = chart ? helmCommands(env.registryHost, imagePath(orgSlug, repoName), chart.version, chart.name) : null;
 
   const layers = (payload.layers ?? []).map((l) => ({
     digest: l.digest ?? "",
@@ -525,7 +533,127 @@ export default async function TagDetailPage({
         </div>
       )}
 
-      <CommandLine command={`docker pull ${pullRef}`} />
+      {helm && chart ? (
+        <div className="space-y-2">
+          <CommandLine command={helm.pull} />
+          <CommandLine command={helm.install} />
+        </div>
+      ) : (
+        <CommandLine command={`docker pull ${pullRef}`} />
+      )}
+
+      {chart && (
+        <Card>
+          <CardHeader
+            eyebrow="Helm chart"
+            title={`${chart.name} ${chart.version}`}
+            description={chart.description ?? undefined}
+            action={chart.deprecated ? <Badge tone="danger">deprecated</Badge> : chart.type ? <Badge>{chart.type}</Badge> : undefined}
+          />
+          <CardBody>
+            <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+              {chart.appVersion && (
+                <div>
+                  <dt className="eyebrow mb-0.5">App version</dt>
+                  <dd className="font-mono text-sm">{chart.appVersion}</dd>
+                </div>
+              )}
+              {chart.kubeVersion && (
+                <div>
+                  <dt className="eyebrow mb-0.5">Kubernetes</dt>
+                  <dd className="font-mono text-sm">{chart.kubeVersion}</dd>
+                </div>
+              )}
+              {chart.apiVersion && (
+                <div>
+                  <dt className="eyebrow mb-0.5">Chart API</dt>
+                  <dd className="font-mono text-sm">{chart.apiVersion}</dd>
+                </div>
+              )}
+              {chart.home && (
+                <div>
+                  <dt className="eyebrow mb-0.5">Home</dt>
+                  <dd className="break-all text-sm">
+                    <a href={chart.home} className="underline hover:text-ink" rel="noreferrer">{chart.home}</a>
+                  </dd>
+                </div>
+              )}
+              {chart.sources.length > 0 && (
+                <div>
+                  <dt className="eyebrow mb-0.5">Sources</dt>
+                  <dd className="space-y-0.5 break-all text-sm">
+                    {chart.sources.map((u) => (
+                      <a key={u} href={u} className="block underline hover:text-ink" rel="noreferrer">{u}</a>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {chart.maintainers.length > 0 && (
+                <div>
+                  <dt className="eyebrow mb-0.5">Maintainers</dt>
+                  <dd className="text-sm">{chart.maintainers.map((m) => m.name ?? m.email ?? "?").join(", ")}</dd>
+                </div>
+              )}
+              {chart.keywords.length > 0 && (
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <dt className="eyebrow mb-0.5">Keywords</dt>
+                  <dd className="flex flex-wrap gap-1.5">
+                    {chart.keywords.map((k) => (
+                      <Badge key={k}>{k}</Badge>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {chart.dependencies.length > 0 && (
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <dt className="eyebrow mb-0.5">Dependencies</dt>
+                  <dd className="text-sm">
+                    <ul className="divide-y divide-line">
+                      {chart.dependencies.map((d, i) => (
+                        <li key={`${d.name}-${i}`} className="flex flex-wrap items-center gap-x-3 py-1">
+                          <span className="font-medium">{d.alias ?? d.name}</span>
+                          <span className="font-mono text-xs text-ink-2">{d.version}</span>
+                          {d.repository && <span className="break-all font-mono text-xs text-ink-3">{d.repository}</span>}
+                          {d.condition && <span className="text-xs text-ink-3">if {d.condition}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {chartFiles?.values && (
+              <details className="mt-5 border-t border-line pt-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  values.yaml{chartFiles.truncated ? " (first part)" : ""} <span className="text-xs text-ink-3">· {helm?.showValues}</span>
+                </summary>
+                <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-line bg-card-2 p-3 font-mono text-xs leading-relaxed">{chartFiles.values}</pre>
+              </details>
+            )}
+            {chartFiles && chartFiles.files.length > 0 && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {chartFiles.files.length} files in the archive
+                </summary>
+                <ul className="mt-2 grid gap-0.5 font-mono text-xs text-ink-2 sm:grid-cols-2">
+                  {chartFiles.files.map((f) => (
+                    <li key={f} className="truncate">{f}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {chart && chartFiles?.readme && (
+        <Card>
+          <CardHeader eyebrow="Helm chart" title="README" description="From the chart archive" />
+          <CardBody>
+            <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: renderReadme(chartFiles.readme) }} />
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardBody>

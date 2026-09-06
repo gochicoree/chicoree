@@ -168,6 +168,8 @@ const REPO_EXAMPLE = {
   updatedAt: "2026-09-05T08:41:12.000Z",
   proxy: false,
   lastCheckedAt: null,
+  kind: "image",
+  helmReference: null,
   url: "https://registry.example.com/acme/api",
 };
 
@@ -380,6 +382,25 @@ export const API_CATALOG: ApiEndpoint[] = [
     ],
     example: REPO_EXAMPLE,
     since: "2026-09-05.1",
+  },
+  {
+    method: "GET",
+    path: "/repos/{org}/{repo}/tags/{tag}/chart",
+    group: "Repositories",
+    summary: "Helm chart details",
+    description: "For a tag that is a Helm chart (config media type application/vnd.cncf.helm.config.v1+json): Chart.yaml as JSON, values.yaml, the README and the file list from the archive (files is null when the archive cannot be read), and the helm commands. 404 for images.",
+    access: "public",
+    serviceAccounts: true,
+    params: [ORG_PARAM, REPO_PARAM, { name: "tag", in: "path", type: "string", required: true, description: "Tag name (the chart version, as helm push names it)." }],
+    example: {
+      tag: "1.4.2",
+      digest: "sha256:9f8e…",
+      pushedAt: "2026-09-07T10:00:00.000Z",
+      chart: { apiVersion: "v2", name: "api", version: "1.4.2", appVersion: "2.0.0", description: "The API server", type: "application", home: null, icon: null, kubeVersion: null, deprecated: false, sources: [], keywords: ["api"], maintainers: [{ name: "Jo Doe" }], dependencies: [], annotations: {} },
+      files: { values: "replicaCount: 1\n…", readme: "# api\n…", chartYaml: "apiVersion: v2\n…", list: ["Chart.yaml", "templates/deployment.yaml", "values.yaml"], truncated: false },
+      commands: { pull: "helm pull oci://registry.example.com/acme/api --version 1.4.2", install: "helm install api oci://registry.example.com/acme/api --version 1.4.2", showValues: "helm show values oci://registry.example.com/acme/api --version 1.4.2", push: "helm push api-<version>.tgz oci://registry.example.com/acme" },
+    },
+    since: "2026-09-07.2",
   },
   {
     method: "GET",

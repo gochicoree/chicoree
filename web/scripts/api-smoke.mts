@@ -91,6 +91,18 @@ async function seed() {
   const [pub] = await q(`INSERT INTO repositories (organization_id, name, description, visibility) VALUES ($1, 'pub', 'public smoke', 'public') RETURNING id`, [orgId]);
   repoId = repo.id;
   pubRepoId = pub.id;
+  // A Helm chart: the config blob is Chart.yaml as JSON (cached on the manifest row), the layer is the archive.
+  const [chartRepo] = await q(`INSERT INTO repositories (organization_id, name, description, visibility) VALUES ($1, 'chart', 'smoke chart', 'public') RETURNING id`, [orgId]);
+  const chartManifest = JSON.stringify({
+    schemaVersion: 2,
+    mediaType: "application/vnd.oci.image.manifest.v1+json",
+    config: { mediaType: "application/vnd.cncf.helm.config.v1+json", digest: "sha256:" + "11".repeat(32), size: 120 },
+    layers: [{ mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip", digest: "sha256:" + "22".repeat(32), size: 4096 }],
+  });
+  const chartDigest = "sha256:" + createHash("sha256").update(chartManifest).digest("hex");
+  await q(`INSERT INTO manifests (repository_id, digest, media_type, size, payload, pushed_by, config_digest, config) VALUES ($1, $2, 'application/vnd.oci.image.manifest.v1+json', $3, $4, $5, $6, $7)`,
+    [chartRepo.id, chartDigest, chartManifest.length, chartManifest, `user:${adminId}`, "sha256:" + "11".repeat(32), JSON.stringify({ apiVersion: "v2", name: "smoke", version: "0.1.0", appVersion: "1.2.3", description: "smoke chart", keywords: ["smoke"] })]);
+  await q(`INSERT INTO tags (repository_id, name, manifest_digest) VALUES ($1, '0.1.0', $2)`, [chartRepo.id, chartDigest]);
   for (const id of [repoId, pubRepoId]) {
     await q(`INSERT INTO manifests (repository_id, digest, media_type, size, payload, pushed_by) VALUES ($1, $2, 'application/vnd.oci.image.manifest.v1+json', $3, $4, $5)`, [id, digest, manifest.length, manifest, `user:${adminId}`]);
     await q(`INSERT INTO tags (repository_id, name, manifest_digest) VALUES ($1, 'v1', $2)`, [id, digest]);
@@ -215,6 +227,15 @@ async function run() {
   await expect("ci identity delete", "DELETE", `/orgs/${SLUG}/ci-identities/${(ident.body as { id: string }).id}`, 200, { token: A });
   await expect("create org", "POST", "/orgs", 201, { token: A, body: { slug: `${SLUG}-b`, name: "Smoke B" } });
   await expect("delete org", "DELETE", `/orgs/${SLUG}-b`, 200, { token: A });
+
+  // --- Helm charts (2026-09-07.2) ---
+  await expect("chart repo: kind chart + helm reference", "GET", `/repos/${SLUG}/chart`, 200, { verify: (b) => (isObj(b) && b.kind === "chart" && typeof b.helmReference === "string" && (b.helmReference as string).startsWith("oci://")) || `kind ${isObj(b) ? b.kind : "?"}` });
+  await expect("image repo: kind image", "GET", `/repos/${SLUG}/pub`, 200, { verify: (b) => (isObj(b) && b.kind === "image" && b.helmReference === null) || "kind not image" });
+  await expect("chart tag list carries chart metadata", "GET", `/repos/${SLUG}/chart/tags`, 200, { verify: (b) => (isObj(b) && ((b.items as { chart: { version: string; appVersion: string } | null }[])[0]?.chart?.version === "0.1.0")) || "no chart on tag" });
+  await expect("chart tag detail: kind, chart, helm commands", "GET", `/repos/${SLUG}/chart/tags/0.1.0`, 200, { verify: (b) => (isObj(b) && b.kind === "chart" && (b.chart as { name: string }).name === "smoke" && typeof (b.helm as { pull: string }).pull === "string") || "chart detail incomplete" });
+  await expect("chart endpoint (archive unreachable → files null)", "GET", `/repos/${SLUG}/chart/tags/0.1.0/chart`, 200, { verify: (b) => (isObj(b) && (b.chart as { version: string }).version === "0.1.0" && b.files === null && /helm pull oci:\/\//.test((b.commands as { pull: string }).pull)) || "chart endpoint wrong" });
+  await expect("chart endpoint on an image → 404", "GET", `/repos/${SLUG}/pub/tags/v1/chart`, 404);
+  await expect("image tag detail: kind image", "GET", `/repos/${SLUG}/pub/tags/v1`, 200, { verify: (b) => (isObj(b) && b.kind === "image" && b.chart === null) || "image detail has chart" });
 
   // --- Teams and per-repository permissions (2026-09-07.1) ---
   await expect("outsider: create team → 403", "POST", `/orgs/${SLUG}/teams`, 403, { token: U, body: { name: "Backend" } });

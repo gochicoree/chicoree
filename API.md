@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-07.1` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-07.2` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.1`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.2`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -144,6 +144,7 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 
 | Endpoint | What it does | Who |
 | --- | --- | --- |
+| [`GET /api/v1/repos/{org}/{repo}/tags/{tag}/chart`](#get-repos-org-repo-tags-tag-chart) | Helm chart details | anyone |
 | [`GET /api/v1/repos/{org}/{repo}/size-history`](#get-repos-org-repo-size-history) | Image size over time | anyone |
 | [`GET /api/v1/repos/{org}/{repo}/access`](#get-repos-org-repo-access) | Who has access to a repository | organization owners and admins |
 | [`PUT /api/v1/repos/{org}/{repo}/access/{subjectType}/{subjectId}`](#put-repos-org-repo-access-subjectType-subjectId) | Grant access to a person or a team | organization owners and admins |
@@ -484,6 +485,8 @@ Response `200`:
       "updatedAt": "2026-09-05T08:41:12.000Z",
       "proxy": false,
       "lastCheckedAt": null,
+      "kind": "image",
+      "helmReference": null,
       "url": "https://registry.example.com/acme/api"
     }
   ],
@@ -531,6 +534,8 @@ Response `201`:
   "updatedAt": "2026-09-05T08:41:12.000Z",
   "proxy": false,
   "lastCheckedAt": null,
+  "kind": "image",
+  "helmReference": null,
   "url": "https://registry.example.com/acme/api"
 }
 ~~~
@@ -1802,6 +1807,73 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 
 
+### <a id="get-repos-org-repo-tags-tag-chart"></a>`GET /api/v1/repos/{org}/{repo}/tags/{tag}/chart`
+
+Helm chart details — For a tag that is a Helm chart (config media type application/vnd.cncf.helm.config.v1+json): Chart.yaml as JSON, values.yaml, the README and the file list from the archive (files is null when the archive cannot be read), and the helm commands. 404 for images.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-07.2
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `tag` | path | string | yes | Tag name (the chart version, as helm push names it). |
+
+Response `200`:
+
+~~~json
+{
+  "tag": "1.4.2",
+  "digest": "sha256:9f8e…",
+  "pushedAt": "2026-09-07T10:00:00.000Z",
+  "chart": {
+    "apiVersion": "v2",
+    "name": "api",
+    "version": "1.4.2",
+    "appVersion": "2.0.0",
+    "description": "The API server",
+    "type": "application",
+    "home": null,
+    "icon": null,
+    "kubeVersion": null,
+    "deprecated": false,
+    "sources": [],
+    "keywords": [
+      "api"
+    ],
+    "maintainers": [
+      {
+        "name": "Jo Doe"
+      }
+    ],
+    "dependencies": [],
+    "annotations": {}
+  },
+  "files": {
+    "values": "replicaCount: 1\n…",
+    "readme": "# api\n…",
+    "chartYaml": "apiVersion: v2\n…",
+    "list": [
+      "Chart.yaml",
+      "templates/deployment.yaml",
+      "values.yaml"
+    ],
+    "truncated": false
+  },
+  "commands": {
+    "pull": "helm pull oci://registry.example.com/acme/api --version 1.4.2",
+    "install": "helm install api oci://registry.example.com/acme/api --version 1.4.2",
+    "showValues": "helm show values oci://registry.example.com/acme/api --version 1.4.2",
+    "push": "helm push api-<version>.tgz oci://registry.example.com/acme"
+  }
+}
+~~~
+
+~~~sh
+curl \
+  "https://registry.example.com/api/v1/repos/acme/api/tags/1.4.0/chart"
+~~~
+
 ### <a id="get-repos-org-repo-size-history"></a>`GET /api/v1/repos/{org}/{repo}/size-history`
 
 Image size over time — For each of the last `days` days, the compressed size (layers + config) of the newest image pushed that day, zero when nothing was pushed. Indexes, referrers and attached artifacts are left out.
@@ -1976,6 +2048,8 @@ Response `200`:
   "updatedAt": "2026-09-05T08:41:12.000Z",
   "proxy": false,
   "lastCheckedAt": null,
+  "kind": "image",
+  "helmReference": null,
   "url": "https://registry.example.com/acme/api",
   "createdAt": "2026-08-02T09:00:00.000Z",
   "readme": "# api\n\nHow to run it…",
@@ -2026,6 +2100,8 @@ Response `200`:
   "updatedAt": "2026-09-05T08:41:12.000Z",
   "proxy": false,
   "lastCheckedAt": null,
+  "kind": "image",
+  "helmReference": null,
   "url": "https://registry.example.com/acme/api"
 }
 ~~~
@@ -3162,6 +3238,8 @@ Response `200`:
         "updatedAt": "2026-09-05T08:41:12.000Z",
         "proxy": false,
         "lastCheckedAt": null,
+        "kind": "image",
+        "helmReference": null,
         "url": "https://registry.example.com/acme/api"
       }
     ],
@@ -3250,6 +3328,8 @@ Response `200`:
       "updatedAt": "2026-09-05T08:41:12.000Z",
       "proxy": false,
       "lastCheckedAt": null,
+      "kind": "image",
+      "helmReference": null,
       "url": "https://registry.example.com/acme/api",
       "starredAt": "2026-09-03T12:00:00.000Z"
     }
@@ -3688,6 +3768,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-07.2
+
+- Helm charts: repositories carry `kind` (`image` | `chart` | `empty`, from the newest tag) and `helmReference` (`oci://…`) for charts; tags carry `chart: { name, version, appVersion }`; manifest and tag details carry `kind`, `chart` (Chart.yaml) and `helm` commands. New `GET /repos/{org}/{repo}/tags/{tag}/chart` returns Chart.yaml, values.yaml, the README and the file list from the archive.
 
 ### 2026-09-07.1
 

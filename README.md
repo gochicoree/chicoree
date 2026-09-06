@@ -8,7 +8,7 @@ A self-hosted OCI container registry with a proper management plane.
   Spec up: chunked & monolithic blob uploads, cross-repo mounts, image + index
   manifests, tag listing, the referrers API, HTTP range requests,
   content-addressable deduplicated storage (filesystem, S3 or bunny.net),
-  pull-through proxy caches, immutable/protected tags, pull rate limits,
+  pull-through proxy caches, Helm charts, immutable/protected tags, pull rate limits,
   shared upload staging for several replicas, redirects for renamed
   repositories, Prometheus metrics and Docker token authentication.
 - **`web/`** — the management app (Next.js + TypeScript): organizations,
@@ -1089,6 +1089,26 @@ Images that were never cached fail with `502` and the upstream's reason.
 organizations that nobody pulled within the window (`dryRun=true` only
 counts). They are fetched again on the next pull; run `prune-untagged` and
 `gc` afterwards to reclaim the space.
+
+## Helm charts
+
+Charts pushed with Helm (`helm push mychart-1.4.2.tgz oci://cr.example.com/acme`)
+are OCI artifacts like any other and land in `acme/mychart`, tagged with the
+chart version. Chicorée recognises them by the config media type
+(`application/vnd.cncf.helm.config.v1+json`, which is `Chart.yaml` as JSON):
+the repository and its tags carry a *chart* badge, the repository page and
+the tag page show `helm pull` / `helm install` commands instead of `docker
+pull`, and the tag page adds a chart card — name, version, app version,
+Kubernetes constraint, home, sources, maintainers, keywords, dependencies —
+plus `values.yaml` and the chart's README read from the archive (up to 8 MB;
+values and README trimmed to 64 KB and 128 KB). Charts are not scanned for
+vulnerabilities (they carry no filesystem) and are never hidden as
+attached artifacts. The API exposes the same: `kind` and `helmReference` on
+repositories, `chart` on tags, `chart` and `helm` on tag and manifest
+details, and `GET /repos/{org}/{repo}/tags/{tag}/chart` with Chart.yaml,
+values, README and the file list. Signing charts works as for images —
+`helm push` can attach a provenance layer, and cosign or Notation signatures
+on the chart manifest show up on its Attestations tab.
 
 ## Layer deduplication
 

@@ -19,6 +19,7 @@ import type { ApiCaller } from "./auth";
 import { orgFilter, repoFilter, type OrgAccess, type RepoAccess } from "./access";
 import { iso } from "./respond";
 import { absolute, compactSummary, scanJson } from "./serialize";
+import { helmCommands, isHelmConfig, parseChartMeta } from "@/lib/helm-shared";
 
 // --- Organizations ------------------------------------------------------------
 
@@ -290,11 +291,15 @@ export async function manifestDetail(a: RepoAccess, digest: string) {
   const platform = config ? describePlatform(config.os ?? null, config.architecture ?? null, config.variant ?? null) : null;
   const cfg = config?.config;
   const base = repoHref(a.org.slug, a.repo.name);
+  const chart = !isIndex && isHelmConfig(payload.config?.mediaType) ? parseChartMeta(config) : null;
   return {
     digest,
     tags,
     mediaType: manifest.mediaType,
     artifactType: manifest.artifactType,
+    kind: chart ? "chart" : "image",
+    chart,
+    helm: chart ? helmCommands(env.registryHost, imagePath(a.org.slug, a.repo.name), chart.version, chart.name) : null,
     isIndex,
     manifestBytes: manifest.size,
     sizeBytes: isIndex ? indexBytes : imageBytes,
