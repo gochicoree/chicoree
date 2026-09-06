@@ -9,6 +9,7 @@ import { registryStatus, type RegistryStatus } from "./registry-client";
 import { OUTBOX_MAX_ATTEMPTS, outboxStats } from "./registry-events";
 import { getScanner, scanningEnabled } from "./scanners";
 import { activeSigner, fileKeyInfo, listSigningKeys, privateKeyFingerprint, KEY_DROP_WINDOW_MS } from "./signing-keys";
+import { scanWorkerStats, workersActive } from "./scan-tasks";
 
 export type HealthStatus = "ok" | "warn" | "error" | "none";
 
@@ -193,9 +194,41 @@ async function checkScanner(): Promise<HealthCheck> {
       details: [],
     };
   }
-  const title = `Vulnerability scanner (${scanner.label})`;
   const h = await scanner.health();
-  return { key, title, status: h.status, summary: h.summary, details: h.details, latencyMs: h.latencyMs };
+  if (!(await workersActive())) {
+    return { key, title: `Vulnerability scanner (${scanner.label})`, status: h.status, summary: h.summary, details: h.details, latencyMs: h.latencyMs };
+  }
+  // Scans go to workers; the local client is only the fallback while none is online.
+  const w = await scanWorkerStats();
+  const online = w.workers.filter((x) => x.online);
+  const queue = `${w.queued} queued · ${w.leased} running${w.failed ? ` · ${w.failed} failed` : ""}`;
+  const fallback = h.status === "ok" ? "ready" : `${h.status}: ${h.summary}`;
+  const details = [
+    { label: "Mode", value: "scan workers; this container only scans while no worker is online for 2 minutes" },
+    { label: "Workers online", value: online.length ? online.map((x) => `${x.name} (${x.version ?? "?"}, trivy ${x.scannerVersion ?? "?"})`).join(", ") : "none" },
+    { label: "Queue", value: queue },
+    { label: "Fallback client", value: fallback },
+    ...h.details.filter((d) => d.label !== "Mode").map((d) => ({ label: d.label === "Server" ? "Trivy server" : `Local ${d.label.toLowerCase()}`, value: d.value })),
+  ];
+  const title = `Vulnerability scanner (${scanner.label}, workers)`;
+  if (online.length === 0) {
+    return {
+      key,
+      title,
+      status: "warn",
+      summary: `No scan worker online — queued scans run in this container after 2 minutes (local client ${h.status === "ok" ? "ready" : h.status})`,
+      details,
+      latencyMs: h.latencyMs,
+    };
+  }
+  return {
+    key,
+    title,
+    status: h.status === "error" ? "warn" : "ok",
+    summary: `Scans go to ${online.length} worker${online.length === 1 ? "" : "s"} (${queue}); local client as fallback${h.status === "ok" ? "" : `, currently ${h.status}`}`,
+    details,
+    latencyMs: h.latencyMs,
+  };
 }
 
 // --- token keys --------------------------------------------------------------

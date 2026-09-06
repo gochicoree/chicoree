@@ -104,6 +104,15 @@ function shortCommit(c: string | null): string | null {
   return c ? c.slice(0, 12) : null;
 }
 
+export interface HelmProvenanceView {
+  layerDigest: string;
+  chartName: string | null;
+  chartVersion: string | null;
+  files: { name: string; digest: string }[];
+  matchesArchive: boolean;
+  signedBy: string | null;
+}
+
 /**
  * The Attestations tab of a tag page: cosign signatures with their
  * verification status, SBOM cards, SLSA provenance and everything else
@@ -118,6 +127,8 @@ export function AttestationsPanel({
   canReverify,
   canPush,
   signaturesRequired,
+  subjectKind = "image",
+  helmProvenance = null,
 }: {
   view: AttestationView;
   repositoryId: string;
@@ -129,6 +140,10 @@ export function AttestationsPanel({
   /** The viewer may push to this repository; only then are the sign/attach commands shown. */
   canPush: boolean;
   signaturesRequired: boolean;
+  /** What is being signed: wording and commands differ for Helm charts. */
+  subjectKind?: "image" | "chart";
+  /** Helm's own provenance file, when the chart was pushed with one. */
+  helmProvenance?: HelmProvenanceView | null;
 }) {
   // An attestation carries a signature too: counting only the plain ones read
   // as "0 verified signatures" next to a card that said it was verified.
@@ -164,13 +179,59 @@ export function AttestationsPanel({
         </div>
       )}
 
-      {view.total === 0 && !canPush && (
+      {helmProvenance && (
+        <Section title="Helm provenance" count={1}>
+          <div className="rounded-xl border border-line bg-card px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={helmProvenance.matchesArchive ? "ok" : "danger"}>{helmProvenance.matchesArchive ? "names this archive" : "does not name this archive"}</Badge>
+              <span className="font-medium">
+                {helmProvenance.chartName ?? "chart"} {helmProvenance.chartVersion ?? ""}
+              </span>
+              {helmProvenance.signedBy && <span className="font-mono text-xs text-ink-3">PGP key {helmProvenance.signedBy}</span>}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3">
+              <span>
+                layer <Digest digest={helmProvenance.layerDigest} />
+              </span>
+              {helmProvenance.files.map((f) => (
+                <span key={f.name} className="break-all">
+                  {f.name} <Digest digest={f.digest} />
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-ink-3">
+              A PGP-signed provenance file pushed next to the chart (<code className="font-mono">helm package --sign</code>). Verify it on your side with{" "}
+              <code className="font-mono">helm pull --verify --keyring pubring.gpg</code>; the registry does not hold PGP keys.
+            </p>
+          </div>
+        </Section>
+      )}
+
+      {view.total === 0 && !helmProvenance && !canPush && (
         <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-ink-3">
-          Signatures, SBOMs and provenance show up here once someone who can push attaches them.
+          {subjectKind === "chart"
+            ? "Signatures and provenance show up here once someone who can push attaches them to the chart."
+            : "Signatures, SBOMs and provenance show up here once someone who can push attaches them."}
         </p>
       )}
 
-      {view.total === 0 && canPush && (
+      {view.total === 0 && canPush && subjectKind === "chart" && (
+        <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
+          <p>
+            Sign the chart with cosign or Notation and it shows up here; a provenance file pushed next to the chart (
+            <code className="font-mono">helm package --sign</code>, then <code className="font-mono">helm push</code> with the{" "}
+            <code className="font-mono">.prov</code> file beside the archive) appears too.
+            {view.trustedKeys === 0 && view.memberKeys === 0 && view.trustedIdentities === 0 && " Register your public key under Settings → Signing keys so signatures verify."}
+          </p>
+          <CommandLine command={`cosign sign --key cosign.key ${digestReference}`} />
+          <CommandLine command={`notation sign ${digestReference}`} />
+          <p className="text-xs text-ink-3">
+            Add <code className="font-mono">--allow-http-registry</code> (cosign) or <code className="font-mono">--insecure-registry</code> (notation) for a registry without TLS.
+          </p>
+        </div>
+      )}
+
+      {view.total === 0 && canPush && subjectKind !== "chart" && (
         <div className="space-y-3 rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
           <p>
             Sign the image or attach an SBOM with cosign or oras and it shows up here.

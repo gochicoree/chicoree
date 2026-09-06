@@ -291,22 +291,23 @@ export async function manifestDetail(a: RepoAccess, digest: string) {
   const platform = config ? describePlatform(config.os ?? null, config.architecture ?? null, config.variant ?? null) : null;
   const cfg = config?.config;
   const base = repoHref(a.org.slug, a.repo.name);
-  const chart = !isIndex && isHelmConfig(payload.config?.mediaType) ? parseChartMeta(config) : null;
+  const isChart = !isIndex && isHelmConfig(payload.config?.mediaType);
+  const chart = isChart ? parseChartMeta(config) : null;
   return {
     digest,
     tags,
     mediaType: manifest.mediaType,
     artifactType: manifest.artifactType,
-    kind: chart ? "chart" : "image",
+    kind: isChart ? "chart" : "image",
     chart,
-    helm: chart ? helmCommands(env.registryHost, imagePath(a.org.slug, a.repo.name), chart.version, chart.name) : null,
+    helm: isChart ? helmCommands(env.registryHost, imagePath(a.org.slug, a.repo.name), chart?.version ?? tags[0] ?? null, chart?.name ?? a.repo.name) : null,
     isIndex,
     manifestBytes: manifest.size,
     sizeBytes: isIndex ? indexBytes : imageBytes,
     pushedAt: iso(manifest.createdAt),
     pushedBy,
-    platform: chart ? null : platform,
-    config: chart
+    platform: isChart ? null : platform,
+    config: isChart
       ? null
       : config
       ? {
@@ -328,7 +329,7 @@ export async function manifestDetail(a: RepoAccess, digest: string) {
     variants,
     indexes: parents.map((p) => ({ digest: p.parentDigest, tags: p.parentTags, platform: p.platform, attestation: !!p.attestation })),
     subjectDigest: manifest.subjectDigest ?? payload.subject?.digest ?? null,
-    scan: chart ? null : scanDoc,
+    scan: isChart ? null : scanDoc,
     signed: !!signedRow,
     blocked,
     canDelete: deletable ? { ok: !deletable.reason, reason: deletable.reason } : { ok: false, reason: a.can.delete ? null : "You cannot delete images in this repository." },
