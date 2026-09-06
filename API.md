@@ -3242,7 +3242,7 @@ This API follows the registry's features: whenever a feature is added, changed o
 
 ### 2026-09-06.6
 
-- Scan workers: Administration → Scanning → "Offload scans to workers" (SCAN_WORKERS, SCAN_WORKER_TOKEN) hands Trivy scans to external workers over the internal worker protocol (`POST /api/internal/worker/claim`, `/heartbeat`, `/tasks/<id>/result`, `/tasks/<id>/fail`, bearer token; not part of /api/v1). The web image ships the worker as `worker.mjs`; `docker-compose.worker.yml` runs it on another machine. Without a worker online, scans run inline as before. No /api/v1 change.
+- Scan workers: Administration → Scanning → "Offload scans to workers" (SCAN_WORKERS, SCAN_WORKER_TOKEN) hands Trivy scans to external workers over the internal worker protocol (`POST /api/internal/worker/claim`, `/heartbeat`, `/tasks/<id>/result`, `/tasks/<id>/fail`, bearer token; not part of /api/v1). The worker is a separate program (scan-worker); the protocol is documented in the README. Without a worker online, scans run inline as before. No /api/v1 change.
 
 ### 2026-09-06.5
 

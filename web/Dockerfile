@@ -8,7 +8,7 @@ RUN npm ci --no-audit --no-fund --maxsockets 4 --fetch-retries 5
 FROM deps AS build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build && npm run build:worker
+RUN npm run build
 
 # Standalone output inlines server deps, so the migration runner gets its own
 # minimal install, isolated under /migrate.
@@ -31,8 +31,6 @@ RUN addgroup -S app && adduser -S app -G app \
 COPY --from=aquasec/trivy:0.74.0 /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
-# Scan worker (docker-compose.worker.yml): `node worker.mjs` instead of the default command.
-COPY --from=build /app/dist/worker.mjs ./worker.mjs
 COPY --from=migrate-deps /migrate/node_modules /migrate/node_modules
 COPY --from=build /app/scripts/migrate.mjs /app/scripts/bootstrap.mjs /migrate/scripts/
 COPY --from=build /app/drizzle /migrate/drizzle
