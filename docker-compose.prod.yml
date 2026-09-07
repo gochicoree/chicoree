@@ -92,6 +92,10 @@ services:
       # present, and whether Trivy scans wait for them (Administration → Scanning overrides).
       SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:-}
       SCAN_WORKERS: ${SCAN_WORKERS:-false}
+      # Instance-wide switches (Administration → Auth providers → Access overrides them).
+      API_ENABLED: ${API_ENABLED:-true}
+      MIRRORING_ENABLED: ${MIRRORING_ENABLED:-true}
+      PROXY_CACHES_ENABLED: ${PROXY_CACHES_ENABLED:-true}
       PASSKEY_RP_ID: ${DOMAIN}
       PASSKEY_RP_NAME: ${PASSKEY_RP_NAME:-Chicorée Registry}
       SMTP_HOST: ${SMTP_HOST:-}

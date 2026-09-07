@@ -42,6 +42,10 @@ services:
       # Scan workers: their token, and whether scans wait for them.
       SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:-}
       SCAN_WORKERS: ${SCAN_WORKERS:-false}
+      # Instance-wide switches (Administration → Auth providers → Access overrides them).
+      API_ENABLED: ${API_ENABLED:-true}
+      MIRRORING_ENABLED: ${MIRRORING_ENABLED:-true}
+      PROXY_CACHES_ENABLED: ${PROXY_CACHES_ENABLED:-true}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
