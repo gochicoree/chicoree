@@ -1,3 +1,9 @@
+
+BuildKit's own attestation entries (the `unknown/unknown` members of an
+index) are plain in-toto statements with no signature at all; the tab lists
+them under *Other referrers* as *BuildKit attestations* with no signature
+state. What vouches for them is the cosign signature of the image: `cosign
+sign --recursive` signs those entries along with the platform variants.
 # Chicorée
 
 A self-hosted OCI container registry with a proper management plane.

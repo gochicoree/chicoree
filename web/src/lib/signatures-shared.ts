@@ -1,3 +1,8 @@
+  // BuildKit stores its SBOM and provenance as plain statements, one per
+  // layer, with nothing signed: not an envelope to verify, so not "invalid".
+  if (d.artifactType === BUILDKIT_ATTESTATION_MANIFEST || ann["vnd.docker.reference.type"] === "attestation-manifest") {
+    return { kind: "attestation", subkind: "custom", format: "in-toto", predicateType: null };
+  }
 // Supply-chain helpers that are safe for client components: media-type
 // classification of artifacts attached to an image (cosign signatures,
 // Sigstore bundles, in-toto attestations, SBOMs), the cosign tag convention,
@@ -6,7 +11,8 @@
 
 export type ArtifactKind = "signature" | "attestation" | "sbom" | "other";
 export type ArtifactSubkind = "provenance" | "spdx" | "cyclonedx" | "vuln" | "cosign-sign" | "notation" | "custom";
-export type ArtifactFormat = "cosign-legacy" | "sigstore-bundle" | "dsse" | "notation" | "raw" | "unknown";
+/** `in-toto`: bare in-toto statements without a signature — what BuildKit attaches (`--attest`), never verified. */
+export type ArtifactFormat = "cosign-legacy" | "sigstore-bundle" | "dsse" | "in-toto" | "notation" | "raw" | "unknown";
 export type SignatureStatus = "verified" | "untrusted" | "invalid" | "keyless";
 
 // --- Media types and annotations ---------------------------------------------------
@@ -14,6 +20,8 @@ export type SignatureStatus = "verified" | "untrusted" | "invalid" | "keyless";
 export const COSIGN_SIMPLE_SIGNING = "application/vnd.dev.cosign.simplesigning.v1+json";
 export const DSSE_ENVELOPE = "application/vnd.dsse.envelope.v1+json";
 export const IN_TOTO_JSON = "application/vnd.in-toto+json";
+/** BuildKit's attestation entries in an image index (`unknown/unknown`): SBOM and provenance as bare in-toto statements. */
+export const BUILDKIT_ATTESTATION_MANIFEST = "application/vnd.docker.attestation.manifest.v1+json";
 export const SIGSTORE_BUNDLE_PREFIX = "application/vnd.dev.sigstore.bundle";
 export const SPDX_JSON = "application/spdx+json";
 export const CYCLONEDX_JSON = "application/vnd.cyclonedx+json";

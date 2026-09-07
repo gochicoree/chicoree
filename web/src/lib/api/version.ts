@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.6",
+    changes: [
+      "Artifacts: BuildKit's attestation entries (`unknown/unknown` index members) come back with `format: \"in-toto\"` and no `verification` — they are unsigned statements, not envelopes; previously they were reported as `dsse` with `invalid: no DSSE envelope payload`. Cached classifications are corrected on the next read.",
+    ],
+  },
+  {
     revision: "2026-09-07.5",
     changes: [
       "Security: `GET /repos/{org}/{repo}/artifacts/{digest}/packages` pages through the packages of an SBOM artifact (`q`, `page`, `per_page` up to 500), sorted by name; the tag page's package dialog uses the same list instead of loading the whole document.",

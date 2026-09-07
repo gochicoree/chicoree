@@ -1,4 +1,10 @@
-import Link from "next/link";
+{o.format === "raw" || o.format === "unknown" || o.format === "in-toto" ? (
+                        <span className="text-xs text-ink-3" title={o.format === "in-toto" ? "Plain in-toto statements, not signed; the image's cosign signature covers them" : undefined}>
+                          —
+                        </span>
+                      ) : (
+                        <SignatureStatusBadge sig={o.sig} />
+                      )}import Link from "next/link";
 import { Download, FileBox, GitCommitHorizontal, KeyRound, Link2, ShieldAlert, ShieldCheck, ShieldQuestion, Tag as TagIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SbomPackages } from "@/components/sbom-packages";
@@ -450,7 +456,7 @@ export function AttestationsPanel({
                   <tr key={o.digest} className="border-b border-line last:border-0">
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{o.kind === "attestation" ? predicateLabel(o.predicateType, o.subkind) : (o.artifactType ?? "artifact")}</span>
+                        <span>{o.format === "in-toto" ? "BuildKit attestations" : o.kind === "attestation" ? predicateLabel(o.predicateType, o.subkind) : (o.artifactType ?? "artifact")}</span>
                         <SourceBadge source={o.source} tag={o.tag} />
                         <SubjectNote view={view} subjectDigest={o.subjectDigest} />
                       </div>

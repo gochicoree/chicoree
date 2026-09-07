@@ -1,4 +1,4 @@
-// Supply chain, server side: trusted cosign keys, discovery of the artifacts
+  const decode = !raw && (cls.format === "sigstore-bundle" || cls.format === "dsse" || cls.format === "in-toto");// Supply chain, server side: trusted cosign keys, discovery of the artifacts
 // attached to an image (OCI referrers and cosign's tag convention),
 // cryptographic verification of signatures and DSSE attestations against
 // the trusted keys, cached artifact summaries (SBOM package counts, SLSA
@@ -58,7 +58,7 @@ import {
   type ProvenanceSummary,
   type SbomSummary,
   type SignatureCheck,
-  type SignatureStatus, NOTATION_COSE } from "./signatures-shared";
+  type SignatureStatus, BUILDKIT_ATTESTATION_MANIFEST, NOTATION_COSE } from "./signatures-shared";
 
 export * from "./signatures-shared";
 
@@ -709,7 +709,10 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
   const cached = await db.query.manifestArtifacts.findFirst({
     where: and(eq(manifestArtifacts.repositoryId, repositoryId), eq(manifestArtifacts.digest, a.digest)),
   });
-  if (cached?.summary) {
+  // Rows classified before BuildKit entries got their own format would keep
+  // reporting them as unverifiable envelopes; compute those again.
+  const stale = cached?.format === "dsse" && a.artifactType === BUILDKIT_ATTESTATION_MANIFEST;
+  if (cached?.summary && !stale) {
     const summary = cached.summary as ArtifactSummary;
     return {
       classification: {
@@ -1476,7 +1479,8 @@ export async function getAttestationView(
       artifactType: a.artifactType,
       downloadHref: `/api/artifacts/${repo.id}/${a.digest}`,
     };
-    const sig = statusOf(a);
+    // Bare in-toto statements carry no signature to report on.
+    const sig = info.classification.format === "in-toto" ? null : statusOf(a);
     const s = info.summary;
     if (s.kind === "signature") {
       view.signatures.push({ ...base, format: info.classification.format, predicateType: s.predicateType, signatures: s.signatures, sig });
@@ -1575,7 +1579,8 @@ export async function resolveArtifactDownload(
 export function extractPredicate(blob: Buffer): string | null {
   const obj = parseJson(blob) as (SigstoreBundle & DsseEnvelope) | null;
   if (!obj) return null;
-  const decoded = decodeStatement(obj.dsseEnvelope ?? obj);
-  if (!decoded?.statement) return null;
-  return JSON.stringify(decoded.statement.predicate ?? null, null, 2);
+  // A bare statement (BuildKit's layers) is the statement itself.
+  const statement = decodeStatement(obj.dsseEnvelope ?? obj)?.statement ?? parseInTotoStatement(obj);
+  if (!statement) return null;
+  return JSON.stringify(statement.predicate ?? null, null, 2);
 }
