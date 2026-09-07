@@ -9,6 +9,7 @@ import { Field, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
@@ -304,7 +305,13 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
                   >
                     {expanded === h.id ? "Hide log" : "Log"}
                   </button>
-                  <form action={deleteWebhook}>
+                  <ConfirmForm
+                    action={deleteWebhook}
+                    title={`Delete webhook ${h.name}?`}
+                    description="It stops receiving events and its delivery log is removed. This cannot be undone."
+                    confirmLabel="Delete webhook"
+                    tone="danger"
+                  >
                     <ScopeInputs scope={scope} />
                     <input type="hidden" name="id" value={h.id} />
                     <button
@@ -314,7 +321,7 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
                     >
                       <Trash2 className="size-4" />
                     </button>
-                  </form>
+                  </ConfirmForm>
                 </div>
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1 pl-7">

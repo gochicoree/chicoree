@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState, type FormEvent } from "react";
 import { CalendarClock, Play } from "lucide-react";
 import { runJobAction, type JobActionResult } from "@/app/actions/jobs";
 import { saveScheduleAction, type ScheduleActionResult } from "@/app/actions/schedules";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
 import type { ScheduleView } from "@/lib/schedules";
@@ -188,27 +189,95 @@ export function ScheduleForm({
   );
 }
 
-/** Manual "Run now" form for one job: parameter inputs, the run button and the outcome. */
+/** Jobs that delete data when run for real, and what the dialog tells people. */
+const DESTRUCTIVE_JOBS: Record<string, { title: string; description: string }> = {
+  gc: {
+    title: "Run garbage collection now?",
+    description: "Removes image layers nothing references any more, along with abandoned uploads. This cannot be undone.",
+  },
+  "prune-untagged": {
+    title: "Prune untagged images now?",
+    description: "Deletes images older than the age you set that have no tag and are not part of a multi-platform image. This cannot be undone.",
+  },
+  "proxy-evict": {
+    title: "Evict unused proxy tags now?",
+    description: "Removes cached tags in proxy organizations that nobody pulled within the window. They are fetched from the source again on the next pull.",
+  },
+  retention: {
+    title: "Apply retention policies now?",
+    description: "Removes the tags and untagged images that the enabled retention policies select. This cannot be undone.",
+  },
+  "quota-enforce": {
+    title: "Enforce storage limits now?",
+    description: "Tells owners who are over their storage limit and removes the oldest images of anyone over it for longer than the grace period, until they fit again. Protected tags stay.",
+  },
+};
+
+/** Whether this run deletes anything: a dry run only reports. */
+function deletesData(job: JobInfo, data: FormData): boolean {
+  if (!(job.name in DESTRUCTIVE_JOBS)) return false;
+  const dryRun = job.params.find((p) => p.name === "dryRun");
+  if (!dryRun) return true;
+  return (String(data.get("dryRun") ?? "").trim() || dryRun.default) !== "true";
+}
+
+/**
+ * Manual "Run now" form for one job: parameter inputs, the run button and the
+ * outcome. Runs that delete data are confirmed in a dialog first; the decision
+ * is made on submit, from the typed parameters, so the form never remounts.
+ */
 export function RunJobForm({ job }: { job: JobInfo }) {
   const [state, action, pending] = useActionState<JobActionResult | null, FormData>(runJobAction, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const armed = useRef(false);
+  const [confirming, setConfirming] = useState(false);
+  const warning = DESTRUCTIVE_JOBS[job.name];
+
+  function onSubmit(e: FormEvent<HTMLFormElement>) {
+    if (armed.current) {
+      armed.current = false;
+      return;
+    }
+    if (!deletesData(job, new FormData(e.currentTarget))) return;
+    e.preventDefault();
+    setConfirming(true);
+  }
+
   return (
-    <form action={action} className="flex flex-col gap-3">
-      <input type="hidden" name="job" value={job.name} />
-      {job.params.length === 0 && <p className="text-sm text-ink-2">This job takes no parameters.</p>}
-      {job.params.map((p) => (
-        <Field key={p.name} label={p.name} htmlFor={`${job.name}-${p.name}`} hint={p.description}>
-          <Input id={`${job.name}-${p.name}`} name={p.name} placeholder={p.default} className="font-mono" />
-        </Field>
-      ))}
-      <div className="space-y-3 pt-1">
-        <Button type="submit" variant="secondary" disabled={pending}>
-          <Play className="size-4" /> {pending ? "Running…" : "Run now"}
-        </Button>
-        {state?.status === "succeeded" && (
-          <p className="overflow-x-auto rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
-        )}
-        {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
-      </div>
-    </form>
+    <>
+      <form ref={formRef} action={action} onSubmit={onSubmit} className="flex flex-col gap-3">
+        <input type="hidden" name="job" value={job.name} />
+        {job.params.length === 0 && <p className="text-sm text-ink-2">This job takes no parameters.</p>}
+        {job.params.map((p) => (
+          <Field key={p.name} label={p.name} htmlFor={`${job.name}-${p.name}`} hint={p.description}>
+            <Input id={`${job.name}-${p.name}`} name={p.name} placeholder={p.default} className="font-mono" />
+          </Field>
+        ))}
+        <div className="space-y-3 pt-1">
+          <Button type="submit" variant="secondary" disabled={pending}>
+            <Play className="size-4" /> {pending ? "Running…" : "Run now"}
+          </Button>
+          {state?.status === "succeeded" && (
+            <p className="overflow-x-auto rounded-md bg-ok-soft px-3 py-2 font-mono text-xs text-ok">{JSON.stringify(state.result)}</p>
+          )}
+          {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{state.error}</p>}
+        </div>
+      </form>
+      {warning && (
+        <ConfirmModal
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => {
+            armed.current = true;
+            formRef.current?.requestSubmit();
+            setConfirming(false);
+          }}
+          title={warning.title}
+          description={warning.description}
+          confirmLabel="Run now"
+          tone="danger"
+        />
+      )}
+    </>
   );
 }

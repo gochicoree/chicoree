@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ASSIGNABLE_ROLES, type OrgRole } from "@/lib/org-roles";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 import { EntityLogo } from "@/components/entity-logo";
 import type { LogoRef } from "@/lib/logo-shared";
 
@@ -55,6 +56,7 @@ export function MembersManager({
   const [role, setRole] = useState<OrgRole>("member");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
@@ -180,7 +182,17 @@ export function MembersManager({
               )}
               {canManage && m.role !== "owner" && m.userId !== selfUserId && (
                 <button
-                  onClick={() => remove(m.id)}
+                  onClick={() =>
+                    confirm(
+                      {
+                        title: `Remove ${m.name}?`,
+                        description: "They lose access to this organization's repositories right away. You can invite them again later.",
+                        confirmLabel: "Remove member",
+                        tone: "danger",
+                      },
+                      () => remove(m.id),
+                    )
+                  }
                   aria-label={`Remove ${m.name}`}
                   className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                 >
@@ -208,7 +220,17 @@ export function MembersManager({
                 <Badge>invited as {inv.role}</Badge>
                 {canManage && (
                   <button
-                    onClick={() => cancelInvitation(inv.id)}
+                    onClick={() =>
+                      confirm(
+                        {
+                          title: `Cancel the invitation for ${inv.email}?`,
+                          description: "The invitation link stops working. You can send a new one any time.",
+                          confirmLabel: "Cancel invitation",
+                          tone: "danger",
+                        },
+                        () => cancelInvitation(inv.id),
+                      )
+                    }
                     aria-label={`Cancel invitation for ${inv.email}`}
                     className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                   >
@@ -221,6 +243,7 @@ export function MembersManager({
           </div>
         </Card>
       )}
+      {dialog}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, FileBox, GitCommitHorizontal, KeyRound, Link2, ShieldAlert, ShieldCheck, ShieldQuestion, Tag as TagIcon } from "lucide-react";
+import { Download, FileBox, GitCommitHorizontal, KeyRound, Link2, ShieldAlert, ShieldCheck, ShieldOff, ShieldQuestion, Tag as TagIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SbomPackages } from "@/components/sbom-packages";
 import { buttonClasses } from "@/components/ui/button";
@@ -15,6 +15,20 @@ const STATUS: Record<SignatureStatus, { tone: "ok" | "neutral" | "danger" | "inf
   invalid: { tone: "danger", Icon: ShieldAlert, label: "invalid" },
   keyless: { tone: "info", Icon: KeyRound, label: "keyless" },
 };
+
+/** For artifacts that carry no signature of their own (BuildKit's statements, plain SBOM files). */
+function UnsignedBadge() {
+  return (
+    <Badge tone="neutral" title="Written by the build without a signature; a signature on the image covers it">
+      <ShieldOff className="size-3" /> unsigned
+    </Badge>
+  );
+}
+
+/** `?raw=1` on a download link that may already carry a query string. */
+function rawHref(href: string): string {
+  return `${href}${href.includes("?") ? "&" : "?"}raw=1`;
+}
 
 export function SignatureStatusBadge({ sig }: { sig: SignatureStatusView | null }) {
   if (!sig) {
@@ -251,7 +265,7 @@ export function AttestationsPanel({
         <Section title="Signatures" count={view.signatures.length}>
           <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-card">
             {view.signatures.map((s) => (
-              <li key={s.digest} className="flex flex-col gap-1.5 px-4 py-3">
+              <li key={s.downloadHref} className="flex flex-col gap-1.5 px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <SignatureStatusBadge sig={s.sig} />
                   <span className="text-sm font-medium">{signatureFormatLabel(s.format)}</span>
@@ -300,7 +314,7 @@ export function AttestationsPanel({
         <Section title="SBOMs" count={view.sboms.length}>
           <div className="grid gap-3 md:grid-cols-2">
             {view.sboms.map((s) => (
-              <div key={s.digest} className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4">
+              <div key={s.downloadHref} className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <FileBox className="size-4 text-ink-3" />
                   <span className="text-sm font-medium">
@@ -309,7 +323,7 @@ export function AttestationsPanel({
                   </span>
                   <SourceBadge source={s.source} tag={s.tag} />
                   {s.attested && (
-                    <Badge tone="info" title="Wrapped in an in-toto attestation (DSSE envelope)">
+                    <Badge tone="info" title={s.signed ? "Wrapped in an in-toto attestation (DSSE envelope)" : "An in-toto statement written by the build (BuildKit)"}>
                       attested
                     </Badge>
                   )}
@@ -344,15 +358,21 @@ export function AttestationsPanel({
                 </div>
                 {s.attested && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <SignatureStatusBadge sig={s.sig} />
-                    <StatusLine sig={s.sig} />
+                    {s.signed ? (
+                      <>
+                        <SignatureStatusBadge sig={s.sig} />
+                        <StatusLine sig={s.sig} />
+                      </>
+                    ) : (
+                      <UnsignedBadge />
+                    )}
                   </div>
                 )}
                 <div className="mt-auto flex flex-wrap items-center gap-2">
                   <DownloadLink href={s.downloadHref} label={s.attested ? "Download SBOM" : "Download"} />
                   {s.attested && (
-                    <a href={`${s.downloadHref}?raw=1`} className="text-xs text-ink-3 underline hover:text-ink">
-                      raw envelope
+                    <a href={rawHref(s.downloadHref)} className="text-xs text-ink-3 underline hover:text-ink">
+                      {s.signed ? "raw envelope" : "raw statement"}
                     </a>
                   )}
                   <span className="ml-auto text-xs text-ink-3">{relativeTime(s.createdAt)}</span>
@@ -367,7 +387,7 @@ export function AttestationsPanel({
         <Section title="Provenance" count={view.provenance.length}>
           <div className="grid gap-3">
             {view.provenance.map((p) => (
-              <div key={p.digest} className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4">
+              <div key={p.downloadHref} className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <GitCommitHorizontal className="size-4 text-ink-3" />
                   <span className="text-sm font-medium">{p.provenance?.version ?? predicateLabel(p.predicateType, "provenance")}</span>
@@ -415,13 +435,19 @@ export function AttestationsPanel({
                   <p className="text-sm text-ink-3">{p.error ?? "The predicate could not be summarised."}</p>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
-                  <SignatureStatusBadge sig={p.sig} />
-                  <StatusLine sig={p.sig} />
+                  {p.signed ? (
+                    <>
+                      <SignatureStatusBadge sig={p.sig} />
+                      <StatusLine sig={p.sig} />
+                    </>
+                  ) : (
+                    <UnsignedBadge />
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <DownloadLink href={p.downloadHref} label="Download predicate" />
-                  <a href={`${p.downloadHref}?raw=1`} className="text-xs text-ink-3 underline hover:text-ink">
-                    raw envelope
+                  <a href={rawHref(p.downloadHref)} className="text-xs text-ink-3 underline hover:text-ink">
+                    {p.signed ? "raw envelope" : "raw statement"}
                   </a>
                   <span className="ml-auto font-mono text-xs text-ink-3">{p.predicateType}</span>
                 </div>
@@ -447,7 +473,7 @@ export function AttestationsPanel({
               </thead>
               <tbody>
                 {view.others.map((o) => (
-                  <tr key={o.digest} className="border-b border-line last:border-0">
+                  <tr key={o.downloadHref} className="border-b border-line last:border-0">
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span>{o.kind === "attestation" ? predicateLabel(o.predicateType, o.subkind) : (o.artifactType ?? "artifact")}</span>
@@ -460,7 +486,7 @@ export function AttestationsPanel({
                       <Digest digest={o.digest} />
                     </td>
                     <td className="px-4 py-2.5">
-                      {o.format === "raw" || o.format === "unknown" ? <span className="text-xs text-ink-3">—</span> : <SignatureStatusBadge sig={o.sig} />}
+                      {o.format === "raw" || o.format === "unknown" ? <span className="text-xs text-ink-3">—</span> : o.signed ? <SignatureStatusBadge sig={o.sig} /> : <UnsignedBadge />}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-2">{formatBytes(o.sizeBytes)}</td>
                     <td className="px-2 py-1.5 text-right">

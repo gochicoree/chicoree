@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.4",
+    changes: [
+      "BuildKit attestations: the attestation manifests `docker buildx build --sbom --provenance` puts into an index are read layer by layer, so their SBOM and provenance appear as entries of `GET /repos/{org}/{repo}/manifests/{digest}/artifacts` (before they were listed under `others` as invalid). Every artifact entry carries `layerDigest` (the layer it is, null for a whole manifest) and `signed` (false for BuildKit's statements and plain SBOM files, whose `verification` is null); `download` then names the layer, and unwraps the statement to its document unless `raw=1` is given. `total` counts entries.",
+    ],
+  },
+  {
     revision: "2026-09-07.3",
     changes: [
       "Helm charts: `GET /repos/{org}/{repo}/tags/{tag}/chart` carries `provenance` when the chart was pushed with its `.prov` file (which files it names, whether the archive matches, the PGP key id). Tag and manifest details treat a manifest as a chart by its config media type even when Chart.yaml cannot be read.",

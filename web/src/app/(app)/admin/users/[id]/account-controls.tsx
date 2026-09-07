@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/field";
 import { CopyButton } from "@/components/ui/copy";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -182,25 +183,28 @@ function SecurityControls({ user }: { user: AccountUser }) {
   );
 }
 
+/** Delete behind a dialog that asks for the user's email address. */
 function DeleteForm({ user }: { user: AccountUser }) {
   const [state, action, pending] = useActionState<AdminUserResult | null, FormData>(adminDeleteUser, null);
-  const [typed, setTyped] = useState("");
-  const ready = typed.trim().toLowerCase() === user.email.toLowerCase();
   return (
-    <form action={action} className="flex flex-col gap-3">
+    <ConfirmForm
+      action={action}
+      className="flex flex-col gap-3"
+      title={`Delete ${user.name}?`}
+      description="The account is deleted along with its sessions, access tokens, passkeys and organization memberships. Repositories stay with their organizations. This cannot be undone."
+      confirmLabel="Delete user"
+      tone="danger"
+      confirmText={user.email}
+      confirmInputName="confirm"
+    >
       <input type="hidden" name="userId" value={user.id} />
-      <div className="sm:max-w-md">
-        <Field label={`Type ${user.email} to confirm`} htmlFor="acct-delete-confirm">
-          <Input id="acct-delete-confirm" name="confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" className="font-mono" />
-        </Field>
-      </div>
       <ErrorLine state={state} />
       <div>
-        <Button type="submit" variant="danger" disabled={!ready || pending}>
-          <Trash2 className="size-4" /> {pending ? "Deleting…" : "Delete user permanently"}
+        <Button type="submit" variant="danger" disabled={pending}>
+          <Trash2 className="size-4" /> {pending ? "Deleting…" : "Delete user…"}
         </Button>
       </div>
-    </form>
+    </ConfirmForm>
   );
 }
 

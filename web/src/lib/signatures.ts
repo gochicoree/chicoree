@@ -37,6 +37,8 @@ import {
   ANNOTATION_REKOR_BUNDLE,
   ANNOTATION_SIGNATURE,
   COSIGN_TAG_SUFFIXES,
+  ANNOTATION_IN_TOTO_PREDICATE,
+  IN_TOTO_JSON,
   classifyArtifact,
   cosignArtifactTag,
   describeSignatureStatus,
@@ -57,6 +59,7 @@ import {
   type InTotoStatement,
   type ProvenanceSummary,
   type SbomSummary,
+  type StatementLayerSummary,
   type SignatureCheck,
   type SignatureStatus, NOTATION_COSE } from "./signatures-shared";
 
@@ -693,6 +696,64 @@ function decodeStatement(envelope: DsseEnvelope | undefined): { body: Buffer; st
   return { body, statement: parseInTotoStatement(parseJson(body)) };
 }
 
+type ArtifactLayer = NonNullable<ReturnType<typeof parseArtifactManifest>["layers"]>[number];
+
+/**
+ * Summarise every statement layer of an attestation manifest. BuildKit
+ * (`docker buildx build --sbom --provenance`) writes one such manifest per
+ * platform image with the SBOM and the provenance as separate layers, each a
+ * bare in-toto statement — no DSSE envelope, so nothing is signed; the
+ * signature on the index is what covers them.
+ */
+async function summarizeStatementLayers(layers: ArtifactLayer[], load: BlobLoader): Promise<{ layers: StatementLayerSummary[]; complete: boolean }> {
+  const out: StatementLayerSummary[] = [];
+  let complete = true;
+  for (const layer of layers) {
+    if (!layer.digest) continue;
+    const hint = layer.annotations?.[ANNOTATION_IN_TOTO_PREDICATE] ?? null;
+    const blob = await load(layer.digest);
+    let statement: InTotoStatement | null = null;
+    let signed = false;
+    let error: string | null = null;
+    if (!blob) {
+      complete = false;
+      error = "payload blob unavailable";
+    } else {
+      const obj = parseJson(blob) as (SigstoreBundle & DsseEnvelope) | null;
+      const envelope = obj?.dsseEnvelope ?? (typeof obj?.payload === "string" ? obj : undefined);
+      if (envelope) {
+        signed = true;
+        statement = decodeStatement(envelope)?.statement ?? null;
+        if (!statement) error = "envelope payload is not an in-toto statement";
+      } else {
+        statement = parseInTotoStatement(obj);
+        if (!statement) error = obj ? "payload is not an in-toto statement" : "payload is not JSON";
+      }
+    }
+    const predicateType = statement?.predicateType ?? hint;
+    const subkind = predicateType ? predicateSubkind(predicateType) : "custom";
+    const sbom = kindForSubkind(subkind) === "sbom" && statement ? summarizeSbom(statement.predicate) : null;
+    out.push({
+      layerDigest: layer.digest,
+      mediaType: (layer.mediaType ?? IN_TOTO_JSON).split(";")[0].trim(),
+      subkind,
+      predicateType,
+      sbom,
+      provenance: subkind === "provenance" && statement ? summarizeProvenance(statement.predicate, predicateType) : null,
+      subjects: statement?.subjects.map((s) => (s.digests.sha256 ? `sha256:${s.digests.sha256}` : (s.name ?? ""))).filter(Boolean) ?? [],
+      sizeBytes: layer.size ?? blob?.length ?? 0,
+      signed,
+      error: error ?? (kindForSubkind(subkind) === "sbom" && !sbom ? "unrecognised SBOM predicate" : null),
+    });
+  }
+  return { layers: out, complete };
+}
+
+/** Summaries written before bare in-toto statements were understood; recomputed on sight. */
+function staleSummary(s: ArtifactSummary): boolean {
+  return s.kind === "attestation" && s.error === "no DSSE envelope in the payload";
+}
+
 // --- Artifact summaries (cached) --------------------------------------------------------------
 
 export interface ArtifactInfo {
@@ -709,7 +770,7 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
   const cached = await db.query.manifestArtifacts.findFirst({
     where: and(eq(manifestArtifacts.repositoryId, repositoryId), eq(manifestArtifacts.digest, a.digest)),
   });
-  if (cached?.summary) {
+  if (cached?.summary && !staleSummary(cached.summary as ArtifactSummary)) {
     const summary = cached.summary as ArtifactSummary;
     return {
       classification: {
@@ -740,12 +801,22 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
       break;
     case "sigstore-bundle":
     case "dsse": {
+      // BuildKit's attestation manifests: SBOM and provenance side by side,
+      // one bare statement per layer. Read every layer.
+      if (cls.format === "dsse" && (layers.length > 1 || layers[0]?.annotations?.[ANNOTATION_IN_TOTO_PREDICATE])) {
+        const read = await summarizeStatementLayers(layers, load);
+        complete = read.complete;
+        summary = { kind: "statements", layers: read.layers, sizeBytes };
+        cls = { kind: "attestation", subkind: null, format: "dsse", predicateType: null };
+        break;
+      }
       const first = layers[0];
       const blob = first?.digest ? await load(first.digest) : null;
       if (!blob) complete = false;
       let error: string | null = null;
       let statement: InTotoStatement | null = null;
       let messageSignature = false;
+      let unsigned = false;
       let predicateType = cls.predicateType;
       if (!blob) {
         error = "payload blob unavailable";
@@ -761,6 +832,10 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
             predicateType = statement?.predicateType ?? predicateType;
           } else if (obj.messageSignature) {
             messageSignature = true;
+          } else if ((statement = parseInTotoStatement(obj))) {
+            // A bare statement: an attestation nobody signed.
+            unsigned = true;
+            predicateType = statement.predicateType ?? predicateType;
           } else {
             error = "no DSSE envelope in the payload";
           }
@@ -772,7 +847,7 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
       if (kind === "signature") summary = { kind, predicateType, signatures: 1 };
       else if (kind === "sbom") {
         const sbom = statement ? summarizeSbom(statement.predicate) : null;
-        summary = { kind, attested: true, predicateType, sbom, sizeBytes, error: error ?? (sbom ? null : "unrecognised SBOM predicate") };
+        summary = { kind, attested: true, predicateType, sbom, sizeBytes, error: error ?? (sbom ? null : "unrecognised SBOM predicate"), ...(unsigned ? { unsigned } : {}) };
       } else {
         summary = {
           kind: "attestation",
@@ -782,6 +857,7 @@ export async function artifactSummary(repositoryId: string, a: ArtifactRef, load
           subjects: statement?.subjects.map((s) => (s.digests.sha256 ? `sha256:${s.digests.sha256}` : (s.name ?? ""))).filter(Boolean) ?? [],
           sizeBytes,
           error,
+          ...(unsigned ? { unsigned } : {}),
         };
       }
       break;
@@ -1094,6 +1170,11 @@ export async function checkArtifactSignatures(input: {
           invalid(check, blob ? "envelope is not JSON" : "envelope blob unavailable");
           continue;
         }
+        if (typeof envelope.payload !== "string" && parseInTotoStatement(envelope)) {
+          // A bare statement (BuildKit's SBOM / provenance): nothing to verify.
+          checks.pop();
+          continue;
+        }
         verifyDsse(check, envelope, subjectDigest, keys);
         const legacy = legacyMaterial(layer.annotations);
         if (legacy && check.status !== "verified") {
@@ -1106,6 +1187,8 @@ export async function checkArtifactSignatures(input: {
     default:
       return null;
   }
+  // Nothing carried a signature: no row, so the view shows "unsigned" rather than a verdict.
+  if (checks.length === 0) return null;
 
   const verified = checks.find((c) => c.status === "verified");
   const keyless = checks.find((c) => c.status === "keyless");
@@ -1303,6 +1386,10 @@ interface ArtifactBase {
   mediaType: string;
   artifactType: string | null;
   downloadHref: string;
+  /** The layer this entry is, when a manifest holds several statements (BuildKit); null for the whole manifest. */
+  layerDigest: string | null;
+  /** Whether the artifact carries a signature at all; false for BuildKit's statements and plain SBOM files. */
+  signed: boolean;
 }
 
 export interface SignatureView extends ArtifactBase {
@@ -1465,6 +1552,8 @@ export async function getAttestationView(
   };
   for (const a of artifacts) {
     const info = infos.get(a.digest)!;
+    const s = info.summary;
+    const signed = s.kind === "signature" ? true : s.kind === "sbom" ? s.attested && !s.unsigned : s.kind === "attestation" ? !s.unsigned : false;
     const base: ArtifactBase = {
       digest: a.digest,
       subjectDigest: a.subjectDigest,
@@ -1475,9 +1564,33 @@ export async function getAttestationView(
       mediaType: a.mediaType,
       artifactType: a.artifactType,
       downloadHref: `/api/artifacts/${repo.id}/${a.digest}`,
+      layerDigest: null,
+      signed,
     };
     const sig = statusOf(a);
-    const s = info.summary;
+    if (s.kind === "statements") {
+      // One entry per statement, each downloadable on its own.
+      for (const l of s.layers) {
+        const entry: ArtifactBase = {
+          ...base,
+          sizeBytes: l.sizeBytes,
+          mediaType: l.mediaType,
+          downloadHref: `${base.downloadHref}?blob=${l.layerDigest}`,
+          layerDigest: l.layerDigest,
+          signed: l.signed,
+        };
+        const lsig = l.signed ? sig : null;
+        const kind = kindForSubkind(l.subkind);
+        if (kind === "sbom") {
+          view.sboms.push({ ...entry, format: "dsse", attested: true, predicateType: l.predicateType, sbom: l.sbom, error: l.error, sig: lsig });
+        } else if (l.subkind === "provenance") {
+          view.provenance.push({ ...entry, predicateType: l.predicateType, provenance: l.provenance, error: l.error, sig: lsig });
+        } else {
+          view.others.push({ ...entry, kind, subkind: l.subkind, format: "dsse", predicateType: l.predicateType, sig: lsig });
+        }
+      }
+      continue;
+    }
     if (s.kind === "signature") {
       view.signatures.push({ ...base, format: info.classification.format, predicateType: s.predicateType, signatures: s.signatures, sig });
     } else if (s.kind === "sbom") {
@@ -1495,6 +1608,7 @@ export async function getAttestationView(
       });
     }
   }
+  view.total = view.signatures.length + view.sboms.length + view.provenance.length + view.others.length;
   return view;
 }
 
@@ -1562,20 +1676,23 @@ export async function resolveArtifactDownload(
   const decode = !raw && (cls.format === "sigstore-bundle" || cls.format === "dsse");
   const prefix = `${repo.name.replace(/\//g, "-")}-${digestHex(digest).slice(0, 12)}`;
   const mediaType = decode ? "application/json" : (layer.mediaType ?? "application/octet-stream").split(";")[0].trim();
+  // A manifest with several statements has no subkind of its own; the layer's annotation names the document.
+  const layerPredicate = layer.annotations?.[ANNOTATION_IN_TOTO_PREDICATE];
+  const subkind = cls.subkind ?? (layerPredicate ? predicateSubkind(layerPredicate) : null);
   return {
     repositoryPath: imagePath(orgSlug, repo.name),
     layerDigest: layer.digest,
     mediaType,
-    filename: `${prefix}.${extensionFor(layer.mediaType ?? "", cls.subkind, decode)}`,
+    filename: `${prefix}.${extensionFor(layer.mediaType ?? "", subkind, decode)}`,
     decode,
   };
 }
 
-/** The predicate inside a DSSE envelope or Sigstore bundle blob, serialised; null when absent. */
+/** The predicate inside a DSSE envelope, Sigstore bundle or bare in-toto statement blob, serialised; null when absent. */
 export function extractPredicate(blob: Buffer): string | null {
   const obj = parseJson(blob) as (SigstoreBundle & DsseEnvelope) | null;
   if (!obj) return null;
-  const decoded = decodeStatement(obj.dsseEnvelope ?? obj);
-  if (!decoded?.statement) return null;
-  return JSON.stringify(decoded.statement.predicate ?? null, null, 2);
+  const statement = decodeStatement(obj.dsseEnvelope ?? obj)?.statement ?? parseInTotoStatement(obj);
+  if (!statement) return null;
+  return JSON.stringify(statement.predicate ?? null, null, 2);
 }

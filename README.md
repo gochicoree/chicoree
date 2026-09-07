@@ -280,8 +280,10 @@ proxied, bind the published ports to loopback in `docker-compose.yml`
 server: Traefik terminates TLS with Let's Encrypt and serves the UI and the
 docker API on a single hostname (`/v2` goes to the registry, everything else
 to the web app), so `docker login oci.example.com` and the browser share one
-domain. Nothing is bind-mounted from the repository; the web container
-generates the token key pair on first start.
+domain. The only bind mount from the repository is Traefik's dynamic
+configuration (`deploy/traefik/`, the shared security headers and the
+[old-name alias](#moving-to-a-new-domain)); the web container generates the
+token key pair on first start.
 
 ```sh
 scripts/deploy.sh root@server oci.example.com you@example.com
@@ -314,6 +316,38 @@ a full root disk takes Postgres down and the registry with it.
 Back up the `pg-data`, `registry-data`, `token-keys` and `traefik-acme`
 volumes (`trivy-cache` is only a cache; signing keys generated in the admin
 panel live in Postgres).
+
+### Moving to a new domain
+
+A registry name is baked into every `docker pull`, CI job and Kubernetes
+manifest that uses it, so a rename needs a transition period in which the
+old name keeps working. In `.env` on the server set the new name as
+`DOMAIN` and the old one as `LEGACY_DOMAIN`, then re-run `scripts/deploy.sh`
+(or `docker compose -f docker-compose.prod.yml up -d`):
+
+```sh
+DOMAIN=registry.example.com
+LEGACY_DOMAIN=oci.example.com
+```
+
+Traefik obtains a certificate for the new name, keeps renewing the old one,
+and the old hostname now behaves like this:
+
+- `/v2/…` (the docker API) and `/api/…` (the REST API, the token endpoint,
+  scan workers) are served as before, so existing `docker login`s, access
+  tokens, image references and workers keep working. Their responses carry
+  `Deprecation`, `Link: <…>; rel="successor-version"` and an OCI `Warning`
+  header that names the new domain.
+- Everything else is redirected permanently to the same path on the new
+  domain, so bookmarks and links keep working.
+
+Browser sessions belong to a domain (users sign in again on the new one),
+passkeys are bound to `PASSKEY_RP_ID` and have to be registered again, and
+the copy-and-paste commands in the UI show the new name right away. Let
+pushers switch their image references at their own pace and drop
+`LEGACY_DOMAIN` once the old name has gone quiet. Behind another reverse
+proxy do the same by hand: route `/v2/` and `/api/` on the old name to the
+same backends and redirect the rest.
 
 ### Deploying with Coolify
 
@@ -570,8 +604,11 @@ key. Every generate and retire is in the audit log.
 
 ### Branding
 
-*Administration → Branding* sets the instance name and tagline (page titles,
-sidebar, sign-in screens, emails), a PNG or SVG logo (at most 64 KB; replaces
+*Administration → Branding* sets the instance name (page titles, sidebar,
+sign-in screens, emails) and the tagline — the kicker above the landing
+page's headline, the line under the sign-in card, the footer and the page
+description, so it is the one sentence that says what this registry is —
+a PNG or SVG logo (at most 64 KB; replaces
 the chicory mark), the accent colour, up to six footer links, and an
 announcement banner shown at the top of every page. `info` and `warning`
 banners can be dismissed (remembered per browser until the text changes),
@@ -1481,6 +1518,15 @@ For a multi-arch image the tab shows what is attached to the index and to
 each platform variant (`cosign sign --recursive` signs all of them). An
 empty tab offers the sign-and-attach commands only to people who may push
 to the repository; visitors and read-only members see a plain note.
+
+**BuildKit attestations.** Images built with `docker buildx build
+--sbom=true --provenance=mode=max` carry their SPDX SBOM and SLSA
+provenance inside the index, as an attestation manifest per platform whose
+layers are bare in-toto statements. The tab lists each of them as an SBOM
+or provenance entry of the variant, downloadable on its own, marked
+*unsigned*: BuildKit does not sign them, so a signature on the index is what
+vouches for them. `cosign attest` on top adds signed copies, which is what
+the pull policy and `cosign verify-attestation` look at.
 
 **Notation.** Signatures made with [Notation](https://notaryproject.dev)
 (`notation sign cr.example.com/acme/app@sha256:…`) are referrers of type

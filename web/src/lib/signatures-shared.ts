@@ -14,6 +14,8 @@ export type SignatureStatus = "verified" | "untrusted" | "invalid" | "keyless";
 export const COSIGN_SIMPLE_SIGNING = "application/vnd.dev.cosign.simplesigning.v1+json";
 export const DSSE_ENVELOPE = "application/vnd.dsse.envelope.v1+json";
 export const IN_TOTO_JSON = "application/vnd.in-toto+json";
+/** Layer annotation BuildKit sets on its attestation manifests (`docker buildx build --sbom --provenance`). */
+export const ANNOTATION_IN_TOTO_PREDICATE = "in-toto.io/predicate-type";
 export const SIGSTORE_BUNDLE_PREFIX = "application/vnd.dev.sigstore.bundle";
 export const SPDX_JSON = "application/spdx+json";
 export const CYCLONEDX_JSON = "application/vnd.cyclonedx+json";
@@ -151,7 +153,7 @@ export function classifyArtifact(d: ArtifactDescriptor): Classification {
     return { kind: "signature", subkind: "cosign-sign", format: "cosign-legacy", predicateType: null };
   }
   if (layers.includes(DSSE_ENVELOPE) || layers.includes(IN_TOTO_JSON) || tagSuffix === "att") {
-    const predicateType = ann.predicateType ?? ann[ANNOTATION_BUNDLE_PREDICATE] ?? null;
+    const predicateType = ann.predicateType ?? ann[ANNOTATION_BUNDLE_PREDICATE] ?? ann[ANNOTATION_IN_TOTO_PREDICATE] ?? null;
     const subkind = predicateType ? predicateSubkind(predicateType) : "custom";
     return { kind: kindForSubkind(subkind), subkind, format: "dsse", predicateType };
   }
@@ -469,9 +471,37 @@ export interface SignatureCheck {
   reason?: string | null;
 }
 
+/**
+ * One statement of a manifest that carries several: BuildKit's attestation
+ * manifests hold the SBOM and the provenance of a platform image as separate
+ * layers, each a bare in-toto statement that nobody signed.
+ */
+export interface StatementLayerSummary {
+  layerDigest: string;
+  mediaType: string;
+  subkind: ArtifactSubkind;
+  predicateType: string | null;
+  sbom: SbomSummary | null;
+  provenance: ProvenanceSummary | null;
+  subjects: string[];
+  sizeBytes: number;
+  /** false for a bare statement (no DSSE envelope, nothing to verify). */
+  signed: boolean;
+  error: string | null;
+}
+
 export type ArtifactSummary =
   | { kind: "signature"; predicateType: string | null; signatures: number }
-  | { kind: "sbom"; attested: boolean; predicateType: string | null; sbom: SbomSummary | null; sizeBytes: number; error: string | null }
+  | {
+      kind: "sbom";
+      attested: boolean;
+      predicateType: string | null;
+      sbom: SbomSummary | null;
+      sizeBytes: number;
+      error: string | null;
+      /** Set when the statement came without a DSSE envelope. */
+      unsigned?: boolean;
+    }
   | {
       kind: "attestation";
       subkind: ArtifactSubkind;
@@ -480,7 +510,9 @@ export type ArtifactSummary =
       subjects: string[];
       sizeBytes: number;
       error: string | null;
+      unsigned?: boolean;
     }
+  | { kind: "statements"; layers: StatementLayerSummary[]; sizeBytes: number }
   | { kind: "other"; sizeBytes: number };
 
 export function describeSignatureStatus(check: {

@@ -1,0 +1,60 @@
+# Traefik dynamic configuration for docker-compose.prod.yml (file provider,
+# mounted read-only at /etc/traefik/dynamic). Traefik renders it as a Go
+# template: DOMAIN and LEGACY_DOMAIN come from the traefik container's
+# environment, i.e. from .env on the host.
+{{ $domain := env "DOMAIN" }}
+{{ $legacy := env "LEGACY_DOMAIN" }}
+http:
+  middlewares:
+    # HSTS and nosniff for everything behind this host, the registry API
+    # included (the web app sets its own CSP and the rest per response).
+    # Defined here rather than on a container's labels so it never
+    # disappears while that container restarts.
+    secure-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        customResponseHeaders:
+          X-Content-Type-Options: nosniff
+{{ if $legacy }}
+    # LEGACY_DOMAIN, the name this registry used to have: browsers are sent
+    # to DOMAIN; docker clients and API callers keep working and are told
+    # to move (RFC 9745 Deprecation, a Link to the successor, and the
+    # Warning header the OCI distribution spec lets clients display).
+    legacy-redirect:
+      redirectRegex:
+        regex: "^https?://[^/]+/(.*)"
+        replacement: "https://{{ $domain }}/${1}"
+        permanent: true
+    legacy-deprecation:
+      headers:
+        customResponseHeaders:
+          Deprecation: "true"
+          Link: '<https://{{ $domain }}/>; rel="successor-version"'
+          Warning: '299 - "{{ $legacy }} is deprecated, use {{ $domain }}"'
+  routers:
+    legacy-registry:
+      rule: Host(`{{ $legacy }}`) && (Path(`/v2`) || PathPrefix(`/v2/`))
+      priority: 100
+      entryPoints: [websecure]
+      tls:
+        certResolver: le
+      middlewares: [secure-headers, legacy-deprecation]
+      service: registry@docker
+    legacy-api:
+      rule: Host(`{{ $legacy }}`) && PathPrefix(`/api/`)
+      priority: 90
+      entryPoints: [websecure]
+      tls:
+        certResolver: le
+      middlewares: [secure-headers, legacy-deprecation]
+      service: web@docker
+    legacy-web:
+      rule: Host(`{{ $legacy }}`)
+      priority: 10
+      entryPoints: [websecure]
+      tls:
+        certResolver: le
+      middlewares: [legacy-redirect]
+      service: web@docker
+{{ end }}

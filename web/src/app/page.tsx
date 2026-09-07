@@ -6,6 +6,7 @@ import { env } from "@/lib/env";
 import { BrandLockup } from "@/components/brand";
 import { buttonClasses } from "@/components/ui/button";
 import { getBranding } from "@/lib/branding";
+import { defaultTagline } from "@/lib/branding-shared";
 import { formatBytes } from "@/lib/format";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { userDefaultsConfigured } from "@/lib/quota-shared";
@@ -58,7 +59,7 @@ export default async function LandingPage() {
       <main className="mx-auto max-w-5xl px-4 sm:px-6">
         <section className="grid items-center gap-10 py-10 sm:py-16 lg:grid-cols-2 lg:gap-12 lg:py-24">
           <div>
-            <div className="eyebrow mb-3">{hosted ? "Container registry, hosted" : "Self-hosted OCI registry"}</div>
+            <div className="eyebrow mb-3">{brand.tagline || defaultTagline(brand.edition)}</div>
             <h1 className="font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">
               Every layer,
               <br />

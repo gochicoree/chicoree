@@ -10,6 +10,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { formatDate, relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 import { resendVerificationEmail } from "@/app/actions/verification";
 
 export interface SessionRow {
@@ -173,6 +174,7 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
   const { toast } = useToast();
 
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   async function revoke(token: string) {
     const res = await authClient.revokeSession({ token });
@@ -199,7 +201,24 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
         title="Active sessions"
         description="Browsers and devices signed in to your account."
         action={
-          <Button type="button" variant="secondary" size="sm" disabled={busy || others === 0} onClick={revokeOthers} data-revoke-others>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy || others === 0}
+            onClick={() =>
+              confirm(
+                {
+                  title: "Sign out everywhere else?",
+                  description: "Every other browser and device is signed out of your account right away. This device stays signed in, and access tokens keep working.",
+                  confirmLabel: "Sign out everywhere else",
+                  tone: "danger",
+                },
+                revokeOthers,
+              )
+            }
+            data-revoke-others
+          >
             Sign out everywhere else{others > 0 ? ` (${others})` : ""}
           </Button>
         }
@@ -219,7 +238,17 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
               <Badge tone="ok">this device</Badge>
             ) : (
               <button
-                onClick={() => revoke(s.token)}
+                onClick={() =>
+                  confirm(
+                    {
+                      title: "Revoke this session?",
+                      description: "That browser or device is signed out right away. This device stays signed in.",
+                      confirmLabel: "Revoke session",
+                      tone: "danger",
+                    },
+                    () => revoke(s.token),
+                  )
+                }
                 aria-label="Revoke session"
                 className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
               >
@@ -229,6 +258,7 @@ export function SessionsList({ sessions }: { sessions: SessionRow[] }) {
           </div>
         ))}
       </div>
+      {dialog}
     </Card>
   );
 }

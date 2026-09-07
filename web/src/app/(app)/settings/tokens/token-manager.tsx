@@ -11,6 +11,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { relativeTime } from "@/lib/format";
 import {
   CUSTOM,
@@ -294,7 +295,13 @@ export function TokenManager({
                     {t.description && <div className="mt-0.5 text-xs text-ink-3">{t.description}</div>}
                   </div>
                   <RotateButton token={t} registryHost={registryHost} email={email} />
-                  <form action={deleteAccessToken}>
+                  <ConfirmForm
+                    action={deleteAccessToken}
+                    title={`Revoke token “${t.name}”?`}
+                    description="Anything that uses this token stops working right away. This cannot be undone."
+                    confirmLabel="Revoke token"
+                    tone="danger"
+                  >
                     <input type="hidden" name="id" value={t.id} />
                     <button
                       type="submit"
@@ -303,7 +310,7 @@ export function TokenManager({
                     >
                       <Trash2 className="size-4" />
                     </button>
-                  </form>
+                  </ConfirmForm>
                 </div>
               );
             })}

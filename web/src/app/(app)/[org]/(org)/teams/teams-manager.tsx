@@ -9,6 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { EntityLogo } from "@/components/entity-logo";
 import type { LogoRef } from "@/lib/logo-shared";
 import { TEAM_NAME_MAX, teamSlugFrom } from "@/lib/repo-access-shared";
@@ -138,14 +139,20 @@ function RemoveMemberButton({ orgSlug, team, member }: { orgSlug: string; team: 
   const [state, action, pending] = useActionState<TeamActionResult | null, FormData>(removeTeamMemberAction, null);
   useResultToast(state);
   return (
-    <form action={action}>
+    <ConfirmForm
+      action={action}
+      title={`Remove ${member.name} from ${team.name}?`}
+      description="They lose the repository access this team grants. Their organization membership stays."
+      confirmLabel="Remove member"
+      tone="danger"
+    >
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <input type="hidden" name="teamId" value={team.id} />
       <input type="hidden" name="userId" value={member.userId} />
       <button type="submit" disabled={pending} aria-label={`Remove ${member.name} from ${team.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
         <X className="size-4" />
       </button>
-    </form>
+    </ConfirmForm>
   );
 }
 
@@ -153,18 +160,19 @@ function DeleteTeamButton({ orgSlug, team }: { orgSlug: string; team: Team }) {
   const [state, action, pending] = useActionState<TeamActionResult | null, FormData>(deleteTeamAction, null);
   useResultToast(state);
   return (
-    <form
+    <ConfirmForm
       action={action}
-      onSubmit={(e) => {
-        if (!confirm(`Delete the team ${team.name}? Its repository grants go with it; nobody loses their organization membership.`)) e.preventDefault();
-      }}
+      title={`Delete team ${team.name}?`}
+      description="Its repository access grants are removed. Nobody loses their organization membership. This cannot be undone."
+      confirmLabel="Delete team"
+      tone="danger"
     >
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <input type="hidden" name="teamId" value={team.id} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
-        <Trash2 className="size-3.5" /> Delete team
+        <Trash2 className="size-3.5" /> Delete team…
       </Button>
-    </form>
+    </ConfirmForm>
   );
 }
 

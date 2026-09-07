@@ -29,8 +29,9 @@ export const EDITIONS: { value: Edition; label: string; description: string }[] 
   { value: "hosted", label: "Hosted service", description: "The landing page speaks to customers: sign up, the free plan, upgrade later." },
 ];
 
+/** The landing page's kicker, the sign-in page's footer line and the meta description unless Branding sets a tagline. */
 export function defaultTagline(edition: Edition): string {
-  return edition === "hosted" ? "Container registry, hosted for you" : "Self-hosted OCI container registry";
+  return edition === "hosted" ? "Hosted OCI registry for images and Helm charts" : "Self-hosted OCI registry for images and Helm charts";
 }
 
 export interface BrandingSettings {
@@ -63,7 +64,7 @@ export interface BrandingSettings {
 
 export const DEFAULT_BRANDING: BrandingSettings = {
   instanceName: "Chicorée",
-  tagline: "Self-hosted OCI container registry",
+  tagline: defaultTagline("self-hosted"),
   edition: "self-hosted",
   logoDataUrl: "",
   accentColor: "",

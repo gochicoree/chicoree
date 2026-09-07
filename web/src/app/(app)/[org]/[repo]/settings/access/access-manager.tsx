@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { EntityLogo } from "@/components/entity-logo";
 import type { LogoRef } from "@/lib/logo-shared";
 import { REPO_PERMISSIONS, type RepoPermission } from "@/lib/repo-access-shared";
@@ -130,14 +131,20 @@ function GrantRow({ orgSlug, repoName, grant }: { orgSlug: string; repoName: str
           options={REPO_PERMISSIONS}
         />
       </form>
-      <form action={removeAction}>
+      <ConfirmForm
+        action={removeAction}
+        title={`Remove access for ${grant.label}?`}
+        description="Only this extra access goes away; the organization role still applies in this repository."
+        confirmLabel="Remove access"
+        tone="danger"
+      >
         <input type="hidden" name="orgSlug" value={orgSlug} />
         <input type="hidden" name="repoName" value={repoName} />
         <input type="hidden" name="grantId" value={grant.id} />
         <button type="submit" disabled={removing || settingPending} aria-label={`Remove access for ${grant.label}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
           <X className="size-4" />
         </button>
-      </form>
+      </ConfirmForm>
     </li>
   );
 }

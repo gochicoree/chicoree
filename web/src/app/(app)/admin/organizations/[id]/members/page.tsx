@@ -7,6 +7,7 @@ import { organization } from "@/db/schema";
 import { listMembersWithUsers } from "@/lib/data";
 import { adminRemoveMember } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
 import { MemberRoleSelect } from "../org-controls";
@@ -31,7 +32,13 @@ export default async function AdminOrganizationMembers({ params }: { params: Pro
               <div className="truncate text-xs text-ink-2">{m.userEmail}</div>
             </div>
             <MemberRoleSelect memberId={m.id} organizationId={org.id} role={m.role} />
-            <form action={adminRemoveMember}>
+            <ConfirmForm
+              action={adminRemoveMember}
+              title={`Remove ${m.userName}?`}
+              description="They lose access to this organization's repositories right away. They can be invited again later."
+              confirmLabel="Remove member"
+              tone="danger"
+            >
               <input type="hidden" name="memberId" value={m.id} />
               <input type="hidden" name="organizationId" value={org.id} />
               <button
@@ -41,7 +48,7 @@ export default async function AdminOrganizationMembers({ params }: { params: Pro
               >
                 <Trash2 className="size-4" />
               </button>
-            </form>
+            </ConfirmForm>
           </div>
         ))}
       </div>
