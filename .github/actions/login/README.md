@@ -29,8 +29,10 @@ steps:
 The trusted identity's subject is what GitHub puts in the token's `sub`
 claim: `repo:owner/repo:ref:refs/heads/main` for a branch,
 `repo:owner/repo:environment:production` for an environment, or
-`repo:owner/repo:*` for any ref of the repository. The token is requested
-with the registry URL as audience, which the exchange checks.
+`repo:owner/repo:*` for any ref of the repository. GitHub writes ids into
+it (`repo:owner@123/repo@456:…`); the registry matches both spellings.
+The token is requested with the registry URL as audience, which the
+exchange checks.
 
 Outputs: `token` (masked in the log), `registry`, `username`, `expires-at`.
 `docker-login: "false"` skips the `docker login` step.

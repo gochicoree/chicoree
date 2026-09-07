@@ -2176,7 +2176,9 @@ and gate on the scan, without storing a registry secret:
    puts in its token — `repo:acme/api:ref:refs/tags/*` for releases from
    tags, `repo:acme/api:ref:refs/heads/main` for a branch,
    `repo:acme/api:*` for any ref — with permission *push* and, if you like,
-   the repositories it may touch. Nothing is stored on the GitHub side.
+   the repositories it may touch. GitHub's token spells the subject with
+   ids, `repo:acme@123/api@456:ref:…`, and the registry matches both
+   forms. Nothing is stored on the GitHub side.
    For keyless signatures to count as *verified*, also add the workflow
    under *Settings → Policies → Trusted keyless identities*: the same
    issuer with the subject
