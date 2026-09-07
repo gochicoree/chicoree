@@ -604,8 +604,11 @@ key. Every generate and retire is in the audit log.
 
 ### Branding
 
-*Administration → Branding* sets the instance name and tagline (page titles,
-sidebar, sign-in screens, emails), a PNG or SVG logo (at most 64 KB; replaces
+*Administration → Branding* sets the instance name (page titles, sidebar,
+sign-in screens, emails) and the tagline — the kicker above the landing
+page's headline, the line under the sign-in card, the footer and the page
+description, so it is the one sentence that says what this registry is —
+a PNG or SVG logo (at most 64 KB; replaces
 the chicory mark), the accent colour, up to six footer links, and an
 announcement banner shown at the top of every page. `info` and `warning`
 banners can be dismissed (remembered per browser until the text changes),

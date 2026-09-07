@@ -117,7 +117,7 @@ export function BrandingForm({ branding, source }: { branding: BrandingSettings;
             <Field label="Instance name" htmlFor="brand-name" hint={`Up to ${INSTANCE_NAME_MAX} characters; INSTANCE_NAME is the environment default.`}>
               <Input id="brand-name" name="instanceName" value={name} maxLength={INSTANCE_NAME_MAX} onChange={(e) => setName(e.target.value)} required />
             </Field>
-            <Field label="Tagline" htmlFor="brand-tagline" hint={`Up to ${TAGLINE_MAX} characters; shown under the sign-in card and in the footer.`}>
+            <Field label="Tagline" htmlFor="brand-tagline" hint={`Up to ${TAGLINE_MAX} characters; the landing page's headline kicker, also shown under the sign-in card, in the footer and as the page description.`}>
               <Input id="brand-tagline" name="tagline" value={tagline} maxLength={TAGLINE_MAX} onChange={(e) => setTagline(e.target.value)} />
             </Field>
             <div className="sm:col-span-2">
