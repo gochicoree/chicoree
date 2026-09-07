@@ -1,10 +1,4 @@
-{o.format === "raw" || o.format === "unknown" || o.format === "in-toto" ? (
-                        <span className="text-xs text-ink-3" title={o.format === "in-toto" ? "Plain in-toto statements, not signed; the image's cosign signature covers them" : undefined}>
-                          —
-                        </span>
-                      ) : (
-                        <SignatureStatusBadge sig={o.sig} />
-                      )}import Link from "next/link";
+import Link from "next/link";
 import { Download, FileBox, GitCommitHorizontal, KeyRound, Link2, ShieldAlert, ShieldCheck, ShieldQuestion, Tag as TagIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SbomPackages } from "@/components/sbom-packages";
@@ -466,7 +460,13 @@ export function AttestationsPanel({
                       <Digest digest={o.digest} />
                     </td>
                     <td className="px-4 py-2.5">
-                      {o.format === "raw" || o.format === "unknown" ? <span className="text-xs text-ink-3">—</span> : <SignatureStatusBadge sig={o.sig} />}
+                      {o.format === "raw" || o.format === "unknown" || o.format === "in-toto" ? (
+                        <span className="text-xs text-ink-3" title={o.format === "in-toto" ? "Plain in-toto statements, not signed; the image's cosign signature covers them" : undefined}>
+                          —
+                        </span>
+                      ) : (
+                        <SignatureStatusBadge sig={o.sig} />
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-[13px] tabular-nums text-ink-2">{formatBytes(o.sizeBytes)}</td>
                     <td className="px-2 py-1.5 text-right">

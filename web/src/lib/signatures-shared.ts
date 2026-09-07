@@ -1,8 +1,3 @@
-  // BuildKit stores its SBOM and provenance as plain statements, one per
-  // layer, with nothing signed: not an envelope to verify, so not "invalid".
-  if (d.artifactType === BUILDKIT_ATTESTATION_MANIFEST || ann["vnd.docker.reference.type"] === "attestation-manifest") {
-    return { kind: "attestation", subkind: "custom", format: "in-toto", predicateType: null };
-  }
 // Supply-chain helpers that are safe for client components: media-type
 // classification of artifacts attached to an image (cosign signatures,
 // Sigstore bundles, in-toto attestations, SBOMs), the cosign tag convention,
@@ -157,6 +152,11 @@ export function classifyArtifact(d: ArtifactDescriptor): Classification {
   }
   if (layers.includes(COSIGN_SIMPLE_SIGNING) || tagSuffix === "sig") {
     return { kind: "signature", subkind: "cosign-sign", format: "cosign-legacy", predicateType: null };
+  }
+  // BuildKit stores its SBOM and provenance as plain statements, one per
+  // layer, with nothing signed: not an envelope to verify, so not "invalid".
+  if (d.artifactType === BUILDKIT_ATTESTATION_MANIFEST || ann["vnd.docker.reference.type"] === "attestation-manifest") {
+    return { kind: "attestation", subkind: "custom", format: "in-toto", predicateType: null };
   }
   if (layers.includes(DSSE_ENVELOPE) || layers.includes(IN_TOTO_JSON) || tagSuffix === "att") {
     const predicateType = ann.predicateType ?? ann[ANNOTATION_BUNDLE_PREDICATE] ?? null;

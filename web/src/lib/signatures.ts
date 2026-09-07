@@ -1,4 +1,4 @@
-  const decode = !raw && (cls.format === "sigstore-bundle" || cls.format === "dsse" || cls.format === "in-toto");// Supply chain, server side: trusted cosign keys, discovery of the artifacts
+// Supply chain, server side: trusted cosign keys, discovery of the artifacts
 // attached to an image (OCI referrers and cosign's tag convention),
 // cryptographic verification of signatures and DSSE attestations against
 // the trusted keys, cached artifact summaries (SBOM package counts, SLSA
@@ -1563,7 +1563,7 @@ export async function resolveArtifactDownload(
         predicateType: null,
       }
     : classifyArtifact(descriptorOf(ref, parsed));
-  const decode = !raw && (cls.format === "sigstore-bundle" || cls.format === "dsse");
+  const decode = !raw && (cls.format === "sigstore-bundle" || cls.format === "dsse" || cls.format === "in-toto");
   const prefix = `${repo.name.replace(/\//g, "-")}-${digestHex(digest).slice(0, 12)}`;
   const mediaType = decode ? "application/json" : (layer.mediaType ?? "application/octet-stream").split(";")[0].trim();
   return {
