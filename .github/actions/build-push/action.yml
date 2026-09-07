@@ -1,0 +1,189 @@
+name: Chicorée build and push
+description: Build an image with Buildx and push it to a Chicorée registry with an SBOM and SLSA provenance attached, signed with cosign and the SBOM attested. Sign in first (the login action, or docker login).
+inputs:
+  registry:
+    description: Registry host, e.g. cr.example.com — the login action's `registry` output.
+    required: true
+  image:
+    description: Image name as org/repo; a bare name goes to the library organization.
+    required: true
+  version:
+    description: "Version to tag: 1.2.3 (or v1.2.3) gives 1.2.3 and 1.2 — and 1 from 1.0.0 on — and moves latest. A pre-release such as 1.2.3-rc.1 gets only its own tag."
+    default: ""
+  tags:
+    description: Extra tags, comma- or newline-separated.
+    default: ""
+  latest:
+    description: auto (a stable version moves latest), true or false.
+    default: auto
+  sha-tag:
+    description: Also tag the image sha-<short commit>.
+    default: "true"
+  context:
+    description: Build context.
+    default: .
+  file:
+    description: Dockerfile, relative to the workspace (default <context>/Dockerfile).
+    default: ""
+  target:
+    description: Build stage to build.
+    default: ""
+  platforms:
+    description: Platforms, comma-separated. Platforms other than the runner's are emulated with QEMU unless the Dockerfile cross-compiles.
+    default: linux/amd64
+  build-args:
+    description: Build arguments, KEY=value per line. They are recorded in the provenance, so no secrets.
+    default: ""
+  labels:
+    description: Extra OCI labels, key=value per line. Source, revision, version and created are set already.
+    default: ""
+  sbom:
+    description: "Generate an SPDX SBOM while building and push it with the image: true, false, or generator=<scanner image>."
+    default: "true"
+  provenance:
+    description: "SLSA provenance pushed with the image: mode=max, mode=min or false."
+    default: mode=max
+  sign:
+    description: "Sign the image and its platform variants with cosign: keyless with the job's OIDC token (needs id-token: write), or with cosign-key."
+    default: "true"
+  attest:
+    description: "Attach the SBOM (sbom), or SBOM and provenance (sbom,provenance), also as signed in-toto attestations; none skips it."
+    default: sbom
+  cosign-key:
+    description: PEM of a cosign private key (pass a secret). Empty means keyless.
+    default: ""
+  cosign-password:
+    description: Password of that key.
+    default: ""
+  cosign-args:
+    description: Extra flags for cosign sign and attest, e.g. --tlog-upload=false.
+    default: ""
+  cache:
+    description: Keep build layers in the GitHub Actions cache.
+    default: "true"
+  push:
+    description: "false only builds; nothing is signed then."
+    default: "true"
+  registry-url:
+    description: Base URL of the web app, for the link in the job summary.
+    default: ""
+outputs:
+  digest:
+    description: Digest of what was pushed (the index for a multi-platform image).
+    value: ${{ steps.build.outputs.digest }}
+  ref:
+    description: registry/org/repo@digest
+    value: ${{ steps.prep.outputs.ref }}@${{ steps.build.outputs.digest }}
+  tags:
+    description: The full references pushed, one per line.
+    value: ${{ steps.meta.outputs.tags }}
+  version:
+    description: The version tag (empty when no version was given).
+    value: ${{ steps.prep.outputs.version }}
+  platforms:
+    description: The platform variants pushed, comma-separated.
+    value: ${{ steps.attach.outputs.platforms }}
+runs:
+  using: composite
+  steps:
+    - id: prep
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ inputs.image }}
+        VERSION: ${{ inputs.version }}
+        EXTRA_TAGS: ${{ inputs.tags }}
+        LATEST: ${{ inputs.latest }}
+        SHA_TAG: ${{ inputs.sha-tag }}
+        PLATFORMS: ${{ inputs.platforms }}
+        CONTEXT: ${{ inputs.context }}
+        FILE: ${{ inputs.file }}
+        CACHE: ${{ inputs.cache }}
+      run: |
+        set -euo pipefail
+        image="${IMAGE#/}"; image="${image%/}"
+        if [[ "$image" != */* ]]; then image="library/$image"; fi
+        image=$(tr '[:upper:]' '[:lower:]' <<< "$image")
+        version="${VERSION#v}"
+        rules=""
+        if [[ -n "$version" ]]; then
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version must be semantic (1.2.3, v1.2.3 or 1.2.3-rc.1), got '$VERSION'"; exit 1
+          fi
+          major_ok=true
+          if [[ "${version%%.*}" == "0" ]]; then major_ok=false; fi
+          rules+="type=semver,pattern={{version}},value=v${version}"$'\n'
+          rules+="type=semver,pattern={{major}}.{{minor}},value=v${version}"$'\n'
+          rules+="type=semver,pattern={{major}},value=v${version},enable=${major_ok}"$'\n'
+        fi
+        if [[ "$SHA_TAG" == "true" ]]; then rules+="type=sha,prefix=sha-"$'\n'; fi
+        while IFS= read -r t; do
+          t="${t//[[:space:]]/}"
+          if [[ -n "$t" ]]; then rules+="type=raw,value=${t}"$'\n'; fi
+        done < <(printf '%s\n' "$EXTRA_TAGS" | tr ',' '\n')
+        if [[ -z "$rules" ]]; then echo "::error::nothing to tag: give a version, tags, or sha-tag: true"; exit 1; fi
+        case "$LATEST" in auto|true|false) ;; *) echo "::error::latest must be auto, true or false"; exit 1 ;; esac
+        # QEMU only when a requested platform is not the runner's own.
+        host=$(uname -m)
+        case "$host" in x86_64) host=amd64 ;; aarch64) host=arm64 ;; esac
+        qemu=false
+        IFS=',' read -ra plats <<< "$PLATFORMS"
+        for p in "${plats[@]}"; do
+          arch=$(cut -d/ -f2 <<< "$p")
+          if [[ "$arch" != "$host" ]]; then qemu=true; fi
+        done
+        file="$FILE"
+        if [[ -z "$file" ]]; then file="${CONTEXT%/}/Dockerfile"; fi
+        scope=$(tr -c 'a-z0-9\n' '-' <<< "$image")
+        cache_from=""; cache_to=""
+        if [[ "$CACHE" == "true" ]]; then cache_from="type=gha,scope=${scope}"; cache_to="type=gha,mode=max,scope=${scope}"; fi
+        {
+          echo "image=$image"; echo "ref=${REGISTRY}/${image}"; echo "version=$version"; echo "latest=$LATEST"
+          echo "qemu=$qemu"; echo "file=$file"; echo "cache-from=$cache_from"; echo "cache-to=$cache_to"
+          echo "rules<<EOF_RULES"; printf '%s' "$rules"; echo "EOF_RULES"
+        } >> "$GITHUB_OUTPUT"
+    - uses: docker/setup-qemu-action@v4
+      if: steps.prep.outputs.qemu == 'true'
+    - uses: docker/setup-buildx-action@v4
+    - id: meta
+      uses: docker/metadata-action@v6
+      with:
+        images: ${{ steps.prep.outputs.ref }}
+        tags: ${{ steps.prep.outputs.rules }}
+        flavor: latest=${{ steps.prep.outputs.latest }}
+        labels: ${{ inputs.labels }}
+      env:
+        DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+    - id: build
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ steps.prep.outputs.file }}
+        target: ${{ inputs.target }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        annotations: ${{ steps.meta.outputs.annotations }}
+        build-args: ${{ inputs.build-args }}
+        sbom: ${{ inputs.sbom }}
+        provenance: ${{ inputs.provenance }}
+        cache-from: ${{ steps.prep.outputs.cache-from }}
+        cache-to: ${{ steps.prep.outputs.cache-to }}
+    - uses: sigstore/cosign-installer@v4
+      if: inputs.push == 'true' && (inputs.sign == 'true' || inputs.attest != 'none')
+    - id: attach
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ steps.prep.outputs.image }}
+        DIGEST: ${{ steps.build.outputs.digest }}
+        TAGS: ${{ steps.meta.outputs.tags }}
+        SIGN: ${{ inputs.sign }}
+        ATTEST: ${{ inputs.attest }}
+        COSIGN_PRIVATE_KEY: ${{ inputs.cosign-key }}
+        COSIGN_PASSWORD: ${{ inputs.cosign-password }}
+        COSIGN_ARGS: ${{ inputs.cosign-args }}
+        REGISTRY_URL: ${{ inputs.registry-url }}
+      run: '"${{ github.action_path }}/attach.sh"'

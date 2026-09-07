@@ -1,4 +1,10 @@
-FROM node:22-alpine AS deps
+# The Node stages run on the builder's own platform (BUILDPLATFORM): what
+# they produce is JavaScript, so one `next build` serves every target and a
+# multi-arch build needs no emulation for npm and Next. Only the runtime
+# stage is the target platform. (The standalone output carries the builder's
+# native sharp binaries; the app does not use next/image, so they are never
+# loaded.)
+FROM --platform=$BUILDPLATFORM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Docker Desktop's VM network resets under npm's default parallelism; fewer
@@ -12,7 +18,7 @@ RUN npm run build
 
 # Standalone output inlines server deps, so the migration runner gets its own
 # minimal install, isolated under /migrate.
-FROM node:22-alpine AS migrate-deps
+FROM --platform=$BUILDPLATFORM node:22-alpine AS migrate-deps
 WORKDIR /migrate
 # A lockfile (migrate/package-lock.json) lets this be `npm ci` too: pinned
 # transitive deps, and no registry metadata lookups during the build.
@@ -37,5 +43,5 @@ COPY --from=build /app/drizzle /migrate/drizzle
 USER app
 EXPOSE 3000
 # bootstrap: token keys + Clair database when missing (a volume-only setup
-# such as the PaaS has no bind mounts to provide them).
+# has no bind mounts to provide them).
 CMD ["sh", "-c", "node /migrate/scripts/bootstrap.mjs && node /migrate/scripts/migrate.mjs && node server.js"]

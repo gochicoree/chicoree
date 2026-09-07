@@ -88,7 +88,7 @@ services:
       TRIVY_SERVER_TOKEN: ${TRIVY_SERVER_TOKEN:-}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}
-      # Scan workers (scan-worker on other machines): the token they
+      # Scan workers on other machines: the token they
       # present, and whether Trivy scans wait for them (Administration → Scanning overrides).
       SCAN_WORKER_TOKEN: ${SCAN_WORKER_TOKEN:-}
       SCAN_WORKERS: ${SCAN_WORKERS:-false}

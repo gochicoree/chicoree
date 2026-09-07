@@ -58,7 +58,7 @@ export interface ApiEndpoint {
   /**
    * Announced removal. Responses carry Deprecation (and Sunset) headers, the
    * docs show a warning, and the endpoint stays for at least one revision
-   * after `since` before it may go (see CLAUDE.md).
+   * after `since` before it may go (one revision at least).
    */
   deprecated?: {
     /** Revision the deprecation was announced in. */

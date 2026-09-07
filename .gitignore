@@ -6,3 +6,7 @@ web/next-env.d.ts
 *.log
 .DS_Store
 *.tsbuildinfo
+# Design documents live in the private repository chicoree-internal (see there).
+ARCHITECTURE.md
+CLAUDE.md
+.claude/

@@ -36,7 +36,7 @@ export function WorkersCard({ stats, enabled, tokenSet }: { stats: ScanWorkerSta
         {stats.workers.length === 0 ? (
           <p className="text-sm text-ink-3">
             No worker has reported in yet.{" "}
-            {tokenSet ? "Start a scan-worker with CHICOREE_URL pointing at this instance and the same SCAN_WORKER_TOKEN." : "Set SCAN_WORKER_TOKEN in the environment first."}
+            {tokenSet ? "Start a worker with CHICOREE_URL pointing at this instance and the same SCAN_WORKER_TOKEN." : "Set SCAN_WORKER_TOKEN in the environment first."}
           </p>
         ) : (
           <div className="-mx-5 overflow-x-auto">

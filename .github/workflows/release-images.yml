@@ -1,0 +1,193 @@
+# Shared release pipeline: builds one or more images from the calling
+# repository, pushes them to a Chicorée registry with SBOM and provenance,
+# signs them, attests the SBOM and judges the scan. Call it from a small
+# workflow in any repository (see README.md → GitHub Actions):
+#
+#   jobs:
+#     images:
+#       uses: gochicoree/chicoree/.github/workflows/release-images.yml@main
+#       permissions: { contents: read, id-token: write }
+#       with:
+#         registry-url: https://registry.example.com
+#         organization: acme
+#         images: '[{ "name": "api", "context": "." }]'
+#
+# The version comes from the tag that triggered the caller (v1.2.3 → 1.2.3)
+# or from the `version` input. The job signs in keylessly, so the
+# organization must trust the caller's identity (Organization → Service
+# accounts → CI identities) — nothing is stored in the calling repository.
+name: Release images
+
+on:
+  workflow_call:
+    inputs:
+      registry-url:
+        description: Base URL of the Chicorée web app, e.g. https://registry.example.com.
+        type: string
+        required: true
+      organization:
+        description: Organization the images belong to; bare image names are prefixed with it.
+        type: string
+        default: ""
+      images:
+        description: 'JSON array of images: [{ "name", "context", "file", "target", "platforms", "buildArgs" }]. buildArgs takes KEY=value lines; {{version}} and {{sha}} are replaced.'
+        type: string
+        required: true
+      version:
+        description: Version to publish (1.2.3, v1.2.3 or 1.2.3-rc.1). Empty takes it from the tag that triggered the caller.
+        type: string
+        default: ""
+      platforms:
+        description: Platforms to build, comma-separated; an image's own `platforms` wins.
+        type: string
+        default: linux/amd64,linux/arm64
+      latest:
+        description: auto (a stable version moves latest), true or false.
+        type: string
+        default: auto
+      sha-tag:
+        description: Also tag each image sha-<short commit>.
+        type: boolean
+        default: true
+      scan-gate:
+        description: Fail when the pushed image has vulnerabilities at or above this severity (critical, high, medium, low); none skips the gate.
+        type: string
+        default: critical
+      sign:
+        description: Sign the images with cosign (keyless unless cosign-key is given).
+        type: boolean
+        default: true
+      attest:
+        description: Signed in-toto attestations to attach — sbom, sbom,provenance or none.
+        type: string
+        default: sbom
+      sbom:
+        description: SBOM generated at build time — true, false or generator=<image>.
+        type: string
+        default: "true"
+      provenance:
+        description: SLSA provenance pushed with the image — mode=max, mode=min or false.
+        type: string
+        default: mode=max
+      cosign-args:
+        description: Extra flags for cosign sign and attest.
+        type: string
+        default: ""
+      runs-on:
+        description: Runner label for the build jobs.
+        type: string
+        default: ubuntu-latest
+      cache:
+        description: Keep build layers in the GitHub Actions cache.
+        type: boolean
+        default: true
+    secrets:
+      cosign-key:
+        description: PEM of a cosign private key; empty signs keylessly.
+        required: false
+      cosign-password:
+        description: Password of that key.
+        required: false
+    outputs:
+      version:
+        description: The version that was published.
+        value: ${{ jobs.plan.outputs.version }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_IMAGES: ${{ inputs.images }}
+          ORGANIZATION: ${{ inputs.organization }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION#v}"
+          if [[ -z "$version" && "$REF" == refs/tags/v* ]]; then version="${REF#refs/tags/v}"; fi
+          if [[ -z "$version" ]]; then
+            echo "::error::No version: run this on a tag such as v1.2.3, or pass the version input."; exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::The version must be semantic (1.2.3, v1.2.3 or 1.2.3-rc.1), got '$version'."; exit 1
+          fi
+          matrix=$(jq -c --arg v "$version" --arg sha "$SHA" --arg org "$ORGANIZATION" '
+            if type != "array" or length == 0 then error("images must be a non-empty JSON array") else . end
+            | map(
+                if (.name // "") == "" then error("every image needs a name") else . end
+                | {
+                    name: .name,
+                    repo: (if (.name | contains("/")) then .name elif $org != "" then $org + "/" + .name else "library/" + .name end),
+                    context: (.context // "."),
+                    file: (.file // ""),
+                    target: (.target // ""),
+                    platforms: (.platforms // ""),
+                    buildArgs: ((.buildArgs // "") | gsub("\\{\\{version\\}\\}"; $v) | gsub("\\{\\{sha\\}\\}"; $sha))
+                  })
+            | {include: .}' <<< "$INPUT_IMAGES")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "publishing $version: $(jq -r '[.include[].repo] | join(", ")' <<< "$matrix")"
+
+  images:
+    name: ${{ matrix.name }}
+    needs: plan
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sign in to the registry
+        id: registry
+        uses: gochicoree/chicoree/.github/actions/login@main
+        with:
+          registry-url: ${{ inputs.registry-url }}
+          organization: ${{ inputs.organization }}
+      - name: Build, push, sign and attest
+        id: image
+        uses: gochicoree/chicoree/.github/actions/build-push@main
+        with:
+          registry: ${{ steps.registry.outputs.registry }}
+          registry-url: ${{ inputs.registry-url }}
+          image: ${{ matrix.repo }}
+          version: ${{ needs.plan.outputs.version }}
+          latest: ${{ inputs.latest }}
+          sha-tag: ${{ inputs.sha-tag }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platforms || inputs.platforms }}
+          build-args: ${{ matrix.buildArgs }}
+          sbom: ${{ inputs.sbom }}
+          provenance: ${{ inputs.provenance }}
+          sign: ${{ inputs.sign }}
+          attest: ${{ inputs.attest }}
+          cosign-key: ${{ secrets.cosign-key }}
+          cosign-password: ${{ secrets.cosign-password }}
+          cosign-args: ${{ inputs.cosign-args }}
+          cache: ${{ inputs.cache }}
+      - name: Scan gate
+        if: inputs.scan-gate != 'none'
+        uses: gochicoree/chicoree/.github/actions/scan-gate@main
+        with:
+          registry-url: ${{ inputs.registry-url }}
+          token: ${{ steps.registry.outputs.token }}
+          image: ${{ matrix.repo }}:${{ needs.plan.outputs.version }}
+          fail-on: ${{ inputs.scan-gate }}
+          wait: "300"

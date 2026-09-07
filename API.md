@@ -39,7 +39,7 @@ curl -sS -H "Content-Type: application/json" -d "{"token": "$OIDC"}" https://reg
 # → { "token": "chc_ci_…", "expiresAt": "…", "dockerLogin": { "registry": "registry.example.com", "username": "ci", "password": "chc_ci_…" } }
 ~~~
 
-The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is `https://registry.example.com` or `registry.example.com`, and matches the subject; GitHub subjects look like `repo:owner/repo:ref:refs/heads/main`, GitLab's like `project_path:group/project:ref_type:branch:ref:main`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The `.github/actions/login` action in the repository does all of this and runs `docker login`.
+The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is `https://registry.example.com` or `registry.example.com`, and matches the subject; GitHub subjects look like `repo:owner/repo:ref:refs/heads/main`, GitLab's like `project_path:group/project:ref_type:branch:ref:main`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The `.github/actions/login` action in the repository does all of this and runs `docker login`; `.github/actions/build-push` (build, push with SBOM and provenance, sign, attest) and the reusable `release-images.yml` workflow build on it — see the README's GitHub Actions section.
 
 Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from `API_ENABLED`): every endpoint, the index and the OpenAPI document then answer `403` with code `api_disabled`. docker login and the jobs API are not affected.
 
@@ -3797,11 +3797,11 @@ This API follows the registry's features: whenever a feature is added, changed o
 
 ### 2026-09-06.8
 
-- Webhook format `none`: the delivery is the bare request (method of your choice, headers, authentication) with no body — for deploy hooks that read their parameters from the URL and would misread the payload, such as the PaaS's POST /api/v1/deploy.
+- Webhook format `none`: the delivery is the bare request (method of your choice, headers, authentication) with no body — for deploy hooks that read their parameters from the URL and would misread the payload, such as a PaaS deploy endpoint.
 
 ### 2026-09-06.7
 
-- Webhooks accept `method: GET`: the delivery carries no body (event and delivery id stay in the headers, authentication applies as before), for receivers that act on the request itself — a deploy hook such as the PaaS's.
+- Webhooks accept `method: GET`: the delivery carries no body (event and delivery id stay in the headers, authentication applies as before), for receivers that act on the request itself — a deploy hook, say.
 
 ### 2026-09-06.6
 

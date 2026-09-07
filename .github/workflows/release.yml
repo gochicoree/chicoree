@@ -1,0 +1,47 @@
+# Releases of Chicorée itself: a tag v1.2.3 (or a manual run with a
+# version) builds web and registryd for amd64 and arm64, pushes them to the
+# registry with SBOM, provenance and signature, and gates on the scan. The
+# shared pipeline lives in release-images.yml; this file only says what to
+# build. Repository variables CHICOREE_URL, CHICOREE_ORG and SCAN_GATE
+# override the defaults; secrets COSIGN_PRIVATE_KEY/COSIGN_PASSWORD switch
+# from keyless to key-based signing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (1.2.3, v1.2.3 or 1.2.3-rc.1)
+        required: true
+      platforms:
+        description: Platforms, comma-separated
+        default: linux/amd64,linux/arm64
+      latest:
+        description: Move the latest tag
+        type: choice
+        options: [auto, "true", "false"]
+        default: auto
+
+jobs:
+  images:
+    uses: ./.github/workflows/release-images.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      registry-url: ${{ vars.CHICOREE_URL || 'https://chicor.ee' }}
+      organization: ${{ vars.CHICOREE_ORG || 'chicoree' }}
+      version: ${{ inputs.version || '' }}
+      platforms: ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}
+      latest: ${{ inputs.latest || 'auto' }}
+      scan-gate: ${{ vars.SCAN_GATE || 'critical' }}
+      images: |
+        [
+          { "name": "web", "context": "web" },
+          { "name": "registryd", "context": "registryd", "buildArgs": "VERSION={{version}}" }
+        ]
+    secrets:
+      cosign-key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      cosign-password: ${{ secrets.COSIGN_PASSWORD }}
