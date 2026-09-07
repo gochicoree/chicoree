@@ -24,7 +24,7 @@ inputs:
     default: "false"
 outputs:
   passed:
-    description: "true" when the image passes the threshold.
+    description: true when the image passes the threshold, else false.
     value: ${{ steps.gate.outputs.passed }}
   digest:
     description: The digest that was judged.
