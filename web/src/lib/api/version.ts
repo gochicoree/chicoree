@@ -22,6 +22,8 @@ export const API_CHANGELOG: ApiChange[] = [
   {
     revision: "2026-09-07.7",
     changes: [
+      "Images and webhooks: a push by a keyless CI identity is named `GitHub Actions · <identity>` (the issuer's label, then the identity name) in `pushedBy.label`, in the activity feed and as the webhook `actor` (type `ci`); it read `CI: <identity>` or fell back to `deleted service account` before.",
+      "General: `GET /` carries `features` — whether mirroring / importing and proxy caches are available on this instance (Administration → Auth providers → Access → Features, or `MIRRORING_ENABLED` / `PROXY_CACHES_ENABLED`). Off, the import mode, mirror settings and proxy set-up disappear, existing mirrors stop syncing and existing caches fetch nothing new.",
       "Repositories: `pullCount` counts image pulls the way Docker Hub does — a GET of an image or index by a client. The registry's own reads, HEAD revalidations, attached artifacts (signatures, attestations, SBOMs) and the platform variant fetched by digest right after its index no longer count, so one `docker pull` is one pull. Existing counts were recomputed from the event log.",
     ],
   },

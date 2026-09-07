@@ -28,6 +28,12 @@ export const CI_ISSUERS: { value: string; label: string; subjectHint: string }[]
   { value: "https://gitlab.com", label: "GitLab.com", subjectHint: "project_path:group/project:ref_type:branch:ref:main" },
 ];
 
+/** How a CI identity is named where an actor is shown: "GitHub Actions · release" (the issuer's label, then the identity's name). */
+export function ciActorLabel(issuer: string, name: string): string {
+  const known = CI_ISSUERS.find((i) => i.value === issuer.replace(/\/$/, ""));
+  return `${known?.label ?? "CI"} · ${name}`;
+}
+
 function hmacKey(): Uint8Array {
   return createHash("sha256").update(`chicoree-ci-token:${env.authSecret}`).digest();
 }

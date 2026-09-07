@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Radar } from "lucide-react";
 import { removeOrgProxy, saveOrgProxy, testOrgProxy, type ProxyActionResult } from "@/app/actions/proxy";
+import { PROXY_CACHES_OFF } from "@/lib/access-shared";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
@@ -32,12 +33,15 @@ export function ProxyForm({
   registryHost,
   isLibrary,
   proxy,
+  disabled = false,
 }: {
   organizationId: string;
   slug: string;
   registryHost: string;
   isLibrary: boolean;
   proxy: ProxyFormValues | null;
+  /** Proxy caches are switched off on this registry. */
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -74,6 +78,14 @@ export function ProxyForm({
     }
   }
 
+  if (disabled && !proxy) {
+    return (
+      <Card>
+        <CardHeader eyebrow="Proxy cache" title="Proxy caches are switched off on this registry" description="Organizations here cannot become pull-through caches of another registry." />
+      </Card>
+    );
+  }
+
   if (isLibrary) {
     return (
       <Card>
@@ -84,6 +96,9 @@ export function ProxyForm({
 
   return (
     <div className="space-y-6">
+      {disabled && (
+        <p className="rounded-md bg-card-2 px-3 py-2 text-sm text-ink-2">{PROXY_CACHES_OFF} This cache serves what it holds and fetches nothing new.</p>
+      )}
       <Card>
         <CardHeader
           eyebrow="Proxy cache"

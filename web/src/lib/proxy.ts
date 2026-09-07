@@ -1,6 +1,7 @@
 // Proxy-cache organizations: server-side queries, the configuration feed for
 // registryd (credentials decrypted here — the registry never holds the key),
 // and the "test upstream" probe.
+import { getInstanceSettings } from "@/lib/instance-settings";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { organization, organizationProxies } from "@/db/schema";
@@ -47,6 +48,9 @@ export interface ProxyConfigForRegistry {
 
 /** Every proxy (enabled or not — disabled ones still route nested names) with decrypted credentials. */
 export async function listProxyConfigs(): Promise<ProxyConfigForRegistry[]> {
+  // Switched off instance-wide: registryd gets no configuration, so proxy
+  // organizations serve what they hold and fetch nothing from upstream.
+  if (!(await getInstanceSettings()).access.proxyCaches) return [];
   const rows = await db
     .select({
       organizationId: organizationProxies.organizationId,

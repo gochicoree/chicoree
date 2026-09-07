@@ -20,6 +20,8 @@ import {
   type Edition,
 } from "@/lib/branding-shared";
 import { recordAudit } from "@/lib/audit";
+import { getInstanceSettings } from "@/lib/instance-settings";
+import { reloadRegistryProxies } from "@/lib/proxy";
 import type { SettingsResult } from "./instance-settings";
 
 const str = (fd: FormData, key: string) => String(fd.get(key) ?? "").trim();
@@ -46,8 +48,13 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
     localSignIn: localSignIn as LocalSignInMode,
     localSignInPath: normalizeLocalSignInPath(str(fd, "localSignInPath") || "local"),
     apiEnabled: fd.get("apiEnabled") === "on",
+    mirroring: fd.get("mirroring") === "on",
+    proxyCaches: fd.get("proxyCaches") === "on",
   };
+  const before = (await getInstanceSettings()).access;
   await saveSettingsSection("access", { ...access });
+  // registryd caches the proxy configuration; tell it the feed changed.
+  if (before.proxyCaches !== access.proxyCaches) await reloadRegistryProxies().catch(() => {});
   await recordAudit({ action: "settings.update", targetType: "settings", targetId: "access", targetLabel: "access", details: { ...access } });
   revalidatePath("/admin/auth", "layout");
   revalidatePath("/sign-in");

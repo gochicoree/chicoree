@@ -25,7 +25,15 @@ export interface AccessSettings {
   localSignInPath: string;
   /** The REST API under /api/v1; off = every endpoint answers 403 api_disabled (docker login and the jobs API are unaffected). */
   apiEnabled: boolean;
+  /** Mirroring and importing from other registries; off = no new mirrors or imports, existing mirrors stop syncing. */
+  mirroring: boolean;
+  /** Proxy caches; off = no organization can become one, existing caches serve what they hold and fetch nothing new. */
+  proxyCaches: boolean;
 }
+
+/** What the UI and the actions say when a feature is off. */
+export const MIRRORING_OFF = "Mirroring and importing are switched off on this registry.";
+export const PROXY_CACHES_OFF = "Proxy caches are switched off on this registry.";
 
 /** Header the sign-up form sends so an invitee is matched to their invitation. */
 export const INVITATION_HEADER = "x-chicoree-invitation";
@@ -39,6 +47,8 @@ export const DEFAULT_ACCESS: AccessSettings = {
   localSignIn: "everyone",
   localSignInPath: "local",
   apiEnabled: true,
+  mirroring: true,
+  proxyCaches: true,
 };
 
 export const LOCAL_SIGNIN_MODES: { value: LocalSignInMode; label: string; description: string }[] = [

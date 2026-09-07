@@ -115,6 +115,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Sign-up controls | *Administration → Auth providers → Access*; `SIGNUP_MODE`, `SIGNUP_ALLOWED_DOMAINS`, `ORG_CREATION` as defaults — see [Sign-up controls](#sign-up-controls) |
 | Access token policy | *Administration → Auth providers → Access*; `TOKEN_MAX_LIFETIME_DAYS`, `TOKEN_REQUIRE_EXPIRY` as defaults — see [Access token policy](#access-token-policy) |
 | REST API | *Administration → Auth providers → Access*; `API_ENABLED=false` as default switches `/api/v1` off — see [REST API](#rest-api) |
+| Mirroring, proxy caches | *Administration → Auth providers → Access → Features*; `MIRRORING_ENABLED=false`, `PROXY_CACHES_ENABLED=false` as defaults switch them off for the whole instance — see [Mirroring](#mirroring--importing), [Proxy caches](#proxy-caches) |
 | Default limits | *Administration → Limits*; `DEFAULT_USER_MAX_*`, `DEFAULT_ORG_MAX_*` as defaults for new accounts and organizations — see [Limits](#limits) |
 | Account portal | *Administration → Limits*; `PORTAL_URL`, `PORTAL_LABEL` as defaults — see [Account portal](#account-portal) |
 | Token signing keys | *Administration → Signing keys*; `TOKEN_KEY_RELOAD_INTERVAL` (default `60s`) and `TOKEN_KEY_DROP_WINDOW` (default `10m`) on `registryd` — see [Signing-key rotation](#signing-key-rotation) |
@@ -1019,6 +1020,13 @@ Discord, Teams or Mattermost channel, add an organization webhook with that
 
 ## Mirroring / importing
 
+A hosted instance can switch this off for everyone (*Administration → Auth
+providers → Access → Features*, or `MIRRORING_ENABLED=false`) so that many
+users do not run one upstream into its rate limits: the mirror mode of *New
+repository* and the mirror settings disappear, existing mirrors stay but
+stop syncing, and the `mirror-sync` job reports nothing to do. Self-hosted
+and on-premises installs usually leave it on.
+
 *Organization → Import* (or a repository's *Settings → Mirror*) copies tags
 from any other registry (Docker Hub, GHCR, Quay, another Chicorée …) into a
 local repository:
@@ -1043,6 +1051,13 @@ immutable tag (see [Tag rules](#tag-rules)) stops a mirror from re-pointing
 it; the run log records the refusal per tag.
 
 ## Proxy caches
+
+Like mirroring, proxy caches can be switched off for the whole instance
+(*Administration → Auth providers → Access → Features*, or
+`PROXY_CACHES_ENABLED=false`): no organization can become a cache, existing
+caches serve what they hold and fetch nothing new until the switch is back
+on, and the eviction job keeps running. `GET /api/v1` reports both switches
+under `features`.
 
 An organization can be a **pull-through cache** of an upstream registry —
 Docker Hub, GHCR, Quay, or anything else that speaks the OCI distribution

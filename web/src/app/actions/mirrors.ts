@@ -13,6 +13,12 @@ import { checkRepoQuota } from "@/lib/quota";
 import { runMirror, selectTags } from "@/lib/mirror";
 import { parseSource, RemoteRegistry } from "@/lib/remote-registry";
 import { recordAudit } from "@/lib/audit";
+import { MIRRORING_OFF } from "@/lib/access-shared";
+import { getInstanceSettings } from "@/lib/instance-settings";
+
+async function mirroringOn(): Promise<boolean> {
+  return (await getInstanceSettings()).access.mirroring;
+}
 
 export interface MirrorResult {
   error?: string;
@@ -60,6 +66,7 @@ async function repoContext(repositoryId: string, roles: string[]) {
 
 /** Create or update the mirror configuration of an existing repository. */
 export async function saveMirror(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
+  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
   const repositoryId = String(formData.get("repositoryId") ?? "");
   const ctx = await repoContext(repositoryId, MANAGER_ROLES);
   if ("error" in ctx) return { error: ctx.error };
@@ -101,6 +108,7 @@ export async function deleteMirror(formData: FormData): Promise<void> {
 
 /** Kick off a run in the background. */
 export async function runMirrorNow(formData: FormData): Promise<void> {
+  if (!(await mirroringOn())) return;
   const repositoryId = String(formData.get("repositoryId") ?? "");
   const ctx = await repoContext(repositoryId, WRITER_ROLES);
   if ("error" in ctx) return;
@@ -116,6 +124,7 @@ export async function runMirrorNow(formData: FormData): Promise<void> {
 /** Dry run: list the source tags the selector would pick. */
 export async function previewMirror(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
   await requireSession();
+  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
   const selector = readSelector(formData);
   if ("error" in selector) return { error: selector.error };
   const source = String(formData.get("source") ?? "").trim();
@@ -135,6 +144,7 @@ export async function previewMirror(_prev: MirrorResult | null, formData: FormDa
 /** Import flow: create the repository, configure the mirror, start the first run. */
 export async function createImport(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
   const session = await requireSession();
+  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
   const organizationId = String(formData.get("organizationId") ?? "");
   const role = await getOrgRole(organizationId);
   if (!role || !WRITER_ROLES.includes(role)) return { error: "You don't have permission to import here." };

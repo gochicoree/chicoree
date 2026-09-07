@@ -195,6 +195,26 @@ export function AccessForm({ access, source, appUrl }: { access: AccessSettings;
             />
           </fieldset>
 
+          <fieldset>
+            <legend className="mb-2 text-[13px] font-medium text-ink">Features</legend>
+            <div className="space-y-3">
+              <Check
+                key={`mirroring-${access.mirroring}`}
+                name="mirroring"
+                label="Mirroring and importing"
+                defaultChecked={access.mirroring}
+                hint="Off: nobody can mirror or import from other registries; existing mirrors stay but stop syncing. A hosted instance keeps its upstream rate limits this way."
+              />
+              <Check
+                key={`proxyCaches-${access.proxyCaches}`}
+                name="proxyCaches"
+                label="Proxy caches"
+                defaultChecked={access.proxyCaches}
+                hint="Off: no organization can become a pull-through cache; existing caches serve what they hold and fetch nothing new."
+              />
+            </div>
+          </fieldset>
+
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" disabled={saving}>
               Save access settings

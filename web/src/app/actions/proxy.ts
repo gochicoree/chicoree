@@ -9,6 +9,12 @@ import { MANAGER_ROLES } from "@/lib/org-roles";
 import { encryptSecret } from "@/lib/crypto";
 import { getOrgProxy, reloadRegistryProxies, splitProxyAuth, testUpstream } from "@/lib/proxy";
 import { PROXY_PRESETS, presetFor, type ProxyPreset } from "@/lib/proxy-shared";
+import { PROXY_CACHES_OFF } from "@/lib/access-shared";
+import { getInstanceSettings } from "@/lib/instance-settings";
+
+async function proxyCachesOn(): Promise<boolean> {
+  return (await getInstanceSettings()).access.proxyCaches;
+}
 
 export interface ProxyActionResult {
   error?: string;
@@ -51,6 +57,7 @@ async function managerContext(organizationId: string) {
 
 /** Create or update the organization's proxy configuration. */
 export async function saveOrgProxy(_prev: ProxyActionResult | null, formData: FormData): Promise<ProxyActionResult> {
+  if (!(await proxyCachesOn())) return { error: PROXY_CACHES_OFF };
   const organizationId = String(formData.get("organizationId") ?? "");
   const ctx = await managerContext(organizationId);
   if ("error" in ctx) return { error: ctx.error };
@@ -108,6 +115,7 @@ export async function removeOrgProxy(formData: FormData): Promise<ProxyActionRes
 
 /** Probe the upstream with the values in the form (stored credentials when the password is blank). */
 export async function testOrgProxy(_prev: ProxyActionResult | null, formData: FormData): Promise<ProxyActionResult> {
+  if (!(await proxyCachesOn())) return { error: PROXY_CACHES_OFF };
   const organizationId = String(formData.get("organizationId") ?? "");
   const ctx = await managerContext(organizationId);
   if ("error" in ctx) return { error: ctx.error };
@@ -132,6 +140,7 @@ export async function testOrgProxy(_prev: ProxyActionResult | null, formData: Fo
  * anonymous pulls work like on the upstream.
  */
 export async function enableProxyForNewOrg(formData: FormData): Promise<ProxyActionResult> {
+  if (!(await proxyCachesOn())) return { error: PROXY_CACHES_OFF };
   const organizationId = String(formData.get("organizationId") ?? "");
   const ctx = await managerContext(organizationId);
   if ("error" in ctx) return { error: ctx.error };

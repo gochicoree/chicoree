@@ -19,7 +19,7 @@ function slugify(name: string): string {
     .replace(/-{2,}/g, "-");
 }
 
-export function NewOrganizationForm() {
+export function NewOrganizationForm({ proxyCaches }: { proxyCaches: boolean }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -95,53 +95,55 @@ export function NewOrganizationForm() {
             />
           </Field>
 
-          <div className="rounded-xl border border-line bg-card-2 p-3.5">
-            <label className="flex items-start gap-2.5 text-sm">
-              <input
-                type="checkbox"
-                checked={proxy}
-                onChange={(e) => setProxy(e.target.checked)}
-                className="mt-0.5 size-4 accent-[var(--action)]"
-              />
-              <span>
-                <span className="flex items-center gap-1.5 font-medium text-ink">
-                  <Globe className="size-3.5 text-accent" /> Make this a proxy cache
+          {proxyCaches && (
+            <div className="rounded-xl border border-line bg-card-2 p-3.5">
+              <label className="flex items-start gap-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={proxy}
+                  onChange={(e) => setProxy(e.target.checked)}
+                  className="mt-0.5 size-4 accent-[var(--action)]"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 font-medium text-ink">
+                    <Globe className="size-3.5 text-accent" /> Make this a proxy cache
+                  </span>
+                  <span className="block text-xs text-ink-2">
+                    Images are fetched from an upstream registry on first pull and served from here afterwards. New
+                    repositories are public so anyone can pull, and nobody can push into the organization.
+                  </span>
                 </span>
-                <span className="block text-xs text-ink-2">
-                  Images are fetched from an upstream registry on first pull and served from here afterwards. New
-                  repositories are public so anyone can pull, and nobody can push into the organization.
-                </span>
-              </span>
-            </label>
-            {proxy && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <Field label="Upstream" htmlFor="proxy-preset" hint={presetDef?.hint}>
-                  <Select
-                    id="proxy-preset"
-                    value={preset}
-                    onChange={(v) => setPreset(v as ProxyPreset)}
-                    options={PROXY_PRESETS.map((p) => ({ value: p.value, label: p.label, description: p.url || "https://…" }))}
-                  />
-                </Field>
-                {preset === "custom" && (
-                  <Field label="Registry API URL" htmlFor="proxy-url">
-                    <Input
-                      id="proxy-url"
-                      required
-                      value={upstreamUrl}
-                      className="font-mono"
-                      placeholder="https://registry.example.com"
-                      onChange={(e) => setUpstreamUrl(e.target.value)}
+              </label>
+              {proxy && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Upstream" htmlFor="proxy-preset" hint={presetDef?.hint}>
+                    <Select
+                      id="proxy-preset"
+                      value={preset}
+                      onChange={(v) => setPreset(v as ProxyPreset)}
+                      options={PROXY_PRESETS.map((p) => ({ value: p.value, label: p.label, description: p.url || "https://…" }))}
                     />
                   </Field>
-                )}
-                <p className="text-xs text-ink-2 sm:col-span-2">
-                  Example: <code className="font-mono">docker pull &lt;registry&gt;/{slug || "<slug>"}/{preset === "dockerhub" ? "nginx:1.27" : "<namespace>/<image>:<tag>"}</code>. Credentials
-                  can be added later under Settings → Proxy.
-                </p>
-              </div>
-            )}
-          </div>
+                  {preset === "custom" && (
+                    <Field label="Registry API URL" htmlFor="proxy-url">
+                      <Input
+                        id="proxy-url"
+                        required
+                        value={upstreamUrl}
+                        className="font-mono"
+                        placeholder="https://registry.example.com"
+                        onChange={(e) => setUpstreamUrl(e.target.value)}
+                      />
+                    </Field>
+                  )}
+                  <p className="text-xs text-ink-2 sm:col-span-2">
+                    Example: <code className="font-mono">docker pull &lt;registry&gt;/{slug || "<slug>"}/{preset === "dockerhub" ? "nginx:1.27" : "<namespace>/<image>:<tag>"}</code>. Credentials
+                    can be added later under Settings → Proxy.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
           <Button type="submit" disabled={busy}>

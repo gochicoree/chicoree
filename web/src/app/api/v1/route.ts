@@ -6,11 +6,12 @@ import { json } from "@/lib/api/respond";
 import { absolute } from "@/lib/api/serialize";
 import { API_BASE, API_CHANGELOG, API_NOTICE, API_REVISION, API_VERSION } from "@/lib/api/version";
 import { getBranding } from "@/lib/branding";
+import { getInstanceSettings } from "@/lib/instance-settings";
 
 export const dynamic = "force-dynamic";
 
 export const GET = route(async () => {
-  const branding = await getBranding();
+  const [branding, settings] = await Promise.all([getBranding(), getInstanceSettings()]);
   return json({
     name: `${branding.instanceName || "Chicorée"} REST API`,
     version: API_VERSION,
@@ -18,6 +19,8 @@ export const GET = route(async () => {
     base: absolute(API_BASE),
     docs: absolute("/docs/api"),
     notice: API_NOTICE,
+    // Instance-wide switches (Administration → Auth providers → Access → Features).
+    features: { mirroring: settings.access.mirroring, proxyCaches: settings.access.proxyCaches },
     changelog: API_CHANGELOG,
     endpoints: API_CATALOG.map((e) => ({
       method: e.method,

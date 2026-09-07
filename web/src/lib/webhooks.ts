@@ -3,11 +3,13 @@
 // recording each attempt. The push payload keeps its original shape; every
 // other event shares the same envelope (event, timestamp, repository, …)
 // with event-specific fields next to it.
+import { ciActorLabel } from "@/lib/ci-auth";
 import { randomUUID, createHmac } from "crypto";
 import { chatMessage, encodeChatMessage } from "./webhook-chat";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  ciIdentitiesTrusted,
   manifests,
   organization,
   repositories,
@@ -109,6 +111,12 @@ export async function resolveActor(actor: string | undefined | null): Promise<We
   if (type === "user" && id) {
     const u = await db.query.user.findFirst({ where: eq(userTable.id, id) });
     return { type, id, name: u?.name ?? null };
+  }
+  if (type === "sa" && id === "ci") {
+    // "sa:ci:<identity id>": a workflow that signed in with its OIDC token.
+    const identityId = actor.slice("sa:ci:".length);
+    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, identityId), columns: { name: true, issuer: true } });
+    return { type: "ci", id: identityId, name: identity ? ciActorLabel(identity.issuer, identity.name) : null };
   }
   if (type === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });

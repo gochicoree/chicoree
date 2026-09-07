@@ -2,6 +2,7 @@
 // organization listings filtered by the caller, and the image document
 // (config, layers, variants, scan, signature, block) the tag page assembles
 // inline. Everything here is scoped by lib/api/access.ts.
+import { ciActorLabel } from "@/lib/ci-auth";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { ciIdentitiesTrusted, manifestSignatures, member, organizationSettings, serviceAccounts, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
@@ -183,8 +184,8 @@ async function pushedByJson(pushedBy: string | null): Promise<{ type: string; id
     return { type: "user", id, label: u?.name ?? "deleted user" };
   }
   if (kind === "sa" && id?.startsWith("ci:")) {
-    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, id.slice(3)), columns: { name: true } });
-    return { type: "ci", id, label: identity ? `CI: ${identity.name}` : "deleted CI identity" };
+    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, id.slice(3)), columns: { name: true, issuer: true } });
+    return { type: "ci", id, label: identity ? ciActorLabel(identity.issuer, identity.name) : "deleted CI identity" };
   }
   if (kind === "sa" && id) {
     const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id), columns: { name: true } });

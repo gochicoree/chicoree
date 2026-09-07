@@ -257,7 +257,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     path: "/",
     group: "General",
     summary: "API index",
-    description: "Version, revision, changelog, the notice about how the API evolves, and the catalog of endpoints. Needs no credentials.",
+    description: "Version, revision, changelog, the notice about how the API evolves, the instance's feature switches (`features`: whether mirroring / importing and proxy caches are available) and the catalog of endpoints. Needs no credentials.",
     access: "public",
     example: {
       name: "Chicorée REST API",
@@ -265,6 +265,7 @@ export const API_CATALOG: ApiEndpoint[] = [
       revision: "2026-09-05.1",
       docs: "https://registry.example.com/docs/api",
       notice: "This API follows the registry's features: …",
+      features: { mirroring: true, proxyCaches: true },
       changelog: [{ revision: "2026-09-05.1", changes: ["Initial release …"] }],
       endpoints: [{ method: "GET", path: "/api/v1/orgs", summary: "List organizations", access: "public" }],
     },

@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { Container, Globe } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getOrgContext } from "@/lib/session";
+import { getInstanceSettings } from "@/lib/instance-settings";
 import { getRepoByPath } from "@/lib/data";
 import { LIBRARY_SLUG } from "@/lib/library-shared";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,7 @@ export default async function OrgLayout({
   const { org, role } = ctx;
   const proxy = await getOrgProxy(org.id);
   const upstream = proxy ? displayHost(proxy.upstreamUrl) : null;
+  const proxyCaches = (await getInstanceSettings()).access.proxyCaches;
 
   return (
     <>
@@ -59,6 +61,7 @@ export default async function OrgLayout({
               {upstream && (
                 <Badge tone="accent" title={proxy?.upstreamUrl}>
                   <Globe className="size-3" /> proxy cache of {upstream}
+                  {!proxyCaches && " (switched off)"}
                 </Badge>
               )}
               {proxy && !proxy.enabled && <Badge tone="neutral">paused</Badge>}

@@ -24,17 +24,21 @@ export function RepositorySetup({
   orgSlug,
   defaultVisibility,
   initialMode,
+  mirroring,
 }: {
   organizationId: string;
   orgSlug: string;
   defaultVisibility: "public" | "private";
   initialMode: SetupMode;
+  /** Mirroring is available on this registry (else only the empty mode is offered). */
+  mirroring: boolean;
 }) {
-  const [mode, setMode] = useState<SetupMode>(initialMode);
+  const [mode, setMode] = useState<SetupMode>(mirroring ? initialMode : "empty");
+  const modes = mirroring ? MODES : MODES.filter((m) => m.value === "empty");
   return (
     <div className="space-y-5">
       <div role="tablist" aria-label="How to create the repository" className="grid gap-2 sm:grid-cols-2">
-        {MODES.map((m) => {
+        {modes.map((m) => {
           const active = mode === m.value;
           return (
             <button

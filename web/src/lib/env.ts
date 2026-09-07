@@ -298,6 +298,17 @@ export const env = {
     return !(v === "false" || v === "0" || v === "off" || v === "no");
   },
 
+  /** Mirroring and importing; MIRRORING_ENABLED=false switches them off (Administration → Auth providers → Access overrides). */
+  get mirroringEnabled() {
+    const v = (process.env.MIRRORING_ENABLED ?? "").trim().toLowerCase();
+    return !(v === "false" || v === "0" || v === "off" || v === "no");
+  },
+  /** Proxy caches; PROXY_CACHES_ENABLED=false switches them off (Administration → Auth providers → Access overrides). */
+  get proxyCachesEnabled() {
+    const v = (process.env.PROXY_CACHES_ENABLED ?? "").trim().toLowerCase();
+    return !(v === "false" || v === "0" || v === "off" || v === "no");
+  },
+
   // Branding defaults (Administration → Branding overrides them).
   get instanceName() {
     return process.env.INSTANCE_NAME ?? "";

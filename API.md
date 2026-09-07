@@ -226,7 +226,7 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 
 ### <a id="get-index"></a>`GET /api/v1`
 
-API index — Version, revision, changelog, the notice about how the API evolves, and the catalog of endpoints. Needs no credentials.
+API index — Version, revision, changelog, the notice about how the API evolves, the instance's feature switches (`features`: whether mirroring / importing and proxy caches are available) and the catalog of endpoints. Needs no credentials.
 
 **Who:** anyone (public repositories only without credentials) · **Service accounts:** no · **Write:** no · **Since:** 2026-09-05.1
 
@@ -239,6 +239,10 @@ Response `200`:
   "revision": "2026-09-05.1",
   "docs": "https://registry.example.com/docs/api",
   "notice": "This API follows the registry's features: …",
+  "features": {
+    "mirroring": true,
+    "proxyCaches": true
+  },
   "changelog": [
     {
       "revision": "2026-09-05.1",
@@ -3818,6 +3822,8 @@ This API follows the registry's features: whenever a feature is added, changed o
 
 ### 2026-09-07.7
 
+- Images and webhooks: a push by a keyless CI identity is named `GitHub Actions · <identity>` (the issuer's label, then the identity name) in `pushedBy.label`, in the activity feed and as the webhook `actor` (type `ci`); it read `CI: <identity>` or fell back to `deleted service account` before.
+- General: `GET /` carries `features` — whether mirroring / importing and proxy caches are available on this instance (Administration → Auth providers → Access → Features, or `MIRRORING_ENABLED` / `PROXY_CACHES_ENABLED`). Off, the import mode, mirror settings and proxy set-up disappear, existing mirrors stop syncing and existing caches fetch nothing new.
 - Repositories: `pullCount` counts image pulls the way Docker Hub does — a GET of an image or index by a client. The registry's own reads, HEAD revalidations, attached artifacts (signatures, attestations, SBOMs) and the platform variant fetched by digest right after its index no longer count, so one `docker pull` is one pull. Existing counts were recomputed from the event log.
 
 ### 2026-09-07.6

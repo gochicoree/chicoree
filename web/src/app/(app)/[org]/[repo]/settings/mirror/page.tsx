@@ -2,6 +2,8 @@ import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { mirrorRuns, mirrors } from "@/db/schema";
 import { PAGE_SIZES, pageParam, paginatedQuery } from "@/lib/paginate-shared";
+import { Card, CardHeader } from "@/components/ui/card";
+import { getInstanceSettings } from "@/lib/instance-settings";
 import { MirrorManager, type MirrorView } from "../mirror-manager";
 import { repoSettingsContext } from "../context";
 
@@ -15,6 +17,14 @@ export default async function RepoMirrorPage({
   const { repo, base } = await repoSettingsContext(params);
   const query = await searchParams;
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repo.id) });
+  const mirroring = (await getInstanceSettings()).access.mirroring;
+  if (!mirroring && !mirror) {
+    return (
+      <Card>
+        <CardHeader eyebrow="Mirror" title="Mirroring is switched off on this registry" description="Repositories here cannot mirror or import from other registries." />
+      </Card>
+    );
+  }
   let view: MirrorView | null = null;
   if (mirror) {
     let running = false;
@@ -65,5 +75,5 @@ export default async function RepoMirrorPage({
       })),
     };
   }
-  return <MirrorManager repositoryId={repo.id} mirror={view} basePath={`${base}/mirror`} params={query} />;
+  return <MirrorManager repositoryId={repo.id} mirror={view} basePath={`${base}/mirror`} params={query} disabled={!mirroring} />;
 }

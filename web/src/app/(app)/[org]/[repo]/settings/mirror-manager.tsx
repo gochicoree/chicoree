@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { useRouter } from "next/navigation";
 import { GitMerge, Loader2, Play, Trash2 } from "lucide-react";
 import { deleteMirror, previewMirror, runMirrorNow, saveMirror, type MirrorResult } from "@/app/actions/mirrors";
+import { MIRRORING_OFF } from "@/lib/access-shared";
 import type { MirrorLogEntry, Relabel, TagSelector } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,9 +69,12 @@ export function MirrorManager({
   mirror,
   basePath,
   params,
+  disabled = false,
 }: {
   repositoryId: string;
   mirror: MirrorView | null;
+  /** Mirroring is switched off on this registry: no form, the mirror stays but does not sync. */
+  disabled?: boolean;
   /** Path the run history pages link to. */
   basePath: string;
   /** The page's other search parameters, kept across page changes. */
@@ -138,63 +142,67 @@ export function MirrorManager({
         }
       />
       <CardBody>
-        <form
-          ref={formRef}
-          className="grid gap-4 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(action);
-          }}
-        >
-          <input type="hidden" name="repositoryId" value={repositoryId} />
-          <MirrorFormFields
-            source={mirror?.source}
-            selector={mirror?.selector}
-            relabel={mirror?.relabel}
-            hasStoredAuth={mirror?.hasAuth}
-          />
-          <label className="flex items-center gap-2 text-sm text-ink-2">
-            <input type="checkbox" name="overwrite" defaultChecked={mirror?.overwrite ?? true} className="size-4 accent-[var(--action)]" />
-            Re-import changed tags
-          </label>
-          {mirror && (
+        {disabled ? (
+          <p className="text-sm text-ink-3">{MIRRORING_OFF} The mirror stays as it is but does not sync.</p>
+        ) : (
+          <form
+            ref={formRef}
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(action);
+            }}
+          >
+            <input type="hidden" name="repositoryId" value={repositoryId} />
+            <MirrorFormFields
+              source={mirror?.source}
+              selector={mirror?.selector}
+              relabel={mirror?.relabel}
+              hasStoredAuth={mirror?.hasAuth}
+            />
             <label className="flex items-center gap-2 text-sm text-ink-2">
-              <input type="checkbox" name="enabled" value="on" defaultChecked={mirror.enabled} className="size-4 accent-[var(--action)]" />
-              <input type="hidden" name="enabled" value="off" />
-              Included in scheduled syncs
+              <input type="checkbox" name="overwrite" defaultChecked={mirror?.overwrite ?? true} className="size-4 accent-[var(--action)]" />
+              Re-import changed tags
             </label>
-          )}
-          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <Button type="submit" disabled={pending}>
-              <GitMerge className="size-4" /> {mirror ? "Save mirror" : "Configure mirror"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>
-              {previewing ? "Checking…" : "Preview matching tags"}
-            </Button>
             {mirror && (
-              <Button type="button" variant="accent" onClick={syncNow} disabled={busy} className="sm:ml-auto">
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
-                {busy ? "Syncing…" : "Sync now"}
+              <label className="flex items-center gap-2 text-sm text-ink-2">
+                <input type="checkbox" name="enabled" value="on" defaultChecked={mirror.enabled} className="size-4 accent-[var(--action)]" />
+                <input type="hidden" name="enabled" value="off" />
+                Included in scheduled syncs
+              </label>
+            )}
+            <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+              <Button type="submit" disabled={pending}>
+                <GitMerge className="size-4" /> {mirror ? "Save mirror" : "Configure mirror"}
               </Button>
-            )}
-            {state?.error && <span className="text-sm text-danger">{state.error}</span>}
-            {preview?.error && <span className="text-sm text-danger">{preview.error}</span>}
-            {preview?.preview && (
-              <span className="text-sm text-ink-2">
-                {preview.preview.matched.length} of {preview.preview.total} tags match
-              </span>
-            )}
-          </div>
-          {preview?.preview && preview.preview.matched.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 sm:col-span-2">
-              {preview.preview.matched.map((t) => (
-                <span key={t} className="rounded-md bg-card-2 px-2 py-0.5 font-mono text-xs">
-                  {t}
+              <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>
+                {previewing ? "Checking…" : "Preview matching tags"}
+              </Button>
+              {mirror && (
+                <Button type="button" variant="accent" onClick={syncNow} disabled={busy} className="sm:ml-auto">
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+                  {busy ? "Syncing…" : "Sync now"}
+                </Button>
+              )}
+              {state?.error && <span className="text-sm text-danger">{state.error}</span>}
+              {preview?.error && <span className="text-sm text-danger">{preview.error}</span>}
+              {preview?.preview && (
+                <span className="text-sm text-ink-2">
+                  {preview.preview.matched.length} of {preview.preview.total} tags match
                 </span>
-              ))}
+              )}
             </div>
+            {preview?.preview && preview.preview.matched.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 sm:col-span-2">
+                {preview.preview.matched.map((t) => (
+                  <span key={t} className="rounded-md bg-card-2 px-2 py-0.5 font-mono text-xs">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </form>
           )}
-        </form>
 
         {mirror && (
           <div className="mt-6 border-t border-line pt-4">

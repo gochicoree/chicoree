@@ -23,7 +23,7 @@ export default async function NewOrganizationPage() {
         description="Images are named <slug>/<repository>."
       />
       {allowed ? (
-        <NewOrganizationForm />
+        <NewOrganizationForm proxyCaches={settings.access.proxyCaches} />
       ) : (
         <Card>
           <CardBody className="space-y-3">

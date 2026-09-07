@@ -2,6 +2,7 @@
 // local repository, relabelling them on the way. Content flows source →
 // this process → registryd (as a normal authenticated client), so quotas and
 // dedup apply exactly as for a docker push.
+import { getInstanceSettings } from "@/lib/instance-settings";
 import http from "http";
 import https from "https";
 import { Readable } from "stream";
@@ -455,6 +456,8 @@ function describeError(err: unknown): string {
 
 /** Run every enabled mirror (used by the mirror-sync job). */
 export async function runAllMirrors(): Promise<{ mirrors: number; succeeded: number; failed: number }> {
+  // Switched off instance-wide (Administration → Auth providers → Access): nothing syncs.
+  if (!(await getInstanceSettings()).access.mirroring) return { mirrors: 0, succeeded: 0, failed: 0 };
   const enabled = await db.query.mirrors.findMany({ where: eq(mirrors.enabled, true) });
   let succeeded = 0;
   let failed = 0;
