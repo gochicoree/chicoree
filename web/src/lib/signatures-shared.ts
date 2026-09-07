@@ -281,6 +281,39 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
+export interface SbomPackage {
+  name: string;
+  version: string | null;
+  license: string | null;
+}
+
+/** Every package of an SPDX 2.x JSON or CycloneDX JSON document, in document order. */
+export function sbomPackages(doc: unknown): SbomPackage[] {
+  if (!doc || typeof doc !== "object") return [];
+  const o = doc as Record<string, unknown>;
+  if (typeof o.spdxVersion === "string" || typeof o.SPDXID === "string") {
+    const packages = Array.isArray(o.packages) ? (o.packages as Record<string, unknown>[]) : [];
+    return packages.map((p) => ({
+      name: str(p.name) ?? "unnamed",
+      version: str(p.versionInfo),
+      license: str(p.licenseConcluded) ?? str(p.licenseDeclared),
+    }));
+  }
+  if (o.bomFormat === "CycloneDX") {
+    const components = Array.isArray(o.components) ? (o.components as Record<string, unknown>[]) : [];
+    return components.map((c) => {
+      const licenses = Array.isArray(c.licenses) ? (c.licenses as Record<string, unknown>[]) : [];
+      const first = licenses[0]?.license as Record<string, unknown> | undefined;
+      return {
+        name: str(c.name) ?? "unnamed",
+        version: str(c.version),
+        license: str(first?.id) ?? str(first?.name) ?? str(licenses[0]?.expression),
+      };
+    });
+  }
+  return [];
+}
+
 /** Package count and a preview of components for SPDX 2.x JSON or CycloneDX JSON. */
 export function summarizeSbom(doc: unknown): SbomSummary | null {
   if (!doc || typeof doc !== "object") return null;
@@ -297,14 +330,9 @@ export function summarizeSbom(doc: unknown): SbomSummary | null {
       packageCount: packages.length,
       // The first entry describes the image itself, which the card already
       // names above the list; showing it again wastes a slot.
-      components: packages
-        .filter((p) => str(p.name) !== str(o.name))
-        .slice(0, SBOM_COMPONENT_PREVIEW)
-        .map((p) => ({
-          name: str(p.name) ?? "unnamed",
-          version: str(p.versionInfo),
-          license: str(p.licenseConcluded) ?? str(p.licenseDeclared),
-        })),
+      components: sbomPackages(o)
+        .filter((p) => p.name !== str(o.name))
+        .slice(0, SBOM_COMPONENT_PREVIEW),
       tool,
       createdAt: str(info.created),
     };
@@ -329,15 +357,7 @@ export function summarizeSbom(doc: unknown): SbomSummary | null {
       name: rootName ? (str(root.version) ? `${rootName}:${root.version}` : rootName) : null,
       specVersion: str(o.specVersion) ? `CycloneDX ${o.specVersion}` : null,
       packageCount: components.length,
-      components: components.slice(0, SBOM_COMPONENT_PREVIEW).map((c) => {
-        const licenses = Array.isArray(c.licenses) ? (c.licenses as Record<string, unknown>[]) : [];
-        const first = licenses[0]?.license as Record<string, unknown> | undefined;
-        return {
-          name: str(c.name) ?? "unnamed",
-          version: str(c.version),
-          license: str(first?.id) ?? str(first?.name) ?? str(licenses[0]?.expression),
-        };
-      }),
+      components: sbomPackages(o).slice(0, SBOM_COMPONENT_PREVIEW),
       tool,
       createdAt: str(meta.timestamp),
     };

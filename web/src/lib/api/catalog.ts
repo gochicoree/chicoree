@@ -1320,6 +1320,27 @@ export const API_CATALOG: ApiEndpoint[] = [
     since: "2026-09-05.1",
   },
 
+  {
+    method: "GET",
+    path: "/repos/{org}/{repo}/artifacts/{digest}/packages",
+    group: "Security",
+    summary: "Packages of an SBOM",
+    description: "One page of the packages an SBOM artifact lists (SPDX or CycloneDX), sorted by name, with an optional substring filter on name, version and license. `digest` is the SBOM artifact's manifest digest as the artifacts endpoint lists it. The document is parsed once and cached, so paging through a large SBOM is cheap.",
+    access: "public",
+    serviceAccounts: true,
+    params: [
+      ORG_PARAM,
+      REPO_PARAM,
+      { name: "digest", in: "path", type: "string", required: true, description: "The SBOM artifact's manifest digest, `sha256:<64 hex>`." },
+      { name: "blob", in: "query", type: "string", description: "For a BuildKit attestation entry (`unknown/unknown`), the layer that holds the SBOM statement; default: the manifest's first layer." },
+      { name: "q", in: "query", type: "string", description: "Filter by name, version or license (substring, case-insensitive)." },
+      { name: "page", in: "query", type: "integer", description: "Page number, from 1." },
+      { name: "per_page", in: "query", type: "integer", description: "Rows per page, 1–500 (default 100)." },
+    ],
+    example: { items: [{ name: "alpine-baselayout", version: "3.6.5-r0", license: "GPL-2.0-only" }, { name: "busybox", version: "1.37.0-r12", license: "GPL-2.0-only" }], page: 1, perPage: 100, total: 412, pages: 5 },
+    since: "2026-09-07.5",
+  },
+
   // --- Search -------------------------------------------------------------
   {
     method: "GET",

@@ -190,6 +190,7 @@ Some errors add a `details` object (the offending `field`, or `queued: false` wh
 | --- | --- | --- |
 | [`GET /api/v1/repos/{org}/{repo}/manifests/{digest}/vulnerabilities`](#get-repos-org-repo-manifests-digest-vulnerabilities) | Vulnerabilities of an image | anyone |
 | [`GET /api/v1/repos/{org}/{repo}/manifests/{digest}/artifacts`](#get-repos-org-repo-manifests-digest-artifacts) | Signatures, SBOMs and provenance of an image | anyone |
+| [`GET /api/v1/repos/{org}/{repo}/artifacts/{digest}/packages`](#get-repos-org-repo-artifacts-digest-packages) | Packages of an SBOM | anyone |
 
 **Search**
 
@@ -3199,6 +3200,50 @@ curl \
   "https://registry.example.com/api/v1/repos/acme/api/manifests/sha256:5f2b…/artifacts"
 ~~~
 
+### <a id="get-repos-org-repo-artifacts-digest-packages"></a>`GET /api/v1/repos/{org}/{repo}/artifacts/{digest}/packages`
+
+Packages of an SBOM — One page of the packages an SBOM artifact lists (SPDX or CycloneDX), sorted by name, with an optional substring filter on name, version and license. `digest` is the SBOM artifact's manifest digest as the artifacts endpoint lists it. The document is parsed once and cached, so paging through a large SBOM is cheap.
+
+**Who:** anyone (public repositories only without credentials) · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-07.5
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
+| `repo` | path | string | yes | Repository name. Nested names of proxy caches (`bitnami/redis`) are one segment with the slash encoded as `%2F`. |
+| `digest` | path | string | yes | The SBOM artifact's manifest digest, `sha256:<64 hex>`. |
+| `blob` | query | string |  | For a BuildKit attestation entry (`unknown/unknown`), the layer that holds the SBOM statement; default: the manifest's first layer. |
+| `q` | query | string |  | Filter by name, version or license (substring, case-insensitive). |
+| `page` | query | integer |  | Page number, from 1. |
+| `per_page` | query | integer |  | Rows per page, 1–500 (default 100). |
+
+Response `200`:
+
+~~~json
+{
+  "items": [
+    {
+      "name": "alpine-baselayout",
+      "version": "3.6.5-r0",
+      "license": "GPL-2.0-only"
+    },
+    {
+      "name": "busybox",
+      "version": "1.37.0-r12",
+      "license": "GPL-2.0-only"
+    }
+  ],
+  "page": 1,
+  "perPage": 100,
+  "total": 412,
+  "pages": 5
+}
+~~~
+
+~~~sh
+curl \
+  "https://registry.example.com/api/v1/repos/acme/api/artifacts/sha256:5f2b…/packages"
+~~~
+
 ## Search
 
 
@@ -3773,6 +3818,7 @@ This API follows the registry's features: whenever a feature is added, changed o
 
 ### 2026-09-07.5
 
+- Security: `GET /repos/{org}/{repo}/artifacts/{digest}/packages` pages through the packages of an SBOM artifact (`q`, `page`, `per_page` up to 500), sorted by name; the tag page's package dialog uses the same list instead of loading the whole document.
 - Keyless CI: GitHub now writes the owner's and the repository's ids into the token subject (`repo:owner@123/repo@456:ref:…`); `POST /auth/exchange` matches trusted identities written with or without the ids, so subjects documented as `repo:owner/repo:ref:…` keep working.
 
 ### 2026-09-07.4

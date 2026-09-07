@@ -333,7 +333,7 @@ export function AttestationsPanel({
                   <SbomPackages
                     preview={s.sbom.components.filter((c) => c.name !== s.sbom?.name)}
                     packageCount={s.sbom.packageCount}
-                    href={s.downloadHref}
+                    packagesHref={`${s.downloadHref}/packages`}
                     label={s.sbom.name ?? ""}
                   />
                 )}

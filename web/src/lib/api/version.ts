@@ -22,6 +22,7 @@ export const API_CHANGELOG: ApiChange[] = [
   {
     revision: "2026-09-07.5",
     changes: [
+      "Security: `GET /repos/{org}/{repo}/artifacts/{digest}/packages` pages through the packages of an SBOM artifact (`q`, `page`, `per_page` up to 500), sorted by name; the tag page's package dialog uses the same list instead of loading the whole document.",
       "Keyless CI: GitHub now writes the owner's and the repository's ids into the token subject (`repo:owner@123/repo@456:ref:…`); `POST /auth/exchange` matches trusted identities written with or without the ids, so subjects documented as `repo:owner/repo:ref:…` keep working.",
     ],
   },
