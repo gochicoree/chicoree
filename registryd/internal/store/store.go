@@ -187,6 +187,21 @@ func (s *Store) BlobManifestRefs(ctx context.Context, repoID, digest string) (in
 	return n, err
 }
 
+// IsIndexMember reports whether an index of the repository lists the digest
+// as a child: a platform variant or an attestation entry that a client fetches
+// by digest right after the index.
+func (s *Store) IsIndexMember(ctx context.Context, repoID, digest string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM manifest_refs r
+			JOIN manifests m ON m.repository_id = r.repository_id AND m.digest = r.manifest_digest
+			WHERE r.repository_id = $1 AND r.ref_digest = $2
+			  AND m.media_type IN ('application/vnd.oci.image.index.v1+json', 'application/vnd.docker.distribution.manifest.list.v2+json'))`,
+		repoID, digest).Scan(&ok)
+	return ok, err
+}
+
 func (s *Store) TouchRepository(ctx context.Context, repoID string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE repositories SET updated_at = now() WHERE id = $1`, repoID)
 	return err

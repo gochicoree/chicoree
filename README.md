@@ -1881,6 +1881,15 @@ client IP and user agent.
 
 ## Monitoring
 
+**Pull counts** mean image pulls, the way Docker Hub counts them: a `GET` of
+an image or index by a client. A `HEAD` that only revalidates a warm cache,
+the registry's own reads (the web app, scan workers), attached artifacts
+(signatures, attestations, SBOMs) and the platform variant a client fetches
+by digest right after its index do not count, so one `docker pull` of a
+multi-arch image is one pull — and a release pipeline that pushes, signs and
+attests an image adds only its own manifest reads. The same rule decides
+which pulls the activity feeds show.
+
 *Administration → Metrics* shows traffic per day, the busiest and largest
 repositories, storage per organization, scan results, account activity and
 the outcome of mirrors, webhooks and jobs.

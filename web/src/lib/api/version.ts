@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.7",
+    changes: [
+      "Repositories: `pullCount` counts image pulls the way Docker Hub does — a GET of an image or index by a client. The registry's own reads, HEAD revalidations, attached artifacts (signatures, attestations, SBOMs) and the platform variant fetched by digest right after its index no longer count, so one `docker pull` is one pull. Existing counts were recomputed from the event log.",
+    ],
+  },
+  {
     revision: "2026-09-07.6",
     changes: [
       "Artifacts: BuildKit's attestation entries (`unknown/unknown` index members) come back with `format: \"in-toto\"` and no `verification` — they are unsigned statements, not envelopes; previously they were reported as `dsse` with `invalid: no DSSE envelope payload`. Cached classifications are corrected on the next read.",

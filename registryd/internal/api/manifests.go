@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"registryd/internal/hooks"
@@ -101,10 +102,21 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 	}
 	s.countTraffic(repo.ID, traffic.Delta{PullBytes: int64(written), ManifestPulls: 1})
 
-	// A pull is any manifest request, GET or HEAD — clients with warm caches
-	// only HEAD to revalidate, and that still counts as image usage (the same
-	// semantics Docker Hub uses).
 	repoID := repo.ID
+	if px != nil && !isDigest(ref) {
+		s.noteProxyPull(repoID, ref)
+	}
+	if !countsAsPull(r, rc, m, ref) {
+		return
+	}
+	// The platform variant (or attestation entry) a client fetches by digest
+	// right after its index belongs to the same pull: one docker pull of a
+	// multi-arch image is one pull.
+	if isDigest(ref) {
+		if member, err := s.store.IsIndexMember(r.Context(), repoID, digest); err == nil && member {
+			return
+		}
+	}
 	s.recordEvent(&store.Event{
 		RepositoryID: repoID, Type: "pull",
 		ActorType: rc.identity.ActorType(), ActorID: rc.identity.ActorID(),
@@ -115,9 +127,27 @@ func (s *Server) handleManifestGet(w http.ResponseWriter, r *http.Request, rc *r
 		defer cancel()
 		_ = s.store.IncrementPullCount(ctx, repoID)
 	}()
-	if px != nil && !isDigest(ref) {
-		s.noteProxyPull(repoID, ref)
+}
+
+// BuildKit's attestation entries in an image index (SBOM, provenance).
+const buildkitAttestationType = "application/vnd.docker.attestation.manifest.v1+json"
+
+// cosign's tag convention for signatures, attestations and SBOMs.
+var cosignTagRe = regexp.MustCompile("^sha256-[0-9a-f]{64}\\.(sig|att|sbom)$")
+
+// countsAsPull says whether a manifest request is a pull in the sense of the
+// repository's pull count — the semantics Docker Hub uses: a GET (a HEAD only
+// revalidates a warm cache) of an image or index by a client. The registry's
+// own reads (the web app, scan workers) and attached artifacts — referrers,
+// cosign tags, BuildKit's attestation entries — are not pulls of the image.
+func countsAsPull(r *http.Request, rc *reqCtx, m *store.Manifest, ref string) bool {
+	if r.Method != http.MethodGet || rc.identity.Subject == "user:system" {
+		return false
 	}
+	if m.SubjectDigest != "" || m.ArtifactType == buildkitAttestationType || cosignTagRe.MatchString(ref) {
+		return false
+	}
+	return true
 }
 
 func tagOrEmpty(ref string) string {
