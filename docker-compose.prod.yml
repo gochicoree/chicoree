@@ -1,7 +1,8 @@
 # Single-host production stack. Traefik terminates TLS with Let's Encrypt and
 # serves everything on ONE hostname (DOMAIN): /v2 goes to registryd, the rest
-# to the web app. No bind mounts from the repo: the web container generates
-# the token key pair on first start (token-keys volume).
+# to the web app. The only bind mount from the repo is Traefik's dynamic
+# configuration (deploy/traefik); the web container generates the token key
+# pair on first start (token-keys volume).
 #
 #   scripts/deploy.sh user@host            # rsync + compose up on a server
 #   docker compose -f docker-compose.prod.yml up -d --build   # on the host
@@ -9,7 +10,8 @@
 # Required in .env: DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD, AUTH_SECRET,
 # WEBHOOK_SECRET (scripts/deploy.sh creates it with fresh secrets).
 # Optional: REGISTRY_DATA_DIR=/path/on/big/disk keeps image layers off the
-# root filesystem (a named volume is used when unset).
+# root filesystem (a named volume is used when unset); LEGACY_DOMAIN keeps a
+# previous hostname alive after a move (see deploy/traefik/dynamic.yml).
 
 # Container logs are capped: Clair alone can write gigabytes of warnings.
 x-logging: &logging
@@ -26,6 +28,9 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      # Shared middlewares and the LEGACY_DOMAIN routers (deploy/traefik/dynamic.yml).
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -39,12 +44,17 @@ services:
       # Point at Let's Encrypt staging while testing to stay under rate limits.
       - --certificatesresolvers.le.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
       - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+    environment:
+      # Read by the dynamic configuration template.
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      LEGACY_DOMAIN: ${LEGACY_DOMAIN:-}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-acme:/letsencrypt
+      - ./deploy/traefik:/etc/traefik/dynamic:ro
 
   postgres:
     image: postgres:17-alpine
@@ -151,13 +161,9 @@ services:
       - traefik.http.routers.web.rule=Host(`${DOMAIN}`)
       - traefik.http.routers.web.entrypoints=websecure
       - traefik.http.routers.web.tls.certresolver=le
-      - traefik.http.routers.web.middlewares=secure-headers@docker
+      # secure-headers (HSTS, nosniff) is defined in deploy/traefik/dynamic.yml.
+      - traefik.http.routers.web.middlewares=secure-headers@file
       - traefik.http.services.web.loadbalancer.server.port=3000
-      # HSTS and nosniff for everything behind this host, the registry API
-      # included (the web app sets its own CSP and the rest per response).
-      - traefik.http.middlewares.secure-headers.headers.stsSeconds=31536000
-      - traefik.http.middlewares.secure-headers.headers.stsIncludeSubdomains=true
-      - traefik.http.middlewares.secure-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/sign-in"]
       interval: 10s
@@ -223,7 +229,7 @@ services:
       - traefik.http.routers.registry.priority=100
       - traefik.http.routers.registry.entrypoints=websecure
       - traefik.http.routers.registry.tls.certresolver=le
-      - traefik.http.routers.registry.middlewares=secure-headers@docker
+      - traefik.http.routers.registry.middlewares=secure-headers@file
       - traefik.http.services.registry.loadbalancer.server.port=5000
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5000/internal/v1/healthz"]
