@@ -24,7 +24,7 @@ const CI_AUDIENCE = "chicoree-ci";
 
 /** Well-known issuers offered in the form; any https issuer works. */
 export const CI_ISSUERS: { value: string; label: string; subjectHint: string }[] = [
-  { value: "https://token.actions.githubusercontent.com", label: "GitHub Actions", subjectHint: "repo:owner/repo:ref:refs/heads/main — or repo:owner/repo:* for any ref" },
+  { value: "https://token.actions.githubusercontent.com", label: "GitHub Actions", subjectHint: "repo:owner/repo:ref:refs/heads/main — or repo:owner/repo:* for any ref (GitHub's own form with ids, repo:owner@123/repo@456:…, matches too)" },
   { value: "https://gitlab.com", label: "GitLab.com", subjectHint: "project_path:group/project:ref_type:branch:ref:main" },
 ];
 
@@ -94,6 +94,16 @@ export async function verifyOidcToken(token: string): Promise<VerifiedOidc | { e
   }
 }
 
+/**
+ * GitHub writes the owner's and the repository's numeric id into the subject
+ * (`repo:acme@123/api@456:ref:refs/heads/main`); an identity written either
+ * with or without the ids should match, so both spellings are tried.
+ */
+export function subjectSpellings(subject: string): string[] {
+  const plain = subject.replace(/^repo:([^/:@]+)@\d+\/([^:@]+)@\d+:/, "repo:$1/$2:");
+  return plain === subject ? [subject] : [subject, plain];
+}
+
 /** Trusted identities the verified token satisfies (issuer equal, subject pattern matched), oldest first. */
 export async function matchingIdentities(v: VerifiedOidc, organizationSlug?: string | null): Promise<(CiIdentityRow & { organizationSlug: string })[]> {
   const rows = await db
@@ -102,7 +112,8 @@ export async function matchingIdentities(v: VerifiedOidc, organizationSlug?: str
     .innerJoin(organization, eq(organization.id, ciIdentitiesTrusted.organizationId))
     .where(organizationSlug ? and(eq(ciIdentitiesTrusted.issuer, v.issuer), eq(organization.slug, organizationSlug)) : eq(ciIdentitiesTrusted.issuer, v.issuer))
     .orderBy(ciIdentitiesTrusted.createdAt);
-  return rows.filter((r) => subjectMatches(r.identity.subject, v.subject)).map((r) => ({ ...r.identity, organizationSlug: r.organizationSlug }));
+  const spellings = subjectSpellings(v.subject);
+  return rows.filter((r) => spellings.some((s) => subjectMatches(r.identity.subject, s))).map((r) => ({ ...r.identity, organizationSlug: r.organizationSlug }));
 }
 
 // --- Minting and identifying registry credentials -------------------------------

@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.5",
+    changes: [
+      "Keyless CI: GitHub now writes the owner's and the repository's ids into the token subject (`repo:owner@123/repo@456:ref:…`); `POST /auth/exchange` matches trusted identities written with or without the ids, so subjects documented as `repo:owner/repo:ref:…` keep working.",
+    ],
+  },
+  {
     revision: "2026-09-07.4",
     changes: [
       "Tags: `sizeBytes` and `layerCount` of a multi-arch tag are those of its first platform variant the registry holds (previously null), and the new `sizePlatform` names that platform (`linux/amd64`); it is null for single-platform images. The tag list and the untagged list on the repository page show the same figures.",

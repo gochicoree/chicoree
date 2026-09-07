@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-07.4` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-07.5` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -39,7 +39,7 @@ curl -sS -H "Content-Type: application/json" -d "{"token": "$OIDC"}" https://reg
 # → { "token": "chc_ci_…", "expiresAt": "…", "dockerLogin": { "registry": "registry.example.com", "username": "ci", "password": "chc_ci_…" } }
 ~~~
 
-The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is `https://registry.example.com` or `registry.example.com`, and matches the subject; GitHub subjects look like `repo:owner/repo:ref:refs/heads/main`, GitLab's like `project_path:group/project:ref_type:branch:ref:main`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The `.github/actions/login` action in the repository does all of this and runs `docker login`; `.github/actions/build-push` (build, push with SBOM and provenance, sign, attest) and the reusable `release-images.yml` workflow build on it — see the README's GitHub Actions section.
+The exchange verifies the token against the issuer's published keys (only issuers some organization trusts are contacted), checks that the audience is `https://registry.example.com` or `registry.example.com`, and matches the subject; GitHub subjects look like `repo:owner/repo:ref:refs/heads/main` (the token itself carries ids, `repo:owner@123/repo@456:ref:…`; both spellings match), GitLab's like `project_path:group/project:ref_type:branch:ref:main`. The credential is a signed token with no stored state: deleting the identity revokes it at once. The `.github/actions/login` action in the repository does all of this and runs `docker login`; `.github/actions/build-push` (build, push with SBOM and provenance, sign, attest) and the reusable `release-images.yml` workflow build on it — see the README's GitHub Actions section.
 
 Administrators can switch the whole API off (*Administration → Auth providers → Access*, default from `API_ENABLED`): every endpoint, the index and the OpenAPI document then answer `403` with code `api_disabled`. docker login and the jobs API are not affected.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.4`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.5`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -3770,6 +3770,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-07.5
+
+- Keyless CI: GitHub now writes the owner's and the repository's ids into the token subject (`repo:owner@123/repo@456:ref:…`); `POST /auth/exchange` matches trusted identities written with or without the ids, so subjects documented as `repo:owner/repo:ref:…` keep working.
 
 ### 2026-09-07.4
 
