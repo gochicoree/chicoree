@@ -104,3 +104,45 @@ func ValidObjectKey(key string) bool {
 	}
 	return true
 }
+
+// BlobsPrefix is the key prefix under which every driver keeps blob content;
+// ListObjects(BlobsPrefix) on an ObjectStore enumerates the blob tree.
+const BlobsPrefix = "blobs/"
+
+// DigestFromPath is the inverse of BlobPath: it turns a storage key such as
+// blobs/sha256/ab/abcdef… back into "sha256:abcdef…". Keys that are not a
+// well-formed blob path (temporary files, foreign objects, a hex part that
+// does not match its directory) yield ok == false.
+func DigestFromPath(key string) (digest string, ok bool) {
+	parts := strings.Split(key, "/")
+	if len(parts) != 4 || parts[0] != "blobs" {
+		return "", false
+	}
+	algo, prefix, hex := parts[1], parts[2], parts[3]
+	if algo == "" || len(hex) < 3 || !strings.HasPrefix(hex, prefix) || len(prefix) != 2 {
+		return "", false
+	}
+	for _, c := range hex {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", false
+		}
+	}
+	return algo + ":" + hex, true
+}
+
+// Describer is an optional driver interface that names where the driver
+// keeps its data (a directory, a bucket, a storage zone) for logs, the
+// status endpoint and the storage tools.
+type Describer interface {
+	Describe() string
+}
+
+// Describe returns the driver's location when it has one, else its name.
+func Describe(d Driver) string {
+	if dd, ok := d.(Describer); ok {
+		if s := dd.Describe(); s != "" {
+			return s
+		}
+	}
+	return d.Name()
+}

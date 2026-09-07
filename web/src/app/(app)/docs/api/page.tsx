@@ -10,13 +10,22 @@ import { apiDocsMarkdown } from "@/lib/api/docs";
 import { renderApiDocs } from "@/lib/api/docs-html";
 import { API_BASE, API_NOTICE, API_REVISION } from "@/lib/api/version";
 import { getBranding } from "@/lib/branding";
+import { shareMetadata } from "@/lib/share";
 import { env } from "@/lib/env";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { notFound } from "next/navigation";
 import { ApiBrowser } from "./api-browser";
 import "@/components/readme/readme.css";
 
-export const metadata: Metadata = { title: "REST API" };
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  return shareMetadata({
+    title: "REST API",
+    description: `The REST API of ${b.instanceName}: organizations, repositories, tags, images, scans, signatures, webhooks and jobs, with example responses and an OpenAPI document.`,
+    url: "/docs/api",
+    withSiteName: true,
+  });
+}
 
 /**
  * The API documentation: an interactive browser over the endpoint catalog

@@ -254,3 +254,6 @@ func (d *Driver) ListObjects(_ context.Context, prefix string) ([]storage.Object
 
 // Root returns the directory the driver stores under.
 func (d *Driver) Root() string { return d.root }
+
+// Describe implements storage.Describer.
+func (d *Driver) Describe() string { return "filesystem " + d.root }

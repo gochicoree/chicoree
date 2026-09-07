@@ -107,7 +107,7 @@ async function checkRegistry(probe: RegistryProbe, status: RegistryStatus | null
   }
   details.push(
     { label: "Version", value: `${status.version} (${status.goVersion})` },
-    { label: "Storage driver", value: status.storage },
+    { label: "Storage", value: status.storageLocation || status.storage },
     { label: "Uptime", value: `${duration(status.uptimeSeconds)} (since ${status.startedAt})` },
     { label: "Blobs", value: status.blobCount < 0 ? "unknown" : `${status.blobCount.toLocaleString("en-US")} · ${formatBytes(status.blobBytes)} physical` },
     {

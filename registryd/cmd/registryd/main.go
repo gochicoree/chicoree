@@ -29,22 +29,37 @@ import (
 	_ "registryd/internal/storage/s3"
 )
 
+const usage = `Usage: registryd [command]
+
+  (none)     serve the registry (the container entrypoint)
+  plugins    list the storage backends and their options
+  storage    blob tree tools: "registryd storage migrate", "registryd storage verify"
+  help       this text
+`
+
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "plugins" {
-		printPlugins()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "plugins":
+			printPlugins()
+			return
+		case "storage":
+			os.Exit(runStorage(os.Args[2:]))
+		case "help", "-h", "--help":
+			fmt.Print(usage)
+			return
+		case "serve":
+		default:
+			fmt.Fprintf(os.Stderr, "registryd: unknown command %q\n\n%s", os.Args[1], usage)
+			os.Exit(2)
+		}
 	}
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("configuration error", "err", err)
 		os.Exit(1)
 	}
-
-	var handler slog.Handler = slog.NewTextHandler(os.Stdout, nil)
-	if cfg.LogFormat == "json" {
-		handler = slog.NewJSONHandler(os.Stdout, nil)
-	}
-	slog.SetDefault(slog.New(handler))
+	slog.SetDefault(newLogger(cfg.LogFormat, os.Stdout))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

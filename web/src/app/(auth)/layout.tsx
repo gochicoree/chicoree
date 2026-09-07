@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandLockup } from "@/components/brand";
 import { AnnouncementBar } from "@/components/shell/announcement-bar";
 import { getBranding } from "@/lib/branding";
 import { announcementDismissible, announcementHash } from "@/lib/branding-shared";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 // Auth screens: a quiet centered column with the wordmark above the card.
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {

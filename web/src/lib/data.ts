@@ -15,6 +15,7 @@ import type { SeveritySummary } from "@/components/severity";
 import { PAGE_SIZES, paginatedQuery, type PageState } from "./paginate-shared";
 import { logoVersionSql, userLogoVersionSql } from "./logo";
 import { getInstanceSettings } from "./instance-settings";
+import { configMediaType, sizedManifestDigest, sizedPlatform } from "./index-variant";
 import { isHelmConfig, type RepoKind } from "./helm-shared";
 
 export interface OrgWithMeta {
@@ -182,7 +183,7 @@ export const repoListSelect = sql`
   (SELECT max(m.created_at) FROM manifests m WHERE m.repository_id = r.id) AS last_pushed_at,
   EXISTS (SELECT 1 FROM organization_proxies p WHERE p.organization_id = r.organization_id) AS is_proxy,
   (SELECT max(t.proxy_checked_at) FROM tags t WHERE t.repository_id = r.id) AS last_checked_at,
-  (SELECT m.payload::jsonb->'config'->>'mediaType' FROM tags t JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
+  (SELECT ${configMediaType(sql.raw("m"))} FROM tags t JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
     WHERE t.repository_id = r.id ORDER BY t.updated_at DESC LIMIT 1) AS latest_config_media_type`;
 
 export function mapRepoRow(r: Record<string, unknown>): RepoListItem {
@@ -292,8 +293,11 @@ export interface TagListItem {
   updatedAt: Date;
   mediaType: string | null;
   isIndex: boolean;
+  /** Compressed size of the image; for an index, of its first platform variant (variantPlatform). */
   sizeBytes: number | null;
   layerCount: number | null;
+  /** The platform sizeBytes and layerCount describe when the tag is a multi-arch index, else null. */
+  variantPlatform: string | null;
   scanStatus: string | null;
   scanSummary: SeveritySummary | null;
   /** Pull-policy block reason, when the registry refuses pulls of this image. */
@@ -366,9 +370,10 @@ export async function listRepoTags(
       EXISTS (SELECT 1 FROM manifest_signatures ms WHERE ms.repository_id = t.repository_id
         AND ms.manifest_digest = t.manifest_digest AND ms.kind = 'signature' AND ms.status = 'verified') AS signed,
       (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
-        WHERE mr.repository_id = t.repository_id AND mr.manifest_digest = t.manifest_digest) AS content_bytes,
+        WHERE mr.repository_id = t.repository_id AND mr.manifest_digest = ${sizedManifestDigest(sql.raw("m"))}) AS content_bytes,
       (SELECT count(*)::int FROM manifest_refs mr WHERE mr.repository_id = t.repository_id
-        AND mr.manifest_digest = t.manifest_digest) AS ref_count,
+        AND mr.manifest_digest = ${sizedManifestDigest(sql.raw("m"))}) AS ref_count,
+      ${sizedPlatform(sql.raw("m"))} AS variant_platform,
       vs.status AS scan_status, vs.summary AS scan_summary, mb.reason AS blocked
     FROM tags t
     JOIN manifests m ON m.repository_id = t.repository_id AND m.digest = t.manifest_digest
@@ -395,6 +400,7 @@ export async function listRepoTags(
           isIndex,
           sizeBytes: r.content_bytes != null ? Number(r.content_bytes) : null,
           layerCount: r.ref_count != null ? Math.max(Number(r.ref_count) - 1, 0) : null,
+          variantPlatform: (r.variant_platform as string | null) ?? null,
           scanStatus: rollup ? rollup.status : ((r.scan_status as string) ?? null),
           scanSummary: rollup ? rollup.summary : ((r.scan_summary as SeveritySummary) ?? null),
           blocked: (r.blocked as string | null) ?? null,

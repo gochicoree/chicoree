@@ -111,6 +111,8 @@ services:
       DATABASE_URL: postgres://chicoree:chicoree@postgres:5432/chicoree
       # Storage plugin selection; each plugin reads <NAME>_* variables
       # (run `docker compose run --rm registryd plugins` for the full list).
+      # To move to another backend: `docker compose run --rm -e TARGET_STORAGE_DRIVER=… -e TARGET_<NAME>_… registryd storage migrate --to …`
+      # (README → Storage plugins → Switching backends).
       STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
       # local (default) or shared — shared is what several replicas need.
       STORAGE_STAGING: ${STORAGE_STAGING:-local}

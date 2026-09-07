@@ -118,6 +118,18 @@ type listEntry struct {
 	ObjectName  string `json:"ObjectName"`
 	Length      int64  `json:"Length"`
 	IsDirectory bool   `json:"IsDirectory"`
+	// LastChanged is an ISO timestamp without zone ("2024-01-31T12:34:56.789"), UTC.
+	LastChanged string `json:"LastChanged"`
+}
+
+// modTime parses the listing timestamp; zero when absent or malformed.
+func (e listEntry) modTime() time.Time {
+	for _, layout := range []string{"2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05", time.RFC3339Nano} {
+		if t, err := time.Parse(layout, e.LastChanged); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // list fetches a directory listing (path relative to the zone, with trailing slash).
@@ -391,7 +403,7 @@ func (d *Driver) ListObjects(ctx context.Context, prefix string) ([]storage.Obje
 				continue
 			}
 			if strings.HasPrefix(key, prefix) {
-				out = append(out, storage.ObjectInfo{Key: key, Size: e.Length})
+				out = append(out, storage.ObjectInfo{Key: key, Size: e.Length, ModTime: e.modTime()})
 			}
 		}
 		return nil
@@ -417,4 +429,13 @@ func ChecksumFor(digest string) string {
 func mustHex(s string) []byte {
 	b, _ := hex.DecodeString(s)
 	return b
+}
+
+// Describe implements storage.Describer.
+func (d *Driver) Describe() string {
+	region := d.opts.Region
+	if region == "" {
+		region = "de"
+	}
+	return "bunny storage zone " + d.opts.StorageZone + " (" + region + ")"
 }

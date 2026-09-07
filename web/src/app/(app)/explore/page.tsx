@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getSession } from "@/lib/session";
+import { getBranding } from "@/lib/branding";
+import { shareMetadata } from "@/lib/share";
 import { searchRepositories, searchRepositoriesPage, type RepoSort } from "@/lib/search";
 import { exploreOrganizations, trendingRepositories, TRENDING_DAYS } from "@/lib/explore";
 import { normalizeQuery } from "@/lib/search-shared";
@@ -14,7 +16,15 @@ import { RepoTable } from "@/components/repo-table";
 import { ExploreFilters } from "./explore-filters";
 import { OrgGrid, OrgHeader, Section, TrendingGrid } from "./sections";
 
-export const metadata: Metadata = { title: "Explore" };
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  return shareMetadata({
+    title: "Explore",
+    description: `Public container images and Helm charts on ${b.instanceName}: what is pulled this week, who publishes and what changed.`,
+    url: "/explore",
+    withSiteName: true,
+  });
+}
 
 type Params = Record<string, string | string[] | undefined>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";

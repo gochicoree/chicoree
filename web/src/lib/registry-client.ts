@@ -112,6 +112,8 @@ export interface RegistryStatus {
   version: string;
   goVersion: string;
   storage: string;
+  /** Where the driver keeps its data (directory, bucket, zone); absent on older registries. */
+  storageLocation?: string;
   /** "local" (files under stagingDir) or "shared" (sessions in Postgres, chunks in the backend). */
   staging?: string;
   stagingDir: string;

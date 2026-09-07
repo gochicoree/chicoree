@@ -628,6 +628,42 @@ func (s *Store) CollectGarbage(ctx context.Context, grace time.Duration) (*GCRes
 	return res, nil
 }
 
+// Blob is one row of the blobs table: content the registry expects its
+// storage backend to hold.
+type Blob struct {
+	Digest    string
+	Size      int64
+	CreatedAt time.Time
+	// Linked is false when no repository references the blob any more: the
+	// next gc pass removes the row, but until then a push of that digest is
+	// deduplicated against it.
+	Linked bool
+}
+
+// ListBlobs streams every blob row, oldest first, to fn; the storage tools
+// (migrate, verify) walk the whole table this way without loading it. fn
+// returning an error stops the walk and is returned as is.
+func (s *Store) ListBlobs(ctx context.Context, fn func(Blob) error) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT b.digest, b.size, b.created_at,
+		       EXISTS (SELECT 1 FROM repository_blobs rb WHERE rb.blob_digest = b.digest) AS linked
+		FROM blobs b ORDER BY b.created_at, b.digest`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b Blob
+		if err := rows.Scan(&b.Digest, &b.Size, &b.CreatedAt, &b.Linked); err != nil {
+			return err
+		}
+		if err := fn(b); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // BlobStats reports how many unique blobs exist and their total physical
 // size, for the status endpoint.
 func (s *Store) BlobStats(ctx context.Context) (count int64, bytes int64, err error) {

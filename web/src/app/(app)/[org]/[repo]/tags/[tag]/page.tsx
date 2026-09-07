@@ -51,6 +51,18 @@ import { getRepoContext } from "@/lib/repo-access";
 import { helmCommands, isHelmConfig, parseChartMeta } from "@/lib/helm-shared";
 import { readChartFiles, readHelmProvenance } from "@/lib/helm";
 import { renderReadme } from "@/lib/readme";
+import { NO_PREVIEW, repoShare, tagMetadata, tagShare } from "@/lib/share";
+import type { Metadata } from "next";
+
+// Share preview: the tag's platforms and push time in front of the
+// repository's description; the repository card serves as the image.
+export async function generateMetadata({ params }: { params: Promise<{ org: string; repo: string; tag: string }> }): Promise<Metadata> {
+  const { org, repo: rawRepo, tag } = await params;
+  const share = await repoShare(org, decodeRepoParam(rawRepo));
+  if (!share) return NO_PREVIEW;
+  const t = await tagShare(share.id, tag);
+  return t ? tagMetadata(share, tag, t) : NO_PREVIEW;
+}
 
 interface Descriptor {
   mediaType?: string;

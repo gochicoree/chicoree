@@ -20,6 +20,13 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-07.4",
+    changes: [
+      "Tags: `sizeBytes` and `layerCount` of a multi-arch tag are those of its first platform variant the registry holds (previously null), and the new `sizePlatform` names that platform (`linux/amd64`); it is null for single-platform images. The tag list and the untagged list on the repository page show the same figures.",
+      "Repositories: `kind` is judged from that variant when the newest tag is a multi-arch index, so an image pushed for several platforms is `image` (previously `empty`).",
+    ],
+  },
+  {
     revision: "2026-09-07.3",
     changes: [
       "Helm charts: `GET /repos/{org}/{repo}/tags/{tag}/chart` carries `provenance` when the chart was pushed with its `.prov` file (which files it names, whether the archive matches, the PGP key id). Tag and manifest details treat a manifest as a chart by its config media type even when Chart.yaml cannot be read.",

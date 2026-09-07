@@ -162,3 +162,40 @@ func GetDuration(o Options, key string, def time.Duration) time.Duration {
 	}
 	return d
 }
+
+// NewPrefixedEnvOptions returns Options that resolve a plugin's keys from
+// environment variables carrying an extra prefix — for plugin "s3" and prefix
+// "TARGET_" the key "BUCKET" is read as TARGET_S3_BUCKET (or
+// TARGET_STORAGE_S3_BUCKET). The storage tools use it to configure a second
+// backend next to the one registryd serves from.
+func NewPrefixedEnvOptions(prefix, plugin string) Options {
+	return prefixedEnvOptions{prefix: prefix, plugin: plugin}
+}
+
+type prefixedEnvOptions struct {
+	prefix string
+	plugin string
+}
+
+func (p prefixedEnvOptions) Lookup(key string) (string, bool) {
+	canonical := EnvName(p.plugin, key)
+	if v, ok := os.LookupEnv(p.prefix + canonical); ok {
+		return v, true
+	}
+	if v, ok := os.LookupEnv(p.prefix + "STORAGE_" + canonical); ok {
+		return v, true
+	}
+	return "", false
+}
+
+// LayeredOptions consults each Options in turn and returns the first hit.
+type LayeredOptions []Options
+
+func (l LayeredOptions) Lookup(key string) (string, bool) {
+	for _, o := range l {
+		if v, ok := o.Lookup(key); ok {
+			return v, true
+		}
+	}
+	return "", false
+}

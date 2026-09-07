@@ -17,6 +17,15 @@ import { imagePath } from "@/lib/library";
 import { getOrgProxy } from "@/lib/proxy";
 import { displayHost, isDockerHubUrl } from "@/lib/proxy-shared";
 import { env } from "@/lib/env";
+import { NO_PREVIEW, orgMetadata, orgShare } from "@/lib/share";
+import type { Metadata } from "next";
+
+// Share preview: an organization's public face (its card lives next to this file).
+export async function generateMetadata({ params }: { params: Promise<{ org: string }> }): Promise<Metadata> {
+  const { org: slug } = await params;
+  const share = await orgShare(slug);
+  return share ? orgMetadata(share) : NO_PREVIEW;
+}
 
 export default async function OrgPage({
   params,

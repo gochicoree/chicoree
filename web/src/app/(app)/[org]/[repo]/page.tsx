@@ -38,6 +38,20 @@ import { logoRef } from "@/lib/logo-shared";
 import { getRepoContext } from "@/lib/repo-access";
 import { helmCommands } from "@/lib/helm-shared";
 import { imagePath } from "@/lib/library-shared";
+import { NO_PREVIEW, repoMetadata, repoShare } from "@/lib/share";
+import type { Metadata } from "next";
+
+// Share preview: a public repository describes itself (the card comes from
+// opengraph-image.tsx next to this file); anything else is kept out of
+// previews and search results, with a tab title only for people who may see it.
+export async function generateMetadata({ params }: { params: Promise<{ org: string; repo: string }> }): Promise<Metadata> {
+  const { org: orgSlug, repo: rawRepo } = await params;
+  const repoName = decodeRepoParam(rawRepo);
+  const share = await repoShare(orgSlug, repoName);
+  if (share) return repoMetadata(share);
+  const access = await getRepoContext(orgSlug, repoName);
+  return access ? { title: imagePath(orgSlug, repoName), ...NO_PREVIEW } : NO_PREVIEW;
+}
 
 export default async function RepoPage({
   params,
@@ -274,12 +288,12 @@ export default async function RepoPage({
                     <td className="hidden px-4 py-3 md:table-cell">
                       <Digest digest={tag.manifestDigest} />
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2">
-                      {tag.isIndex ? "—" : formatBytes(tag.sizeBytes)}
+                    <td className="px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2" title={tag.variantPlatform ? `${tag.variantPlatform} variant` : undefined}>
+                      {formatBytes(tag.sizeBytes)}
                     </td>
                     {!latestChart && (
-                      <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 lg:table-cell">
-                        {tag.isIndex ? "—" : (tag.layerCount ?? "—")}
+                      <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 lg:table-cell" title={tag.variantPlatform ? `${tag.variantPlatform} variant` : undefined}>
+                        {tag.layerCount ?? "—"}
                       </td>
                     )}
                     {scanning && (
@@ -387,7 +401,7 @@ export default async function RepoPage({
                           )}
                         </td>
                         <td className="hidden px-4 py-3 text-right font-mono text-[13px] tabular-nums text-ink-2 md:table-cell">
-                          {m.isIndex ? "—" : formatBytes(m.contentBytes)}
+                          {formatBytes(m.contentBytes)}
                         </td>
                         <td className="hidden px-4 py-3 text-right text-[13px] text-ink-2 sm:table-cell">{relativeTime(m.pushedAt)}</td>
                         {canDelete && (

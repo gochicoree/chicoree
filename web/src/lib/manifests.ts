@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { manifests, organization, repositories } from "@/db/schema";
 import { env } from "./env";
+import { sizedManifestDigest } from "./index-variant";
 import { imagePath } from "./library";
 import { registryErrorMessage } from "./registry-client";
 import { signRegistryToken } from "./registry-jwt";
@@ -42,7 +43,7 @@ const untaggedSelect = sql`
   m.digest, m.media_type, m.artifact_type, m.size, m.created_at, m.pushed_by, m.subject_digest,
   m.config->>'os' AS os, m.config->>'architecture' AS arch, m.config->>'variant' AS variant,
   (SELECT sum(b.size)::bigint FROM manifest_refs mr JOIN blobs b ON b.digest = mr.ref_digest
-    WHERE mr.repository_id = m.repository_id AND mr.manifest_digest = m.digest) AS content_bytes,
+    WHERE mr.repository_id = m.repository_id AND mr.manifest_digest = ${sizedManifestDigest(sql.raw("m"))}) AS content_bytes,
   EXISTS (SELECT 1 FROM manifest_refs mr WHERE mr.repository_id = m.repository_id AND mr.ref_digest = m.digest) AS is_child,
   (SELECT string_agg(DISTINCT t.name, ',') FROM manifest_refs mr
     JOIN tags t ON t.repository_id = mr.repository_id AND t.manifest_digest = mr.manifest_digest

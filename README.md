@@ -603,6 +603,19 @@ or hide); anonymous visitors see the instance default. The logo is checked
 exactly like the pictures of organizations, repositories and people — see
 [Pictures](#pictures).
 
+**Share previews.** A link to the landing page, Explore, a public
+organization or a public repository unfurls in chats, social feeds and wikis
+with Open Graph and Twitter card tags and a generated 1200×630 preview image:
+the instance name and logo in the accent colour, the organization or
+repository picture, the description (the repository's own, else the first
+paragraph of its README, else the image's `org.opencontainers.image.description`
+label), tag and pull counts, when it was last updated, and the pull command.
+Private repositories never appear in a preview — a crawler is an anonymous
+visitor and gets the instance card — and the sign-in, account and
+administration pages are marked `noindex`; `/robots.txt` keeps crawlers out of
+those and of `/api/`. `APP_URL` must be the public address, because preview
+images and canonical URLs are absolute.
+
 ## Storage plugins
 
 `registryd` loads its blob backend through a plugin registry. Pick one with
@@ -617,13 +630,56 @@ backend with its options:
 | `bunny` | `BUNNY_STORAGE_ZONE`*, `BUNNY_ACCESS_KEY`*, `BUNNY_REGION` (`ny`, `la`, `sg`, `se`, `br`, `jh`, `syd`, `uk`; empty = Falkenstein), `BUNNY_ENDPOINT`, `BUNNY_CDN_URL` + `BUNNY_CDN_TOKEN_KEY` (signed pull-zone redirects), `BUNNY_PRESIGN_EXPIRY` |
 
 **Switching backends.** Blob rows in the database say *that* a blob exists,
-the storage driver says *where*. Changing `STORAGE_DRIVER` on an instance that
-already holds images therefore needs the `blobs/` tree copied to the new
-backend first (every driver uses the same `blobs/sha256/<xx>/<digest>` layout,
-so a plain file copy or an S3/Edge-Storage upload of that tree is enough);
-otherwise pushes of known layers are deduplicated against the database and
-pulls answer 404 for blobs the new backend never received. Keep the old copy
-until a pull of every repository has been checked.
+the storage driver says *where*, and every driver uses the same
+`blobs/sha256/<xx>/<digest>` layout. Changing `STORAGE_DRIVER` on an instance
+that already holds images therefore needs the blob tree on the new backend
+first — otherwise pushes of known layers are deduplicated against the
+database and pulls answer 404 for blobs the new backend never received.
+`registryd storage migrate` does the copy: it walks every blob the database
+knows, copies it from the configured backend to a second one described by
+`TARGET_STORAGE_DRIVER` and `TARGET_<NAME>_*` variables, hashes each blob on
+the way (a corrupt blob is reported, never published) and skips blobs the
+target already holds — so it runs while the registry keeps serving, and a
+second run only picks up what was pushed since.
+
+```sh
+# 1. Bulk copy while the registry keeps running; repeat until it ends with status 0.
+docker compose run --rm \
+  -e TARGET_STORAGE_DRIVER=s3 -e TARGET_S3_BUCKET=images \
+  -e TARGET_S3_ENDPOINT=https://s3.example.com \
+  -e TARGET_S3_ACCESS_KEY=… -e TARGET_S3_SECRET_KEY=… \
+  registryd storage migrate --to s3
+# 2. Check the new backend against the database.
+docker compose run --rm -e TARGET_STORAGE_DRIVER=s3 -e TARGET_S3_… registryd storage verify --target
+# 3. Stop pushes (docker compose stop registryd), run step 1 once more,
+#    then set STORAGE_DRIVER=s3 and the S3_* variables and start registryd again.
+```
+
+`--dry-run` only counts what would be copied, `--workers` sets how many
+blobs are copied at once (default 4) and `--verify` re-reads blobs the
+target already holds and replaces any whose content does not match its
+digest. The command exits with status 1 while a blob is missing or corrupt
+on the source or a copy failed; do not switch until a run ends with status
+0. Migrating *to* a directory needs that directory mounted into the
+container (`-v new-data:/var/lib/registry-new -e
+TARGET_FILESYSTEM_ROOT=/var/lib/registry-new`); `--from <driver>` with
+`SOURCE_<NAME>_*` variables reads from a backend other than the configured
+one. In-flight uploads do not survive the switch (clients retry the push).
+Keep the old copy until a pull of every repository has been checked, then
+delete it. *Administration → Health* names the live backend (directory,
+bucket or zone) so the switch can be confirmed at a glance.
+
+**Checking storage.** `registryd storage verify` confirms that the
+configured backend holds every blob the database knows with the recorded
+size; `--hash` also reads every blob back and compares its digest. Use it
+after restoring a database backup, when a pull answers 404 for a layer, or
+with `--target` before switching backends. `--orphans` lists objects in the
+blob tree that no blob row references — left behind by a restored backup, a
+crash between writing a blob and recording it, or a manual copy — and
+`--delete-orphans` removes those older than `--grace` (default 1h, so a
+push that is still registering its layers is left alone). Both commands
+exit with status 1 when a blob is missing, has the wrong size or is
+corrupt, so a script can gate on them.
 
 Adding a backend is one Go package: implement `storage.Driver`, call
 `storage.Register` in `init()`, and blank-import it from
@@ -1124,6 +1180,16 @@ repository that references it. Deleting a tag or manifest never removes
 layers; garbage collection removes only content that no remaining manifest
 references, and the registry refuses to delete a blob through the API while
 a manifest in that repository still uses it.
+
+**Sizes.** A repository's *logical size* is every blob its tags reference,
+counted once. A tag's size is what one `docker pull` fetches: the compressed
+layers plus the config. A multi-arch tag is an index with no layers of its
+own, so its size and layer count are those of its **first platform variant
+the registry holds** (in index order, BuildKit attestation entries skipped;
+a proxy cache only holds the platforms someone pulled) — the same variant
+the compare page starts with. The tags table names that platform in the
+tooltip, the API returns it as `sizePlatform`, and a repository whose newest
+tag is such an index is judged an image or a chart by that variant too.
 
 ## Comparing tags and shared layers
 
@@ -2149,6 +2215,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" "$APP_URL/api/v1/repos/acme/api
   an organization cannot call the jobs API.
 - **Garbage collection** is also exposed on the registry itself as
   `POST /internal/v1/gc` (bearer = webhook secret), which the `gc` job calls.
+- **Storage tools**: `registryd storage migrate` copies the blob tree to
+  another backend and `registryd storage verify` checks the backend against
+  the database and finds orphaned objects — see
+  [Storage plugins](#storage-plugins).
 - **Health**: `GET /internal/v1/healthz` on the registry, `GET /api/health`
   on the web app — see [Health](#health).
 - **Pull policies**: vulnerability thresholds and accepted risks under

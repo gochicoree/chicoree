@@ -89,6 +89,9 @@ type StatusResponse struct {
 	Version   string `json:"version"`
 	GoVersion string `json:"goVersion"`
 	Storage   string `json:"storage"`
+	// StorageLocation names where the driver keeps its data (directory,
+	// bucket, zone) so the health page can show which backend is live.
+	StorageLocation string `json:"storageLocation"`
 	// Staging is "local" (node-local files under StagingDir) or "shared"
 	// (sessions in Postgres, chunks in the backend); StagingDir and the
 	// free-space figure only apply to local staging.
@@ -122,6 +125,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Version:               version.Version,
 		GoVersion:             runtime.Version(),
 		Storage:               s.driver.Name(),
+		StorageLocation:       storage.Describe(s.driver),
 		Staging:               s.staging.Mode(),
 		StagingDir:            s.cfg.StagingDir,
 		StagingFreeBytes:      diskFreeBytes(s.cfg.StagingDir),

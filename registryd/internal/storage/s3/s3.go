@@ -335,3 +335,12 @@ func (d *Driver) ListObjects(ctx context.Context, prefix string) ([]storage.Obje
 	}
 	return out, nil
 }
+
+// Describe implements storage.Describer: the bucket and, when set, the
+// endpoint — never the credentials.
+func (d *Driver) Describe() string {
+	if d.opts.Endpoint != "" {
+		return "s3 bucket " + d.opts.Bucket + " at " + d.opts.Endpoint
+	}
+	return "s3 bucket " + d.opts.Bucket + " (" + d.opts.Region + ")"
+}
