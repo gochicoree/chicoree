@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, FieldAction, Input, Textarea } from "@/components/ui/field";
 import { CommandLine } from "@/components/ui/copy";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 
 // --- shared bits -----------------------------------------------------------
@@ -43,12 +44,18 @@ function ResetButton({ section }: { section: SettingsSection }) {
   const [state, action, pending] = useActionState<SettingsResult | null, FormData>(resetSection, null);
   useResultToast(state);
   return (
-    <form action={action}>
+    <ConfirmForm
+      action={action}
+      title="Discard the saved settings?"
+      description="The settings saved here, including any stored secrets, are removed and the values from the environment apply again."
+      confirmLabel="Use environment values"
+      tone="danger"
+    >
       <input type="hidden" name="section" value={section} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         <RotateCcw className="size-3.5" /> Use environment values
       </Button>
-    </form>
+    </ConfirmForm>
   );
 }
 

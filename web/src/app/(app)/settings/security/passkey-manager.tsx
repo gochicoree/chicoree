@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 
 interface PasskeyRow {
   id: string;
@@ -30,6 +31,7 @@ export function PasskeyManager({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -95,7 +97,17 @@ export function PasskeyManager({
                   </div>
                 </div>
                 <button
-                  onClick={() => remove(p.id)}
+                  onClick={() =>
+                    confirm(
+                      {
+                        title: `Delete passkey ${p.name}?`,
+                        description: "You can no longer sign in with this passkey. You can add a new one any time.",
+                        confirmLabel: "Delete passkey",
+                        tone: "danger",
+                      },
+                      () => remove(p.id),
+                    )
+                  }
                   aria-label={`Remove ${p.name}`}
                   className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                 >
@@ -106,6 +118,7 @@ export function PasskeyManager({
           </ul>
         )}
       </CardBody>
+      {dialog}
     </Card>
   );
 }

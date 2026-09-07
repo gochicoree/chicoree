@@ -7,6 +7,7 @@ import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 
 export function UserControls({
   userId,
@@ -26,6 +27,7 @@ export function UserControls({
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   async function run(fn: () => Promise<{ error?: { message?: string } | null }>, done: string) {
     setBusy(true);
@@ -76,12 +78,17 @@ export function UserControls({
         size="sm"
         disabled={busy}
         onClick={() =>
-          run(() =>
-            banned
-              ? authClient.admin.unbanUser({ userId })
-              : authClient.admin.banUser({ userId, banReason: "Banned by administrator" }),
-            banned ? "User unbanned" : "User banned",
-          )
+          banned
+            ? run(() => authClient.admin.unbanUser({ userId }), "User unbanned")
+            : confirm(
+                {
+                  title: "Ban this user?",
+                  description: "They are signed out everywhere, cannot sign in again and their access tokens stop working until you unban them.",
+                  confirmLabel: "Ban user",
+                  tone: "danger",
+                },
+                () => run(() => authClient.admin.banUser({ userId, banReason: "Banned by administrator" }), "User banned"),
+              )
         }
       >
         {banned ? <ShieldCheck className="size-3.5" /> : <Ban className="size-3.5" />}
@@ -95,11 +102,22 @@ export function UserControls({
         size="sm"
         disabled={busy || sessions === 0}
         title="Signs the user out of every browser and device"
-        onClick={() => run(() => authClient.admin.revokeUserSessions({ userId }), "All sessions revoked")}
+        onClick={() =>
+          confirm(
+            {
+              title: "Sign this user out everywhere?",
+              description: "Every browser and device they are signed in on is signed out. They can sign in again right away.",
+              confirmLabel: "Revoke all sessions",
+              tone: "danger",
+            },
+            () => run(() => authClient.admin.revokeUserSessions({ userId }), "All sessions revoked"),
+          )
+        }
       >
         <LogOut className="size-3.5" /> Revoke all sessions
       </Button>
       {error && <span className="text-sm text-danger">{error}</span>}
+      {dialog}
     </div>
   );
 }

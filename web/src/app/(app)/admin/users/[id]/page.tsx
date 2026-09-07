@@ -8,6 +8,7 @@ import { describeRestriction, expiryState, lastUsedText } from "@/lib/token-poli
 import { adminRevokeAccessToken } from "@/app/actions/credentials";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { UsageMeter } from "@/components/admin/usage-meter";
 import { ExpiryBadge } from "@/app/(app)/settings/tokens/token-manager";
 import { LogoUploadCard } from "@/components/logo-upload";
@@ -110,7 +111,13 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
                     </div>
                     {t.description && <div className="mt-0.5 text-xs text-ink-3">{t.description}</div>}
                   </div>
-                  <form action={adminRevokeAccessToken}>
+                  <ConfirmForm
+                    action={adminRevokeAccessToken}
+                    title={`Revoke ${t.name}?`}
+                    description="Anything signed in with this token loses access within five minutes. This cannot be undone."
+                    confirmLabel="Revoke token"
+                    tone="danger"
+                  >
                     <input type="hidden" name="id" value={t.id} />
                     <button
                       type="submit"
@@ -119,7 +126,7 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
                     >
                       <Trash2 className="size-4" />
                     </button>
-                  </form>
+                  </ConfirmForm>
                 </div>
               );
             })}

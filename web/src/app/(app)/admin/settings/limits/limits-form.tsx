@@ -9,6 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Textarea } from "@/components/ui/field";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 
 function useResultToast(state: SettingsResult | null) {
@@ -31,12 +32,18 @@ function ResetButton() {
   const [state, action, pending] = useActionState<SettingsResult | null, FormData>(resetSection, null);
   useResultToast(state);
   return (
-    <form action={action}>
+    <ConfirmForm
+      action={action}
+      title="Discard the saved rate limits?"
+      description="The rate limits saved here are removed and the values from the environment apply again."
+      confirmLabel="Use environment values"
+      tone="danger"
+    >
       <input type="hidden" name="section" value="ratelimit" />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         <RotateCcw className="size-3.5" /> Use environment values
       </Button>
-    </form>
+    </ConfirmForm>
   );
 }
 

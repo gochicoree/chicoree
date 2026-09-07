@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 
 export function OrgGeneralForm({
   organizationId,
@@ -68,11 +69,12 @@ export function OrgGeneralForm({
   );
 }
 
+/** Delete behind a dialog that asks for the organization's slug. */
 export function OrgDeleteForm({ organizationId, slug }: { organizationId: string; slug: string }) {
   const router = useRouter();
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   async function destroy() {
     setBusy(true);
@@ -94,14 +96,27 @@ export function OrgDeleteForm({ organizationId, slug }: { organizationId: string
         description="Deletes the organization and every repository in it. This cannot be undone."
       />
       <CardBody className="space-y-3">
-        <Field label={`Type "${slug}" to confirm`} htmlFor="confirm-slug">
-          <Input id="confirm-slug" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
-        </Field>
         {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
-        <Button variant="danger" disabled={busy || confirm !== slug} onClick={destroy}>
-          Delete organization permanently
+        <Button
+          variant="danger"
+          disabled={busy}
+          onClick={() =>
+            confirm(
+              {
+                title: `Delete organization ${slug}?`,
+                description: "Every repository in it is deleted, with all its images and charts, and every member loses access. This cannot be undone.",
+                confirmLabel: "Delete organization",
+                tone: "danger",
+                confirmText: slug,
+              },
+              destroy,
+            )
+          }
+        >
+          Delete organization…
         </Button>
       </CardBody>
+      {dialog}
     </Card>
   );
 }

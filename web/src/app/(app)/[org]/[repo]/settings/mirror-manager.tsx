@@ -12,6 +12,7 @@ import { MirrorFormFields } from "@/components/mirror-form-fields";
 import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice, type PageState, type QueryLike } from "@/lib/paginate-shared";
 import { useActionToast } from "@/components/ui/toast";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { relativeTime } from "@/lib/format";
 
 export interface MirrorView {
@@ -200,12 +201,18 @@ export function MirrorManager({
           <div className="mt-6 border-t border-line pt-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="eyebrow">Recent runs</div>
-              <form action={deleteMirror}>
+              <ConfirmForm
+                action={deleteMirror}
+                title={`Remove the mirror of ${mirror.source}?`}
+                description="Syncs stop. Tags already imported stay in this repository."
+                confirmLabel="Remove mirror"
+                tone="danger"
+              >
                 <input type="hidden" name="repositoryId" value={repositoryId} />
                 <Button type="submit" variant="ghost" size="sm">
-                  <Trash2 className="size-3.5" /> Remove mirror
+                  <Trash2 className="size-3.5" /> Remove mirror…
                 </Button>
-              </form>
+              </ConfirmForm>
             </div>
             {mirror.runs.length === 0 ? (
               <p className="text-sm text-ink-3">No runs yet.</p>

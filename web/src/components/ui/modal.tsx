@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 
@@ -119,7 +119,12 @@ export function Modal({
   );
 }
 
-/** Confirm/cancel dialog with a danger or primary confirm button. */
+/**
+ * Confirm/cancel dialog with a danger or primary confirm button. With
+ * `confirmText` the confirm button stays disabled until that exact text has
+ * been typed — for deleting things that cannot come back. `confirmInputName`
+ * names the typed field so a surrounding form submits it (see ConfirmForm).
+ */
 export function ConfirmModal({
   open,
   onClose,
@@ -129,6 +134,8 @@ export function ConfirmModal({
   confirmLabel = "Confirm",
   tone = "primary",
   busy,
+  confirmText,
+  confirmInputName,
   children,
 }: {
   open: boolean;
@@ -139,8 +146,23 @@ export function ConfirmModal({
   confirmLabel?: string;
   tone?: "primary" | "danger" | "accent";
   busy?: boolean;
+  /** Text the person has to type before the confirm button enables. */
+  confirmText?: string;
+  /** Form field name for the typed text (only useful inside a form). */
+  confirmInputName?: string;
   children?: ReactNode;
 }) {
+  const [typed, setTyped] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Start clean every time the dialog opens, and put the cursor in the field.
+  useEffect(() => {
+    if (!open) return;
+    setTyped("");
+    inputRef.current?.focus();
+  }, [open]);
+  const matches = confirmText === undefined || typed.trim() === confirmText;
+  const canConfirm = !busy && matches;
+
   return (
     <Modal
       open={open}
@@ -152,13 +174,35 @@ export function ConfirmModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" variant={tone} onClick={onConfirm} disabled={busy}>
+          <Button type="button" variant={tone} onClick={onConfirm} disabled={!canConfirm}>
             {confirmLabel}
           </Button>
         </>
       }
     >
       {children}
+      {confirmText !== undefined && (
+        <label className={`block ${children ? "mt-4" : ""}`}>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink">
+            Type <span className="font-mono">{confirmText}</span> to confirm
+          </span>
+          <input
+            ref={inputRef}
+            name={confirmInputName}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              if (canConfirm) onConfirm();
+            }}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            className="h-9.5 w-full rounded-lg border border-line-2 bg-card px-3 font-mono text-sm text-ink outline-none focus:border-ink-3"
+          />
+        </label>
+      )}
     </Modal>
   );
 }

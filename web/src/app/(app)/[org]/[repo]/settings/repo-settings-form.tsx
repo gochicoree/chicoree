@@ -4,8 +4,9 @@ import { useActionState, useRef, useState } from "react";
 import { deleteRepository, updateRepository, type ActionResult } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, FieldAction, Input, Textarea } from "@/components/ui/field";
+import { Field, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -85,9 +86,8 @@ export function RepoGeneralForm({
   );
 }
 
-/** Typed-confirmation delete. */
+/** Delete behind a dialog that asks for the repository's name. */
 export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; name: string }) {
-  const [confirm, setConfirm] = useState("");
   return (
     <Card className="border-danger/30">
       <CardHeader
@@ -96,19 +96,20 @@ export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; n
         description="Deletes every tag and image in this repository. This cannot be undone."
       />
       <CardBody>
-        <form action={deleteRepository} className="flex flex-wrap items-start gap-3">
+        <ConfirmForm
+          action={deleteRepository}
+          title={`Delete ${name}?`}
+          description="Every tag, image and chart in this repository is deleted, along with its webhooks, mirrors and access grants. Pulls of these images stop working. This cannot be undone."
+          confirmLabel="Delete repository"
+          tone="danger"
+          confirmText={name}
+          confirmInputName="confirmName"
+        >
           <input type="hidden" name="repositoryId" value={repositoryId} />
-          <div className="min-w-64">
-            <Field label={`Type "${name}" to confirm`} htmlFor="confirmName">
-              <Input id="confirmName" name="confirmName" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
-            </Field>
-          </div>
-          <FieldAction>
-            <Button type="submit" variant="danger" disabled={confirm !== name}>
-              Delete repository permanently
-            </Button>
-          </FieldAction>
-        </form>
+          <Button type="submit" variant="danger">
+            Delete repository…
+          </Button>
+        </ConfirmForm>
       </CardBody>
     </Card>
   );
