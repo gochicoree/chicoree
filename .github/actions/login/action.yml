@@ -1,5 +1,5 @@
 name: Chicorée login
-description: Sign a GitHub Actions job in to a Chicorée registry with the job's OIDC token — no stored secret. Needs `permissions: id-token: write`.
+description: "Sign a GitHub Actions job in to a Chicorée registry with the job's OIDC token, no stored secret. Needs id-token: write."
 inputs:
   registry-url:
     description: Base URL of the web app, e.g. https://registry.example.com
