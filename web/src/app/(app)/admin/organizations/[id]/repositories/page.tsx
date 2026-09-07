@@ -9,6 +9,7 @@ import { formatBytes, relativeTime } from "@/lib/format";
 import { adminDeleteRepository } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
 import { VisibilityBadge } from "@/components/ui/badge";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { repoHref } from "@/lib/proxy-shared";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
@@ -39,7 +40,14 @@ export default async function AdminOrganizationRepositories({ params }: { params
               <span className="ml-auto text-xs text-ink-3">
                 {r.lastPushedAt ? `pushed ${relativeTime(r.lastPushedAt)}` : "empty"}
               </span>
-              <form action={adminDeleteRepository}>
+              <ConfirmForm
+                action={adminDeleteRepository}
+                title={`Delete ${r.name}?`}
+                description="Every tag, image and chart in this repository is deleted, along with its webhooks, mirrors and access grants. Pulls of these images stop working. This cannot be undone."
+                confirmLabel="Delete repository"
+                tone="danger"
+                confirmText={r.name}
+              >
                 <input type="hidden" name="repositoryId" value={r.id} />
                 <input type="hidden" name="organizationId" value={org.id} />
                 <button
@@ -49,7 +57,7 @@ export default async function AdminOrganizationRepositories({ params }: { params
                 >
                   <Trash2 className="size-4" />
                 </button>
-              </form>
+              </ConfirmForm>
             </div>
           ))}
         </div>

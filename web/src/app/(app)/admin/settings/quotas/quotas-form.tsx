@@ -8,6 +8,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/field";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 
 function useResultToast(state: SettingsResult | null) {
@@ -29,13 +30,20 @@ function SourceBadge({ source, none }: { source: SettingsSource; none: string })
 function ResetButton({ section }: { section: "quotas" | "portal" }) {
   const [state, action, pending] = useActionState<SettingsResult | null, FormData>(resetSection, null);
   useResultToast(state);
+  const what = section === "portal" ? "portal settings" : "default limits";
   return (
-    <form action={action}>
+    <ConfirmForm
+      action={action}
+      title={`Discard the saved ${what}?`}
+      description={`The ${what} saved here are removed and the values from the environment apply again.`}
+      confirmLabel="Use environment values"
+      tone="danger"
+    >
       <input type="hidden" name="section" value={section} />
       <Button type="submit" variant="ghost" size="sm" disabled={pending}>
         <RotateCcw className="size-3.5" /> Use environment values
       </Button>
-    </form>
+    </ConfirmForm>
   );
 }
 

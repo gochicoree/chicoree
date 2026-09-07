@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { CommandLine } from "@/components/ui/copy";
 import { Badge } from "@/components/ui/badge";
 import { useActionToast, useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 import { displayHost, isDockerHubUrl, presetFor, PROXY_PRESETS, type ProxyPreset } from "@/lib/proxy-shared";
 import { relativeTime } from "@/lib/format";
 
@@ -41,6 +42,7 @@ export function ProxyForm({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const { confirm, dialog } = useConfirm();
   const [saveState, saveAction, saving] = useActionState<ProxyActionResult | null, FormData>(saveOrgProxy, null);
   const [testState, testAction, testing] = useActionState<ProxyActionResult | null, FormData>(testOrgProxy, null);
   useActionToast(saveState, proxy ? "Proxy settings saved" : "Proxy cache enabled");
@@ -61,7 +63,6 @@ export function ProxyForm({
   }
 
   async function remove() {
-    if (!confirm("Turn the proxy cache off and forget the upstream? Cached repositories stay as normal repositories.")) return;
     setRemoving(true);
     const fd = new FormData();
     fd.set("organizationId", organizationId);
@@ -217,8 +218,23 @@ export function ProxyForm({
             title={proxy.lastError ? "Last upstream contact failed" : "Upstream status"}
             description={proxy.lastCheckedAt ? `Last contact ${relativeTime(proxy.lastCheckedAt)}.` : "The upstream has not been contacted yet."}
             action={
-              <Button variant="danger" size="sm" onClick={remove} disabled={removing}>
-                Remove proxy cache
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={removing}
+                onClick={() =>
+                  confirm(
+                    {
+                      title: `Remove the proxy cache of ${displayHost(proxy.upstreamUrl)}?`,
+                      description: "Nothing is fetched from the upstream any more. Repositories already cached stay as normal repositories.",
+                      confirmLabel: "Remove proxy cache",
+                      tone: "danger",
+                    },
+                    remove,
+                  )
+                }
+              >
+                Remove proxy cache…
               </Button>
             }
           />
@@ -231,6 +247,7 @@ export function ProxyForm({
           )}
         </Card>
       )}
+      {dialog}
     </div>
   );
 }

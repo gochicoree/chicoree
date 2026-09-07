@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-07.3` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-07.4` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.3`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-07.4`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -3171,6 +3171,8 @@ Response `200`:
       "format": "sigstore-bundle",
       "predicateType": null,
       "signatures": 1,
+      "layerDigest": null,
+      "signed": true,
       "verification": {
         "status": "verified",
         "keyName": "release",
@@ -3183,13 +3185,41 @@ Response `200`:
       "download": "https://registry.example.com/api/artifacts/acme%2Fapi/sha256:77…"
     }
   ],
-  "sboms": [],
+  "sboms": [
+    {
+      "digest": "sha256:90…",
+      "subjectDigest": "sha256:5f2b…",
+      "source": "referrer",
+      "tag": null,
+      "createdAt": "2026-09-05T08:41:40.000Z",
+      "sizeBytes": 48211,
+      "mediaType": "application/vnd.in-toto+json",
+      "artifactType": null,
+      "format": "dsse",
+      "attested": true,
+      "predicateType": "https://spdx.dev/Document",
+      "sbom": {
+        "format": "spdx",
+        "specVersion": "SPDX-2.3",
+        "packageCount": 55,
+        "name": "acme/api",
+        "tool": "syft",
+        "createdAt": "2026-09-05T08:41:12Z",
+        "components": []
+      },
+      "error": null,
+      "layerDigest": "sha256:c1…",
+      "signed": false,
+      "verification": null,
+      "download": "https://registry.example.com/api/artifacts/acme%2Fapi/sha256:90…?blob=sha256:c1…"
+    }
+  ],
   "provenance": [],
   "others": [],
   "trustedKeys": 1,
   "memberKeys": 0,
   "trustedIdentities": 0,
-  "total": 1
+  "total": 2
 }
 ~~~
 
@@ -3769,6 +3799,10 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-07.4
+
+- BuildKit attestations: the attestation manifests `docker buildx build --sbom --provenance` puts into an index are read layer by layer, so their SBOM and provenance appear as entries of `GET /repos/{org}/{repo}/manifests/{digest}/artifacts` (before they were listed under `others` as invalid). Every artifact entry carries `layerDigest` (the layer it is, null for a whole manifest) and `signed` (false for BuildKit's statements and plain SBOM files, whose `verification` is null); `download` then names the layer, and unwraps the statement to its document unless `raw=1` is given. `total` counts entries.
 
 ### 2026-09-07.3
 

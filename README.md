@@ -1519,6 +1519,15 @@ each platform variant (`cosign sign --recursive` signs all of them). An
 empty tab offers the sign-and-attach commands only to people who may push
 to the repository; visitors and read-only members see a plain note.
 
+**BuildKit attestations.** Images built with `docker buildx build
+--sbom=true --provenance=mode=max` carry their SPDX SBOM and SLSA
+provenance inside the index, as an attestation manifest per platform whose
+layers are bare in-toto statements. The tab lists each of them as an SBOM
+or provenance entry of the variant, downloadable on its own, marked
+*unsigned*: BuildKit does not sign them, so a signature on the index is what
+vouches for them. `cosign attest` on top adds signed copies, which is what
+the pull policy and `cosign verify-attestation` look at.
+
 **Notation.** Signatures made with [Notation](https://notaryproject.dev)
 (`notation sign cr.example.com/acme/app@sha256:…`) are referrers of type
 `application/vnd.cncf.notary.signature` and show up on the same tab as

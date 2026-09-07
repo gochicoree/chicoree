@@ -9,6 +9,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { relativeTime } from "@/lib/format";
 
 export interface CiIdentityRowView {
@@ -116,12 +117,18 @@ export function CiIdentitiesManager({ organizationId, organizationSlug, appUrl, 
                     added {relativeTime(i.createdAt)} · {i.lastUsedAt ? `last used ${relativeTime(i.lastUsedAt)}${i.lastSubject ? ` by ${i.lastSubject}` : ""}` : "never used"}
                   </div>
                 </div>
-                <form action={removeCiIdentity}>
+                <ConfirmForm
+                  action={removeCiIdentity}
+                  title={`Remove ${i.name}?`}
+                  description="Workflows signing in with this identity are turned away from now on. You can trust it again later."
+                  confirmLabel="Remove identity"
+                  tone="danger"
+                >
                   <input type="hidden" name="id" value={i.id} />
                   <button type="submit" aria-label={`Remove ${i.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
                     <Trash2 className="size-4" />
                   </button>
-                </form>
+                </ConfirmForm>
               </div>
             ))}
           </div>

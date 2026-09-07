@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm";
 import { relativeTime } from "@/lib/format";
 import { NEVER, describeExpiryPolicy, expiryState, lastUsedText, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
 import { ExpiryBadge, ExpiryFields, SecretPanel } from "@/app/(app)/settings/tokens/token-manager";
@@ -191,7 +192,13 @@ export function ServiceAccountsManager({
                     {sa.description && <div className="mt-0.5 text-xs text-ink-3">{sa.description}</div>}
                   </div>
                   <RotateButton sa={sa} registryHost={registryHost} />
-                  <form action={deleteServiceAccount}>
+                  <ConfirmForm
+                    action={deleteServiceAccount}
+                    title={`Delete ${sa.name}?`}
+                    description="Its credentials stop working immediately; anything that signs in with them fails from then on. This cannot be undone."
+                    confirmLabel="Delete service account"
+                    tone="danger"
+                  >
                     <input type="hidden" name="id" value={sa.id} />
                     <button
                       type="submit"
@@ -200,7 +207,7 @@ export function ServiceAccountsManager({
                     >
                       <Trash2 className="size-4" />
                     </button>
-                  </form>
+                  </ConfirmForm>
                 </div>
               );
             })}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { adminDeleteOrganization, adminSetMemberRole } from "@/app/actions/admin-orgs";
 import { ORG_ROLE_NAMES } from "@/lib/org-roles";
-import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CardBody } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm";
 
 /** Role dropdown that submits its form on change. */
 export function MemberRoleSelect({
@@ -37,29 +37,24 @@ export function MemberRoleSelect({
   );
 }
 
+/** Delete behind a dialog that asks for the organization's slug. */
 export function DeleteOrganization({ organizationId, slug }: { organizationId: string; slug: string }) {
-  const [confirm, setConfirm] = useState("");
   return (
     <CardBody>
-      <form action={adminDeleteOrganization} className="flex flex-wrap items-start gap-3">
+      <ConfirmForm
+        action={adminDeleteOrganization}
+        title={`Delete ${slug}?`}
+        description="Every repository, image, member, invitation and service account of this organization is deleted. Pulls of its images stop working. This cannot be undone."
+        confirmLabel="Delete organization"
+        tone="danger"
+        confirmText={slug}
+        confirmInputName="confirmSlug"
+      >
         <input type="hidden" name="organizationId" value={organizationId} />
-        <div className="min-w-64">
-          <Field label={`Type "${slug}" to confirm`} htmlFor="confirmSlug">
-            <Input
-              id="confirmSlug"
-              name="confirmSlug"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="font-mono"
-            />
-          </Field>
-        </div>
-        <FieldAction>
-          <Button type="submit" variant="danger" disabled={confirm !== slug}>
-            Delete organization permanently
-          </Button>
-        </FieldAction>
-      </form>
+        <Button type="submit" variant="danger">
+          Delete organization…
+        </Button>
+      </ConfirmForm>
     </CardBody>
   );
 }
