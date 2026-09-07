@@ -170,7 +170,7 @@ runs:
         provenance: ${{ inputs.provenance }}
         cache-from: ${{ steps.prep.outputs.cache-from }}
         cache-to: ${{ steps.prep.outputs.cache-to }}
-    - uses: sigstore/cosign-installer@v4
+    - uses: sigstore/cosign-installer@v4.1.2
       if: inputs.push == 'true' && (inputs.sign == 'true' || inputs.attest != 'none')
     - id: attach
       if: inputs.push == 'true'
