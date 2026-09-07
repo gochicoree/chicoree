@@ -12,7 +12,7 @@ import { ChevronDown, ChevronRight, Loader2, Play, Search, Trash2 } from "lucide
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { ConfirmModal } from "@/components/ui/modal";
 import { CommandLine, CopyButton } from "@/components/ui/copy";
@@ -413,7 +413,7 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
             <ParamGroup title="Query" params={params.filter((p) => p.in === "query")} values={values} setValue={setValue} prefix="q" />
             <ParamGroup title="Body (JSON)" params={params.filter((p) => p.in === "body")} values={values} setValue={setValue} prefix="b" />
 
-            <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-end">
+            <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start">
               <Field label="Send as" htmlFor="api-auth-mode">
                 <Select
                   id="api-auth-mode"
@@ -431,12 +431,16 @@ export function ApiBrowser({ endpoints, appUrl, base }: { endpoints: ApiEndpoint
                   <Input id="api-token" type="password" autoComplete="off" placeholder="chc_pat_… or chc_sa_…" value={token} onChange={(ev) => setToken(ev.target.value)} className="font-mono text-sm" />
                 </Field>
               ) : (
-                <div className="text-xs text-ink-3 sm:pb-2.5">Anonymous calls: sign out, or send as a token and leave it empty.</div>
+                <FieldAction>
+                  <p className="text-xs text-ink-3 sm:pt-2">Anonymous calls: sign out, or send as a token and leave it empty.</p>
+                </FieldAction>
               )}
-              <Button type="button" onClick={trySend} disabled={busy} variant={selected.method === "DELETE" ? "danger" : "primary"} className="sm:mb-px">
-                {busy ? <Loader2 className="size-4 animate-spin" /> : selected.method === "DELETE" ? <Trash2 className="size-4" /> : <Play className="size-4" />}
-                {busy ? "Sending…" : "Send"}
-              </Button>
+              <FieldAction>
+                <Button type="button" size="sm" onClick={trySend} disabled={busy} variant={selected.method === "DELETE" ? "danger" : "primary"}>
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : selected.method === "DELETE" ? <Trash2 className="size-4" /> : <Play className="size-4" />}
+                  {busy ? "Sending…" : "Send"}
+                </Button>
+              </FieldAction>
             </div>
 
             <div>

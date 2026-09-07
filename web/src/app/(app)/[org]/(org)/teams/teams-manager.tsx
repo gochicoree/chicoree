@@ -6,7 +6,7 @@ import { addTeamMemberAction, createTeamAction, deleteTeamAction, removeTeamMemb
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/field";
+import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { EntityLogo } from "@/components/entity-logo";
@@ -65,7 +65,7 @@ function CreateTeamForm({ orgSlug }: { orgSlug: string }) {
     }
   }, [state]);
   return (
-    <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+    <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
       <input type="hidden" name="orgSlug" value={orgSlug} />
       <Field label="Team name" htmlFor="team-name">
         <Input
@@ -94,9 +94,11 @@ function CreateTeamForm({ orgSlug }: { orgSlug: string }) {
           placeholder="backend"
         />
       </Field>
-      <Button type="submit" disabled={pending}>
-        <Plus className="size-4" /> Create team
-      </Button>
+      <FieldAction>
+        <Button type="submit" disabled={pending}>
+          <Plus className="size-4" /> Create team
+        </Button>
+      </FieldAction>
       <div className="sm:col-span-3">
         <Field label="Description" htmlFor="team-description" hint="Optional, shown in the list.">
           <Input id="team-description" name="description" placeholder="Owns the API and the workers" />
