@@ -48,7 +48,9 @@ export async function saveAccessSettings(_prev: SettingsResult | null, fd: FormD
     localSignIn: localSignIn as LocalSignInMode,
     localSignInPath: normalizeLocalSignInPath(str(fd, "localSignInPath") || "local"),
     apiEnabled: fd.get("apiEnabled") === "on",
-    mirroring: fd.get("mirroring") === "on",
+    // One radio group (on / credentials / off) sets the two mirroring switches.
+    mirroring: str(fd, "mirroring") !== "off",
+    mirrorsRequireCredentials: str(fd, "mirroring") === "credentials",
     proxyCaches: fd.get("proxyCaches") === "on",
   };
   const before = (await getInstanceSettings()).access;

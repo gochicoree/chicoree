@@ -8,7 +8,16 @@ import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { MirrorFormFields } from "@/components/mirror-form-fields";
 
-export function ImportForm({ organizationId, orgSlug }: { organizationId: string; orgSlug: string }) {
+export function ImportForm({
+  organizationId,
+  orgSlug,
+  requireCredentials = false,
+}: {
+  organizationId: string;
+  orgSlug: string;
+  /** This registry imports only with the member's own credentials for the source. */
+  requireCredentials?: boolean;
+}) {
   const [state, action, pending] = useActionState<MirrorResult | null, FormData>(createImport, null);
   const [preview, previewAction, previewing] = useActionState<MirrorResult | null, FormData>(previewMirror, null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -47,10 +56,14 @@ export function ImportForm({ organizationId, orgSlug }: { organizationId: string
     >
       <input type="hidden" name="organizationId" value={organizationId} />
       <Card>
-        <CardHeader eyebrow="Source" title="What to import" />
+        <CardHeader
+          eyebrow="Source"
+          title="What to import"
+          description={requireCredentials ? "Imports here run with your own account at the source registry, so its rate limit is yours." : undefined}
+        />
         <CardBody>
           <div className="grid gap-4 sm:grid-cols-2">
-            <MirrorFormFields />
+            <MirrorFormFields requireCredentials={requireCredentials} />
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button type="button" variant="secondary" onClick={() => run(previewAction)} disabled={previewing}>

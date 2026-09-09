@@ -18,13 +18,17 @@ export function MirrorFormFields({
   selector,
   relabel,
   hasStoredAuth,
+  requireCredentials = false,
 }: {
   source?: string;
   selector?: TagSelector;
   relabel?: Relabel;
   hasStoredAuth?: boolean;
+  /** This registry mirrors only with the member's own credentials for the source. */
+  requireCredentials?: boolean;
 }) {
   const [mode, setMode] = useState<TagSelector["mode"]>(selector?.mode ?? "all");
+  const credentialsMissing = requireCredentials && !hasStoredAuth;
   return (
     <>
       <div className="sm:col-span-2">
@@ -36,15 +40,19 @@ export function MirrorFormFields({
           <Input id="source" name="source" required defaultValue={source} className="font-mono" placeholder="docker.io/library/nginx" />
         </Field>
       </div>
-      <Field label="Source username" htmlFor="username" hint="Leave empty for anonymous pulls">
-        <Input id="username" name="username" autoComplete="off" />
+      <Field
+        label="Source username"
+        htmlFor="username"
+        hint={requireCredentials ? "Your own account with the source registry; required here" : "Leave empty for anonymous pulls"}
+      >
+        <Input id="username" name="username" autoComplete="off" required={credentialsMissing} />
       </Field>
       <Field
         label="Source password / token"
         htmlFor="password"
-        hint={hasStoredAuth ? "Stored — leave blank to keep, enter - to clear" : undefined}
+        hint={hasStoredAuth ? (requireCredentials ? "Stored — leave blank to keep" : "Stored — leave blank to keep, enter - to clear") : undefined}
       >
-        <Input id="password" name="password" type="password" autoComplete="new-password" />
+        <Input id="password" name="password" type="password" autoComplete="new-password" required={credentialsMissing} />
       </Field>
 
       <Field label="Which tags" htmlFor="selectorMode">

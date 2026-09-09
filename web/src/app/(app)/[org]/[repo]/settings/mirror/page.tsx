@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { mirrorRuns, mirrors } from "@/db/schema";
 import { PAGE_SIZES, pageParam, paginatedQuery } from "@/lib/paginate-shared";
 import { Card, CardHeader } from "@/components/ui/card";
+import { mirroringMode } from "@/lib/access-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { MirrorManager, type MirrorView } from "../mirror-manager";
 import { repoSettingsContext } from "../context";
@@ -17,8 +18,8 @@ export default async function RepoMirrorPage({
   const { repo, base } = await repoSettingsContext(params);
   const query = await searchParams;
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repo.id) });
-  const mirroring = (await getInstanceSettings()).access.mirroring;
-  if (!mirroring && !mirror) {
+  const mode = mirroringMode((await getInstanceSettings()).access);
+  if (mode === "off" && !mirror) {
     return (
       <Card>
         <CardHeader eyebrow="Mirror" title="Mirroring is switched off on this registry" description="Repositories here cannot mirror or import from other registries." />
@@ -75,5 +76,5 @@ export default async function RepoMirrorPage({
       })),
     };
   }
-  return <MirrorManager repositoryId={repo.id} mirror={view} basePath={`${base}/mirror`} params={query} disabled={!mirroring} />;
+  return <MirrorManager repositoryId={repo.id} mirror={view} basePath={`${base}/mirror`} params={query} mode={mode} />;
 }

@@ -2,11 +2,12 @@
 // local repository, relabelling them on the way. Content flows source →
 // this process → registryd (as a normal authenticated client), so quotas and
 // dedup apply exactly as for a docker push.
+import { mirroringMode, type MirroringMode } from "@/lib/access-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import http from "http";
 import https from "https";
 import { Readable } from "stream";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   mirrorRuns,
@@ -22,7 +23,7 @@ import { decryptSecret } from "./crypto";
 import { env } from "./env";
 import { imagePath } from "./library";
 import { signRegistryToken } from "./registry-jwt";
-import { parseSource, RemoteRegistry } from "./remote-registry";
+import { parseSource, RemoteRegistry, type RemoteAuth } from "./remote-registry";
 import { notify } from "./notify";
 import { emitRepositoryEvent } from "./webhooks";
 
@@ -216,9 +217,33 @@ interface Descriptor {
 
 // --- The run ---------------------------------------------------------------
 
+/** The stored "user:password" of a mirror, decrypted; null for anonymous sources. */
+export function sourceCredentials(sourceAuth: string | null | undefined): RemoteAuth | null {
+  const raw = decryptSecret(sourceAuth ?? null);
+  if (!raw) return null;
+  const at = raw.indexOf(":");
+  return at < 0 ? { username: raw, password: "" } : { username: raw.slice(0, at), password: raw.slice(at + 1) };
+}
+
+/** How this instance lets mirrors run right now (Administration → Auth providers → Access → Features). */
+export async function currentMirroringMode(): Promise<MirroringMode> {
+  return mirroringMode((await getInstanceSettings()).access);
+}
+
+/** Why a mirror may not run under the instance's mode, or null when it may. */
+export function mirrorBlockedBy(mode: MirroringMode, mirror: { sourceAuth: string | null }): string | null {
+  if (mode === "off") return "mirroring is switched off on this registry";
+  if (mode === "credentials" && !mirror.sourceAuth) return "this registry runs mirrors only with the member's own credentials for the source, and this one has none";
+  return null;
+}
+
 export async function runMirror(mirrorId: string): Promise<{ runId: string; status: string }> {
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.id, mirrorId) });
   if (!mirror) throw new Error("mirror not found");
+  // The actions and the job check this too; here it also covers the first
+  // run an import starts in the background.
+  const blocked = mirrorBlockedBy(await currentMirroringMode(), mirror);
+  if (blocked) throw new Error(blocked);
   const repo = await db.query.repositories.findFirst({ where: eq(repositories.id, mirror.repositoryId) });
   if (!repo) throw new Error("target repository not found");
   const org = await db.query.organization.findFirst({ where: eq(organization.id, repo.organizationId) });
@@ -233,9 +258,7 @@ export async function runMirror(mirrorId: string): Promise<{ runId: string; stat
 
   try {
     const source = parseSource(mirror.source);
-    const authRaw = decryptSecret(mirror.sourceAuth);
-    const auth = authRaw ? { username: authRaw.split(":")[0], password: authRaw.slice(authRaw.indexOf(":") + 1) } : null;
-    const remote = new RemoteRegistry(source, auth);
+    const remote = new RemoteRegistry(source, sourceCredentials(mirror.sourceAuth));
 
     const targetPath = imagePath(org.slug, repo.name);
     const { token } = await signRegistryToken(
@@ -456,9 +479,14 @@ function describeError(err: unknown): string {
 
 /** Run every enabled mirror (used by the mirror-sync job). */
 export async function runAllMirrors(): Promise<{ mirrors: number; succeeded: number; failed: number }> {
-  // Switched off instance-wide (Administration → Auth providers → Access): nothing syncs.
-  if (!(await getInstanceSettings()).access.mirroring) return { mirrors: 0, succeeded: 0, failed: 0 };
-  const enabled = await db.query.mirrors.findMany({ where: eq(mirrors.enabled, true) });
+  // Switched off instance-wide (Administration → Auth providers → Access):
+  // nothing syncs. "Own credentials only": mirrors without credentials for
+  // their source stay as they are and are not run.
+  const mode = await currentMirroringMode();
+  if (mode === "off") return { mirrors: 0, succeeded: 0, failed: 0 };
+  const enabled = await db.query.mirrors.findMany({
+    where: mode === "credentials" ? and(eq(mirrors.enabled, true), isNotNull(mirrors.sourceAuth)) : eq(mirrors.enabled, true),
+  });
   let succeeded = 0;
   let failed = 0;
   for (const m of enabled) {

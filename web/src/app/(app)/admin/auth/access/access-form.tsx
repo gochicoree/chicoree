@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { saveAccessSettings } from "@/app/actions/admin-platform";
 import type { SettingsResult } from "@/app/actions/instance-settings";
 import type { AccessSettings } from "@/lib/access-shared";
-import { LOCAL_SIGNIN_MODES, SIGN_UP_MODES } from "@/lib/access-shared";
+import { LOCAL_SIGNIN_MODES, MIRRORING_MODES, mirroringMode, SIGN_UP_MODES } from "@/lib/access-shared";
 import type { SettingsSource } from "@/lib/instance-settings";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -198,13 +198,21 @@ export function AccessForm({ access, source, appUrl }: { access: AccessSettings;
           <fieldset>
             <legend className="mb-2 text-[13px] font-medium text-ink">Features</legend>
             <div className="space-y-3">
-              <Check
-                key={`mirroring-${access.mirroring}`}
-                name="mirroring"
-                label="Mirroring and importing"
-                defaultChecked={access.mirroring}
-                hint="Off: nobody can mirror or import from other registries; existing mirrors stay but stop syncing. A hosted instance keeps its upstream rate limits this way."
-              />
+              <div key={`mirroring-${mirroringMode(access)}`}>
+                <div className="mb-1.5 text-sm text-ink-2">Mirroring and importing</div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {MIRRORING_MODES.map((m) => (
+                    <Radio
+                      key={m.value}
+                      name="mirroring"
+                      value={m.value}
+                      label={m.label}
+                      description={m.description}
+                      defaultChecked={mirroringMode(access) === m.value}
+                    />
+                  ))}
+                </div>
+              </div>
               <Check
                 key={`proxyCaches-${access.proxyCaches}`}
                 name="proxyCaches"

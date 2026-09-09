@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from "reac
 import { useRouter } from "next/navigation";
 import { GitMerge, Loader2, Play, Trash2 } from "lucide-react";
 import { deleteMirror, previewMirror, runMirrorNow, saveMirror, type MirrorResult } from "@/app/actions/mirrors";
-import { MIRRORING_OFF } from "@/lib/access-shared";
+import { MIRROR_NEEDS_CREDENTIALS, MIRRORING_OFF, type MirroringMode } from "@/lib/access-shared";
 import type { MirrorLogEntry, Relabel, TagSelector } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,12 +69,15 @@ export function MirrorManager({
   mirror,
   basePath,
   params,
-  disabled = false,
+  mode = "on",
 }: {
   repositoryId: string;
   mirror: MirrorView | null;
-  /** Mirroring is switched off on this registry: no form, the mirror stays but does not sync. */
-  disabled?: boolean;
+  /**
+   * How this registry mirrors: off shows no form (the mirror stays but does
+   * not sync); credentials requires the member's own account for the source.
+   */
+  mode?: MirroringMode;
   /** Path the run history pages link to. */
   basePath: string;
   /** The page's other search parameters, kept across page changes. */
@@ -100,6 +103,9 @@ export function MirrorManager({
   const [syncing, startSync] = useTransition();
   const [kicked, setKicked] = useState(false);
   const busy = syncing || kicked || running;
+  const disabled = mode === "off";
+  // Own credentials only: a mirror without stored credentials cannot run.
+  const needsCredentials = mode === "credentials" && !!mirror && !mirror.hasAuth;
 
   useEffect(() => {
     if (running) setKicked(false);
@@ -132,7 +138,11 @@ export function MirrorManager({
       <CardHeader
         eyebrow="Mirror"
         title={mirror ? `Mirroring ${mirror.source}` : "Mirror another registry"}
-        description="Import matching tags from another registry into this repository."
+        description={
+          mode === "credentials"
+            ? "Import matching tags from another registry into this repository, with your own account there."
+            : "Import matching tags from another registry into this repository."
+        }
         action={
           mirror?.lastStatus && (
             <Badge tone={mirror.lastStatus === "succeeded" ? "ok" : "danger"}>
@@ -154,11 +164,17 @@ export function MirrorManager({
             }}
           >
             <input type="hidden" name="repositoryId" value={repositoryId} />
+            {needsCredentials && (
+              <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">
+                {MIRROR_NEEDS_CREDENTIALS} This mirror has none and does not sync until you add your account for the source.
+              </p>
+            )}
             <MirrorFormFields
               source={mirror?.source}
               selector={mirror?.selector}
               relabel={mirror?.relabel}
               hasStoredAuth={mirror?.hasAuth}
+              requireCredentials={mode === "credentials"}
             />
             <label className="flex items-center gap-2 text-sm text-ink-2">
               <input type="checkbox" name="overwrite" defaultChecked={mirror?.overwrite ?? true} className="size-4 accent-[var(--action)]" />
@@ -179,7 +195,7 @@ export function MirrorManager({
                 {previewing ? "Checking…" : "Preview matching tags"}
               </Button>
               {mirror && (
-                <Button type="button" variant="accent" onClick={syncNow} disabled={busy} className="sm:ml-auto">
+                <Button type="button" variant="accent" onClick={syncNow} disabled={busy || needsCredentials} className="sm:ml-auto">
                   {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
                   {busy ? "Syncing…" : "Sync now"}
                 </Button>

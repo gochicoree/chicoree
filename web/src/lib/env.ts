@@ -303,6 +303,11 @@ export const env = {
     const v = (process.env.MIRRORING_ENABLED ?? "").trim().toLowerCase();
     return !(v === "false" || v === "0" || v === "off" || v === "no");
   },
+  /** MIRRORS_REQUIRE_CREDENTIALS=true: mirrors and imports only with the member's own credentials for the source registry (Administration → Auth providers → Access overrides). */
+  get mirrorsRequireCredentials() {
+    const v = (process.env.MIRRORS_REQUIRE_CREDENTIALS ?? "").trim().toLowerCase();
+    return v === "true" || v === "1" || v === "on" || v === "yes";
+  },
   /** Proxy caches; PROXY_CACHES_ENABLED=false switches them off (Administration → Auth providers → Access overrides). */
   get proxyCachesEnabled() {
     const v = (process.env.PROXY_CACHES_ENABLED ?? "").trim().toLowerCase();

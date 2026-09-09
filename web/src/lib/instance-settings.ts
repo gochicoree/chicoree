@@ -183,6 +183,7 @@ function envDefaults(): Omit<EffectiveSettings, "sources" | "version"> {
       localSignInPath: normalizeLocalSignInPath(env.localSignInPath),
       apiEnabled: env.apiEnabled,
       mirroring: env.mirroringEnabled,
+      mirrorsRequireCredentials: env.mirrorsRequireCredentials,
       proxyCaches: env.proxyCachesEnabled,
     },
     branding: {
@@ -252,6 +253,7 @@ function envConfigured(section: SettingsSection, d: ReturnType<typeof envDefault
         !!process.env.TOKEN_REQUIRE_EXPIRY ||
         !!process.env.API_ENABLED ||
         !!process.env.MIRRORING_ENABLED ||
+        !!process.env.MIRRORS_REQUIRE_CREDENTIALS ||
         !!process.env.PROXY_CACHES_ENABLED
       );
     case "branding":

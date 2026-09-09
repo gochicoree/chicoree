@@ -45,6 +45,7 @@ services:
       # Instance-wide switches (Administration → Auth providers → Access overrides them).
       API_ENABLED: ${API_ENABLED:-true}
       MIRRORING_ENABLED: ${MIRRORING_ENABLED:-true}
+      MIRRORS_REQUIRE_CREDENTIALS: ${MIRRORS_REQUIRE_CREDENTIALS:-false}
       PROXY_CACHES_ENABLED: ${PROXY_CACHES_ENABLED:-true}
       TRIVY_CACHE_DIR: /var/lib/chicoree/trivy
       TRIVY_TIMEOUT_SECONDS: ${TRIVY_TIMEOUT_SECONDS:-600}

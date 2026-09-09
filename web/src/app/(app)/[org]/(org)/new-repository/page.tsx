@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { mirroringMode } from "@/lib/access-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { getOrgContext } from "@/lib/session";
 import { WRITER_ROLES } from "@/lib/org-roles";
@@ -19,15 +20,17 @@ export default async function NewRepositoryPage({
   if (!ctx) notFound();
   if (!ctx.role || !WRITER_ROLES.includes(ctx.role)) redirect(`/${slug}`);
   const defaultVisibility = await resolveDefaultVisibility(ctx.org.id);
-  const mirroring = (await getInstanceSettings()).access.mirroring;
+  const mirroring = mirroringMode((await getInstanceSettings()).access);
+  const description =
+    mirroring === "off"
+      ? "Pushing to a new name also creates a repository."
+      : mirroring === "credentials"
+        ? "Start empty, or mirror a repository from another registry with your own account there. Pushing to a new name also creates a repository."
+        : "Start empty, or mirror a repository from another registry. Pushing to a new name also creates a repository.";
 
   return (
     <div>
-      <PageHeader
-        eyebrow={ctx.org.name}
-        title="New repository"
-        description={mirroring ? "Start empty, or mirror a repository from another registry. Pushing to a new name also creates a repository." : "Pushing to a new name also creates a repository."}
-      />
+      <PageHeader eyebrow={ctx.org.name} title="New repository" description={description} />
       <RepositorySetup
         organizationId={ctx.org.id}
         orgSlug={slug}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { clsx } from "clsx";
 import { Download, PackagePlus } from "lucide-react";
+import type { MirroringMode } from "@/lib/access-shared";
 import { NewRepositoryForm } from "./new-repository-form";
 import { ImportForm } from "../import/import-form";
 
@@ -30,11 +31,13 @@ export function RepositorySetup({
   orgSlug: string;
   defaultVisibility: "public" | "private";
   initialMode: SetupMode;
-  /** Mirroring is available on this registry (else only the empty mode is offered). */
-  mirroring: boolean;
+  /** How this registry mirrors: off offers only the empty mode, credentials means the member's own source account is required. */
+  mirroring: MirroringMode;
 }) {
-  const [mode, setMode] = useState<SetupMode>(mirroring ? initialMode : "empty");
-  const modes = mirroring ? MODES : MODES.filter((m) => m.value === "empty");
+  const [mode, setMode] = useState<SetupMode>(mirroring !== "off" ? initialMode : "empty");
+  const modes = (mirroring !== "off" ? MODES : MODES.filter((m) => m.value === "empty")).map((m) =>
+    m.value === "mirror" && mirroring === "credentials" ? { ...m, text: "Copy tags from a source repository with your own account there and keep them in sync." } : m,
+  );
   return (
     <div className="space-y-5">
       <div role="tablist" aria-label="How to create the repository" className="grid gap-2 sm:grid-cols-2">
@@ -64,7 +67,7 @@ export function RepositorySetup({
       {mode === "empty" ? (
         <NewRepositoryForm organizationId={organizationId} orgSlug={orgSlug} defaultVisibility={defaultVisibility} />
       ) : (
-        <ImportForm organizationId={organizationId} orgSlug={orgSlug} />
+        <ImportForm organizationId={organizationId} orgSlug={orgSlug} requireCredentials={mirroring === "credentials"} />
       )}
     </div>
   );

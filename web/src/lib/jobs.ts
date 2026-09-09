@@ -116,7 +116,8 @@ JOBS["mirror-sync"] = {
   name: "mirror-sync",
   tab: "Mirrors",
   title: "Sync mirrors",
-  description: "Runs every enabled repository mirror: fetches matching tags from the source registry and imports anything new or changed.",
+  description:
+    "Runs every enabled repository mirror: fetches matching tags from the source registry and imports anything new or changed. Under “Own credentials only” a mirror without credentials for its source is left out.",
   params: [],
   run: async () => runAllMirrors(),
 };

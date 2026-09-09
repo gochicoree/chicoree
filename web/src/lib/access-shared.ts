@@ -27,12 +27,37 @@ export interface AccessSettings {
   apiEnabled: boolean;
   /** Mirroring and importing from other registries; off = no new mirrors or imports, existing mirrors stop syncing. */
   mirroring: boolean;
+  /**
+   * While mirroring is on: every mirror or import must carry the member's own
+   * credentials for the source registry (so its rate limit is theirs, not the
+   * instance's); mirrors without credentials stop syncing.
+   */
+  mirrorsRequireCredentials: boolean;
   /** Proxy caches; off = no organization can become one, existing caches serve what they hold and fetch nothing new. */
   proxyCaches: boolean;
 }
 
 /** What the UI and the actions say when a feature is off. */
 export const MIRRORING_OFF = "Mirroring and importing are switched off on this registry.";
+export const MIRROR_NEEDS_CREDENTIALS = "Mirrors and imports on this registry need your own credentials for the source registry.";
+
+/** The two mirroring switches as one mode: on, on with the member's own credentials only, or off. */
+export type MirroringMode = "on" | "credentials" | "off";
+
+export function mirroringMode(access: Pick<AccessSettings, "mirroring" | "mirrorsRequireCredentials">): MirroringMode {
+  if (!access.mirroring) return "off";
+  return access.mirrorsRequireCredentials ? "credentials" : "on";
+}
+
+export const MIRRORING_MODES: { value: MirroringMode; label: string; description: string }[] = [
+  { value: "on", label: "On", description: "Anyone who may write to an organization can mirror or import from other registries, with or without credentials." },
+  {
+    value: "credentials",
+    label: "Own credentials only",
+    description: "Every mirror or import must use the member's own account with the source registry, so its rate limit is theirs. Mirrors without credentials stop syncing.",
+  },
+  { value: "off", label: "Off", description: "Nobody can mirror or import; existing mirrors stay but stop syncing. A hosted instance keeps its upstream rate limits this way." },
+];
 export const PROXY_CACHES_OFF = "Proxy caches are switched off on this registry.";
 
 /** Header the sign-up form sends so an invitee is matched to their invitation. */
@@ -48,6 +73,7 @@ export const DEFAULT_ACCESS: AccessSettings = {
   localSignInPath: "local",
   apiEnabled: true,
   mirroring: true,
+  mirrorsRequireCredentials: false,
   proxyCaches: true,
 };
 

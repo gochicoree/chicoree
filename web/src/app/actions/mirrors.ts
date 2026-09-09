@@ -10,15 +10,10 @@ import { getOrgRole, requireSession } from "@/lib/session";
 import { MANAGER_ROLES, WRITER_ROLES } from "@/lib/org-roles";
 import { encryptSecret } from "@/lib/crypto";
 import { checkRepoQuota } from "@/lib/quota";
-import { runMirror, selectTags } from "@/lib/mirror";
-import { parseSource, RemoteRegistry } from "@/lib/remote-registry";
+import { currentMirroringMode, mirrorBlockedBy, runMirror, selectTags, sourceCredentials } from "@/lib/mirror";
+import { parseSource, RemoteRegistry, type RemoteAuth } from "@/lib/remote-registry";
 import { recordAudit } from "@/lib/audit";
-import { MIRRORING_OFF } from "@/lib/access-shared";
-import { getInstanceSettings } from "@/lib/instance-settings";
-
-async function mirroringOn(): Promise<boolean> {
-  return (await getInstanceSettings()).access.mirroring;
-}
+import { MIRROR_NEEDS_CREDENTIALS, MIRRORING_OFF } from "@/lib/access-shared";
 
 export interface MirrorResult {
   error?: string;
@@ -66,7 +61,8 @@ async function repoContext(repositoryId: string, roles: string[]) {
 
 /** Create or update the mirror configuration of an existing repository. */
 export async function saveMirror(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
-  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
+  const mode = await currentMirroringMode();
+  if (mode === "off") return { error: MIRRORING_OFF };
   const repositoryId = String(formData.get("repositoryId") ?? "");
   const ctx = await repoContext(repositoryId, MANAGER_ROLES);
   if ("error" in ctx) return { error: ctx.error };
@@ -86,6 +82,8 @@ export async function saveMirror(_prev: MirrorResult | null, formData: FormData)
     : password === "-"
       ? null
       : (existing?.sourceAuth ?? null);
+  // "Own credentials only": a mirror without credentials for its source would never run.
+  if (mode === "credentials" && !sourceAuth) return { error: MIRROR_NEEDS_CREDENTIALS };
   const values = { source, sourceAuth, selector, relabel: readRelabel(formData), overwrite, enabled };
   if (existing) {
     await db.update(mirrors).set(values).where(eq(mirrors.id, existing.id));
@@ -108,12 +106,13 @@ export async function deleteMirror(formData: FormData): Promise<void> {
 
 /** Kick off a run in the background. */
 export async function runMirrorNow(formData: FormData): Promise<void> {
-  if (!(await mirroringOn())) return;
+  const mode = await currentMirroringMode();
+  if (mode === "off") return;
   const repositoryId = String(formData.get("repositoryId") ?? "");
   const ctx = await repoContext(repositoryId, WRITER_ROLES);
   if ("error" in ctx) return;
   const mirror = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repositoryId) });
-  if (!mirror) return;
+  if (!mirror || mirrorBlockedBy(mode, mirror)) return;
   await recordAudit({ action: "mirror.sync", organizationId: ctx.org.id, targetType: "repository", targetId: repositoryId, targetLabel: `${ctx.org.slug}/${ctx.repo.name}`, details: { source: mirror.source } });
   after(async () => {
     await runMirror(mirror.id).catch((err) => console.error("mirror run failed:", err));
@@ -121,18 +120,36 @@ export async function runMirrorNow(formData: FormData): Promise<void> {
   revalidatePath(`/${ctx.org.slug}/${ctx.repo.name}/settings`);
 }
 
+/**
+ * Credentials for a preview: the ones typed into the form, else the ones an
+ * existing mirror of the repository stores — for the same registry only, so
+ * changing the source never sends stored credentials elsewhere.
+ */
+async function previewCredentials(formData: FormData, source: string): Promise<RemoteAuth | null> {
+  const username = String(formData.get("username") ?? "").trim();
+  if (username) return { username, password: String(formData.get("password") ?? "") };
+  const repositoryId = String(formData.get("repositoryId") ?? "");
+  if (!repositoryId) return null;
+  const ctx = await repoContext(repositoryId, WRITER_ROLES);
+  if ("error" in ctx) return null;
+  const existing = await db.query.mirrors.findFirst({ where: eq(mirrors.repositoryId, repositoryId) });
+  if (!existing?.sourceAuth || parseSource(existing.source).host !== parseSource(source).host) return null;
+  return sourceCredentials(existing.sourceAuth);
+}
+
 /** Dry run: list the source tags the selector would pick. */
 export async function previewMirror(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
   await requireSession();
-  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
+  const mode = await currentMirroringMode();
+  if (mode === "off") return { error: MIRRORING_OFF };
   const selector = readSelector(formData);
   if ("error" in selector) return { error: selector.error };
   const source = String(formData.get("source") ?? "").trim();
   if (!source) return { error: "Enter a source repository." };
-  const username = String(formData.get("username") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const auth = await previewCredentials(formData, source);
+  if (mode === "credentials" && !auth) return { error: MIRROR_NEEDS_CREDENTIALS };
   try {
-    const remote = new RemoteRegistry(parseSource(source), username ? { username, password } : null);
+    const remote = new RemoteRegistry(parseSource(source), auth);
     const all = await remote.listTags();
     const matched = selectTags(all, selector);
     return { preview: { total: all.length, matched: matched.slice(0, 200) } };
@@ -144,7 +161,8 @@ export async function previewMirror(_prev: MirrorResult | null, formData: FormDa
 /** Import flow: create the repository, configure the mirror, start the first run. */
 export async function createImport(_prev: MirrorResult | null, formData: FormData): Promise<MirrorResult> {
   const session = await requireSession();
-  if (!(await mirroringOn())) return { error: MIRRORING_OFF };
+  const mode = await currentMirroringMode();
+  if (mode === "off") return { error: MIRRORING_OFF };
   const organizationId = String(formData.get("organizationId") ?? "");
   const role = await getOrgRole(organizationId);
   if (!role || !WRITER_ROLES.includes(role)) return { error: "You don't have permission to import here." };
@@ -160,6 +178,7 @@ export async function createImport(_prev: MirrorResult | null, formData: FormDat
   if (!source) return { error: "Enter a source repository." };
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  if (mode === "credentials" && !(username && password)) return { error: MIRROR_NEEDS_CREDENTIALS };
 
   let repo = await db.query.repositories.findFirst({
     where: and(eq(repositories.organizationId, organizationId), eq(repositories.name, name)),

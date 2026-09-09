@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-09.1",
+    changes: [
+      "General: `GET /` `features` gains `mirrorsRequireCredentials` — a third mirroring mode, “Own credentials only” (Administration → Auth providers → Access → Features, or `MIRRORS_REQUIRE_CREDENTIALS=true`): mirroring stays on, but every mirror or import must carry the member's own credentials for the source registry, so its rate limit is theirs rather than the instance's; mirrors without credentials stop syncing until they get some. Proxy caches are unaffected.",
+    ],
+  },
+  {
     revision: "2026-09-07.7",
     changes: [
       "Images and webhooks: a push by a keyless CI identity is named `GitHub Actions · <identity>` (the issuer's label, then the identity name) in `pushedBy.label`, in the activity feed and as the webhook `actor` (type `ci`); it read `CI: <identity>` or fell back to `deleted service account` before.",

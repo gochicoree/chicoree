@@ -115,7 +115,7 @@ Everything is environment-driven; see `.env.example` for the full list.
 | Sign-up controls | *Administration → Auth providers → Access*; `SIGNUP_MODE`, `SIGNUP_ALLOWED_DOMAINS`, `ORG_CREATION` as defaults — see [Sign-up controls](#sign-up-controls) |
 | Access token policy | *Administration → Auth providers → Access*; `TOKEN_MAX_LIFETIME_DAYS`, `TOKEN_REQUIRE_EXPIRY` as defaults — see [Access token policy](#access-token-policy) |
 | REST API | *Administration → Auth providers → Access*; `API_ENABLED=false` as default switches `/api/v1` off — see [REST API](#rest-api) |
-| Mirroring, proxy caches | *Administration → Auth providers → Access → Features*; `MIRRORING_ENABLED=false`, `PROXY_CACHES_ENABLED=false` as defaults switch them off for the whole instance — see [Mirroring](#mirroring--importing), [Proxy caches](#proxy-caches) |
+| Mirroring, proxy caches | *Administration → Auth providers → Access → Features*; `MIRRORING_ENABLED=false`, `PROXY_CACHES_ENABLED=false` as defaults switch them off for the whole instance, `MIRRORS_REQUIRE_CREDENTIALS=true` keeps mirroring on but only with the member's own credentials for the source — see [Mirroring](#mirroring--importing), [Proxy caches](#proxy-caches) |
 | Default limits | *Administration → Limits*; `DEFAULT_USER_MAX_*`, `DEFAULT_ORG_MAX_*` as defaults for new accounts and organizations — see [Limits](#limits) |
 | Account portal | *Administration → Limits*; `PORTAL_URL`, `PORTAL_LABEL` as defaults — see [Account portal](#account-portal) |
 | Token signing keys | *Administration → Signing keys*; `TOKEN_KEY_RELOAD_INTERVAL` (default `60s`) and `TOKEN_KEY_DROP_WINDOW` (default `10m`) on `registryd` — see [Signing-key rotation](#signing-key-rotation) |
@@ -1026,6 +1026,18 @@ users do not run one upstream into its rate limits: the mirror mode of *New
 repository* and the mirror settings disappear, existing mirrors stay but
 stop syncing, and the `mirror-sync` job reports nothing to do. Self-hosted
 and on-premises installs usually leave it on.
+
+The middle ground is **Own credentials only** (the same page, or
+`MIRRORS_REQUIRE_CREDENTIALS=true` next to `MIRRORING_ENABLED=true`):
+mirroring and importing stay available, but every mirror or import must
+carry the member's own account with the source registry — a Docker Hub
+login, a GHCR token, a service account on another Chicorée. The pulls
+then count against that account's rate limit instead of the instance's
+address. The import form and the mirror settings require the username and
+password, *Preview matching tags* uses them (or the ones a mirror already
+stores), and a mirror without credentials is left out of scheduled syncs
+and *Sync now* until someone adds an account for its source. Proxy caches
+have no such mode; they stay governed by their own switch.
 
 *Organization → Import* (or a repository's *Settings → Mirror*) copies tags
 from any other registry (Docker Hub, GHCR, Quay, another Chicorée …) into a
