@@ -10,7 +10,7 @@ export function ApiRevisionCard({ notice }: { notice: RevisionNotice }) {
   if (notice.unseen.length === 0) return null;
   return (
     <div data-api-revision-card>
-    <Card className="mt-6">
+    <Card className="mb-6">
       <CardHeader
         eyebrow="REST API"
         title={notice.acknowledged ? `The API changed: revision ${notice.current}` : `API revision ${notice.current}`}
