@@ -39,7 +39,7 @@ jobs:
       scan-gate: ${{ vars.SCAN_GATE || 'critical' }}
       images: |
         [
-          { "name": "web", "context": "web" },
+          { "name": "web", "context": "web", "buildArgs": "APP_VERSION={{version}}\nAPP_COMMIT={{sha}}" },
           { "name": "registryd", "context": "registryd", "buildArgs": "VERSION={{version}}" }
         ]
     secrets:

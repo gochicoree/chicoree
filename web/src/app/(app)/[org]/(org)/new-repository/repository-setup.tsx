@@ -13,8 +13,8 @@ const MODES: { value: SetupMode; title: string; text: string; Icon: typeof Packa
   { value: "empty", title: "Empty repository", text: "Create it now and push images to it.", Icon: PackagePlus },
   {
     value: "mirror",
-    title: "Mirror another registry",
-    text: "Copy tags from a source repository and keep them in sync.",
+    title: "Import",
+    text: "Copy tags from another registry and keep them in sync.",
     Icon: Download,
   },
 ];
@@ -36,7 +36,7 @@ export function RepositorySetup({
 }) {
   const [mode, setMode] = useState<SetupMode>(mirroring !== "off" ? initialMode : "empty");
   const modes = (mirroring !== "off" ? MODES : MODES.filter((m) => m.value === "empty")).map((m) =>
-    m.value === "mirror" && mirroring === "credentials" ? { ...m, text: "Copy tags from a source repository with your own account there and keep them in sync." } : m,
+    m.value === "mirror" && mirroring === "credentials" ? { ...m, text: "Copy tags from another registry with your own account there and keep them in sync." } : m,
   );
   return (
     <div className="space-y-5">

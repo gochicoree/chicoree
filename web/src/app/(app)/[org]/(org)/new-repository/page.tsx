@@ -25,8 +25,8 @@ export default async function NewRepositoryPage({
     mirroring === "off"
       ? "Pushing to a new name also creates a repository."
       : mirroring === "credentials"
-        ? "Start empty, or mirror a repository from another registry with your own account there. Pushing to a new name also creates a repository."
-        : "Start empty, or mirror a repository from another registry. Pushing to a new name also creates a repository.";
+        ? "Start empty, or import a repository from another registry with your own account there. Pushing to a new name also creates a repository."
+        : "Start empty, or import a repository from another registry. Pushing to a new name also creates a repository.";
 
   return (
     <div>

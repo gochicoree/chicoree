@@ -10,6 +10,7 @@ import { getBranding } from "@/lib/branding";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { canCreateOrganization } from "@/lib/signup-policy";
 import { announcementDismissible, announcementHash } from "@/lib/branding-shared";
+import { buildLabel } from "@/lib/build-info";
 import { logoVersionOf, userLogoVersion } from "@/lib/logo";
 import { logoRef } from "@/lib/logo-shared";
 
@@ -69,7 +70,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
           <main className="mx-auto w-full max-w-[110rem] px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:px-8">
             {children}
-            <AppFooter name={branding.instanceName} tagline={branding.tagline} links={branding.footerLinks} />
+            <AppFooter name={branding.instanceName} tagline={branding.tagline} build={buildLabel()} links={branding.footerLinks} />
           </main>
         </div>
       </div>

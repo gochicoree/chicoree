@@ -63,7 +63,12 @@ services:
       retries: 12
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        # Shown in the footer; scripts/deploy.sh fills them from the checkout.
+        APP_VERSION: ${APP_VERSION:-}
+        APP_COMMIT: ${APP_COMMIT:-}
     restart: unless-stopped
     logging: *logging
     environment:

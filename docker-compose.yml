@@ -19,7 +19,12 @@ services:
       - "127.0.0.1:5432:5432"
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        # Shown in the footer; scripts/deploy.sh fills them from the checkout.
+        APP_VERSION: ${APP_VERSION:-}
+        APP_COMMIT: ${APP_COMMIT:-}
     environment:
       DATABASE_URL: postgres://chicoree:chicoree@postgres:5432/chicoree
       APP_URL: ${APP_URL:-http://localhost:3000}

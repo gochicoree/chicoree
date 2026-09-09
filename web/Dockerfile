@@ -29,6 +29,12 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 \
     TRIVY_CACHE_DIR=/var/lib/chicoree/trivy
+# What this image was built from; the footer and GET /api/v1 (`build`) show
+# it. The release workflow passes the tag and commit, scripts/deploy.sh the
+# local checkout's.
+ARG APP_VERSION=
+ARG APP_COMMIT=
+ENV APP_VERSION=$APP_VERSION APP_COMMIT=$APP_COMMIT
 RUN addgroup -S app && adduser -S app -G app \
     && mkdir -p /var/lib/chicoree/keys /var/lib/chicoree/trivy \
     && chown app:app /var/lib/chicoree/keys /var/lib/chicoree/trivy

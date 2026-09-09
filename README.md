@@ -297,7 +297,11 @@ if it is missing, writes `.env` from `.env.prod.example` with fresh secrets
 (first run only), and runs `docker compose -f docker-compose.prod.yml up -d
 --build`. Re-run it to deploy changes. Requirements: DNS for the domain
 pointing at the server, ports 80 and 443 open, and a user that can talk to
-the Docker daemon.
+the Docker daemon. The footer of every page and `build` in `GET /api/v1`
+show what the web app was built from: the script passes the checkout's
+tag (when it sits exactly on one) and short commit as the `APP_VERSION` /
+`APP_COMMIT` build arguments, the release workflow the released tag and
+commit; a build without them shows nothing.
 
 Edit `.env` on the server for SMTP, S3 storage, sign-in providers, group
 bindings, sign-up controls, branding, rate limits, or to pick a scanner

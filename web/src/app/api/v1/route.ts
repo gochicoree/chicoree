@@ -6,6 +6,7 @@ import { json } from "@/lib/api/respond";
 import { absolute } from "@/lib/api/serialize";
 import { API_BASE, API_CHANGELOG, API_NOTICE, API_REVISION, API_VERSION } from "@/lib/api/version";
 import { getBranding } from "@/lib/branding";
+import { buildInfo } from "@/lib/build-info";
 import { mirroringMode } from "@/lib/access-shared";
 import { getInstanceSettings } from "@/lib/instance-settings";
 
@@ -20,6 +21,8 @@ export const GET = route(async () => {
     base: absolute(API_BASE),
     docs: absolute("/docs/api"),
     notice: API_NOTICE,
+    // What the web app was built from (null when unknown, e.g. in development).
+    build: { version: buildInfo().version || null, commit: buildInfo().commit || null },
     // Instance-wide switches (Administration → Auth providers → Access → Features).
     features: {
       mirroring: settings.access.mirroring,

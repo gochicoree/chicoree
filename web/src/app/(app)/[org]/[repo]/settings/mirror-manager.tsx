@@ -137,7 +137,7 @@ export function MirrorManager({
     <Card>
       <CardHeader
         eyebrow="Mirror"
-        title={mirror ? `Mirroring ${mirror.source}` : "Mirror another registry"}
+        title={mirror ? `Mirroring ${mirror.source}` : "Import from another registry"}
         description={
           mode === "credentials"
             ? "Import matching tags from another registry into this repository, with your own account there."

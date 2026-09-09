@@ -20,6 +20,12 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-09.2",
+    changes: [
+      "General: `GET /` carries `build` — the release version and short commit the web app was built from (`APP_VERSION` / `APP_COMMIT` image build arguments: the release workflow sets them from the tag, `scripts/deploy.sh` from the checkout); both are null when unknown. The footer of every page shows the same.",
+    ],
+  },
+  {
     revision: "2026-09-09.1",
     changes: [
       "General: `GET /` `features` gains `mirrorsRequireCredentials` — a third mirroring mode, “Own credentials only” (Administration → Auth providers → Access → Features, or `MIRRORS_REQUIRE_CREDENTIALS=true`): mirroring stays on, but every mirror or import must carry the member's own credentials for the source registry, so its rate limit is theirs rather than the instance's; mirrors without credentials stop syncing until they get some. Proxy caches are unaffected.",
