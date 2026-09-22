@@ -23,6 +23,7 @@ import { formatBytes } from "./format";
 import { imageReference } from "./library";
 import { defaultEmailFor, type NotificationEvent } from "./notify-shared";
 import { getOrgLimits, getOrgUsage } from "./quota";
+import { serviceAccountHandle } from "./service-account-shared";
 import { emitOrganizationEvent, emitRepositoryEvent, tagsForDigest } from "./webhooks";
 import { imagePath } from "@/lib/library-shared";
 
@@ -523,15 +524,16 @@ export async function notify(input: NotifyInput): Promise<void> {
       const org = await db.query.organization.findFirst({ where: eq(organization.id, input.organizationId) });
       if (!org) return;
       const url = `${env.appUrl}/${org.slug}/service-accounts`;
+      const handle = serviceAccountHandle(org.slug, input.name);
       const message = compose(
         "Service account expiring",
-        `Service account "${input.name}" of ${org.name} expires ${when}`,
+        `Service account ${handle} of ${org.name} expires ${when}`,
         [
-          `The service account "${input.name}" of ${org.name} expires ${when} (${date}).`,
+          `The service account ${handle} of ${org.name} expires ${when} (${date}).`,
           "Pipelines using its credential stop working at that moment. Rotate it under Organization → Service accounts and update the secret in your CI.",
         ],
         [
-          `The service account <strong>${esc(input.name)}</strong> of <strong>${esc(org.name)}</strong> expires ${when} (${date}).`,
+          `The service account <strong>${esc(handle)}</strong> of <strong>${esc(org.name)}</strong> expires ${when} (${date}).`,
           "Pipelines using its credential stop working at that moment. Rotate it under Organization → Service accounts and update the secret in your CI.",
         ],
         { href: url, label: "Open service accounts" },

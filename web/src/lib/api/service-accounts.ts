@@ -5,29 +5,35 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { repositories, serviceAccounts } from "@/db/schema";
 import { getInstanceSettings } from "@/lib/instance-settings";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { resolveExpiry } from "@/lib/token-policy-shared";
 import { iso, unprocessable } from "./respond";
 
 export const SA_NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
-export type ServiceAccountRow = typeof serviceAccounts.$inferSelect & { repositoryNames: string[] | null };
+export type ServiceAccountRow = typeof serviceAccounts.$inferSelect & { handle: string; repositoryNames: string[] | null };
 
-export async function serviceAccountRows(organizationId: string, id?: string): Promise<ServiceAccountRow[]> {
+export async function serviceAccountRows(org: { id: string; slug: string }, id?: string): Promise<ServiceAccountRow[]> {
   const rows = await db.query.serviceAccounts.findMany({
-    where: id ? and(eq(serviceAccounts.organizationId, organizationId), eq(serviceAccounts.id, id)) : eq(serviceAccounts.organizationId, organizationId),
+    where: id ? and(eq(serviceAccounts.organizationId, org.id), eq(serviceAccounts.id, id)) : eq(serviceAccounts.organizationId, org.id),
     orderBy: (t, { asc }) => [asc(t.name)],
   });
   const ids = [...new Set(rows.flatMap((r) => r.repositoryIds ?? []))];
   const names = ids.length ? await db.query.repositories.findMany({ where: inArray(repositories.id, ids), columns: { id: true, name: true } }) : [];
   const byId = new Map(names.map((r) => [r.id, r.name]));
   void sql;
-  return rows.map((r) => ({ ...r, repositoryNames: r.repositoryIds ? r.repositoryIds.map((i) => byId.get(i) ?? "deleted repository").sort() : null }));
+  return rows.map((r) => ({
+    ...r,
+    handle: serviceAccountHandle(org.slug, r.name),
+    repositoryNames: r.repositoryIds ? r.repositoryIds.map((i) => byId.get(i) ?? "deleted repository").sort() : null,
+  }));
 }
 
 export function serviceAccountJson(r: ServiceAccountRow) {
   return {
     id: r.id,
     name: r.name,
+    handle: r.handle,
     description: r.description,
     permission: r.permission,
     tokenPrefix: r.tokenPrefix,

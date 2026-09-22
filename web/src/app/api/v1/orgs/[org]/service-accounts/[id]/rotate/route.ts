@@ -10,6 +10,7 @@ import { serviceAccountJson, serviceAccountRows } from "@/lib/api/service-accoun
 import { recordAudit } from "@/lib/audit";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { generateSecret, SA_PREFIX } from "@/lib/secrets";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { replacementExpiry } from "@/lib/token-policy-shared";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +28,8 @@ export const POST = route<{ org: string; id: string }>(async (req, { caller, par
     .update(serviceAccounts)
     .set({ tokenHash: hash, tokenPrefix: display, expiresAt: expiry.expiresAt, lastUsedAt: null, lastUsedIp: null })
     .where(eq(serviceAccounts.id, sa.id));
-  await recordAudit({ action: "sa.rotate", actor: caller.auditActor, headers: req.headers, organizationId: a.org.id, targetType: "service_account", targetId: sa.id, targetLabel: sa.name, details: { expiresAt: iso(expiry.expiresAt), via: "api" } });
+  await recordAudit({ action: "sa.rotate", actor: caller.auditActor, headers: req.headers, organizationId: a.org.id, targetType: "service_account", targetId: sa.id, targetLabel: serviceAccountHandle(a.org.slug, sa.name), details: { expiresAt: iso(expiry.expiresAt), via: "api" } });
   revalidatePath(`/${a.org.slug}/service-accounts`);
-  const [row] = await serviceAccountRows(a.org.id, sa.id);
+  const [row] = await serviceAccountRows(a.org, sa.id);
   return json({ ...serviceAccountJson(row), secret });
 });

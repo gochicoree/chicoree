@@ -10,6 +10,7 @@ import { conflict, enumField, iso, json, readJson, stringField, unprocessable } 
 import { serviceAccountJson, serviceAccountRows, SA_NAME_RE, expiryFromBody } from "@/lib/api/service-accounts";
 import { recordAudit } from "@/lib/audit";
 import { generateSecret, SA_PREFIX } from "@/lib/secrets";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ const PERMISSIONS = ["pull", "push", "admin"] as const;
 export const GET = route<{ org: string }>(async (_req, { caller, params }) => {
   const a = await loadOrg(caller, params.org);
   requireOrgManager(caller, a, "list service accounts");
-  const items = await serviceAccountRows(a.org.id);
+  const items = await serviceAccountRows(a.org);
   return json({ items, total: items.length });
 });
 
@@ -59,10 +60,10 @@ export const POST = route<{ org: string }>(async (req, { caller, params }) => {
     organizationId: a.org.id,
     targetType: "service_account",
     targetId: created.id,
-    targetLabel: name,
+    targetLabel: serviceAccountHandle(a.org.slug, name),
     details: { permission, expiresAt: iso(expiry), repositories: repositoryIds?.length ?? null, via: "api" },
   });
   revalidatePath(`/${a.org.slug}/service-accounts`);
-  const [row] = await serviceAccountRows(a.org.id, created.id);
+  const [row] = await serviceAccountRows(a.org, created.id);
   return json({ ...serviceAccountJson(row), secret }, { status: 201 });
 });

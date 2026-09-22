@@ -675,9 +675,9 @@ export async function recentActivity(opts: {
         WHEN 'user' THEN CASE WHEN e.actor_id = 'system' THEN 'system'
           ELSE COALESCE((SELECT u.name FROM "user" u WHERE u.id = e.actor_id), 'deleted user') END
         WHEN 'sa' THEN CASE WHEN e.actor_id LIKE 'ci:%'
-          THEN COALESCE((SELECT (CASE ci.issuer WHEN 'https://token.actions.githubusercontent.com' THEN 'GitHub Actions' WHEN 'https://gitlab.com' THEN 'GitLab.com' ELSE 'CI' END) || ' · ' || ci.name
-            FROM ci_identities_trusted ci WHERE ci.id = substr(e.actor_id, 4)), 'deleted CI identity')
-          ELSE COALESCE((SELECT sa.name FROM service_accounts sa WHERE sa.id = e.actor_id), 'deleted service account') END
+          THEN COALESCE((SELECT (CASE ci.issuer WHEN 'https://token.actions.githubusercontent.com' THEN 'GitHub Actions' WHEN 'https://gitlab.com' THEN 'GitLab.com' ELSE 'CI' END) || ' · ' || co.slug || '/' || ci.name
+            FROM ci_identities_trusted ci JOIN organization co ON co.id = ci.organization_id WHERE ci.id = substr(e.actor_id, 4)), 'deleted CI identity')
+          ELSE COALESCE((SELECT so.slug || '/' || sa.name FROM service_accounts sa JOIN organization so ON so.id = sa.organization_id WHERE sa.id = e.actor_id), 'deleted service account') END
         ELSE NULL
       END AS actor_name
     FROM events e

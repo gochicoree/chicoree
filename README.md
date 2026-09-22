@@ -687,7 +687,11 @@ URL, which both services honour.
   everyone in it, and people join or leave teams without touching their
   organization role. Owners and admins manage teams; every member can see
   them. Service accounts keep their own model: a permission plus an
-  optional repository list.
+  optional repository list. A service account is named by its handle,
+  `<organization>/<name>` (`acme/ci`, like an image path), wherever it
+  acts or is listed — activity, tag pages, webhooks, the audit log, the
+  API — so two organizations' `ci` accounts are never confused; CI
+  identities read `GitHub Actions · acme/release` the same way.
 - **`docker login` credentials**: personal access tokens (`chc_pat_…`, per
   user, read-only or read-write) and service accounts (`chc_sa_…`, per org,
   pull / push / admin) — both usable as the password with any username.
@@ -726,7 +730,7 @@ URL, which both services honour.
   lifetime, shows the new secret once and revokes the old token immediately.
   Service accounts (*Organization → Service accounts*) get the same expiry
   choices, last-use address and a *Rotate* that swaps the secret in place
-  (same id, so pipelines only need the new secret).
+  (same id and handle, so pipelines only need the new secret).
 - The web app's token endpoint (`/api/registry/token`) authorizes each
   requested scope against the database and signs a short-lived ES256 JWT;
   `registryd` verifies it with the trusted public keys and enforces the

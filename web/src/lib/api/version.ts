@@ -20,6 +20,13 @@ export interface ApiChange {
 
 export const API_CHANGELOG: ApiChange[] = [
   {
+    revision: "2026-09-22.1",
+    changes: [
+      "Service accounts: an account is named by its handle, `<organization>/<name>` (`acme/ci-deploy`), wherever it acts or is listed — `pushedBy.label`, the webhook `actor.name`, the activity feed, the tag page, the audit log (actor and target labels) and the expiry email — so two organizations' `ci` accounts are told apart. The service-account responses, `DELETE …/service-accounts/{id}` and `GET /me` carry the new `handle` next to `name`, which stays the bare name.",
+      "Keyless CI: a trusted identity is named `GitHub Actions · <organization>/<identity>` in the same places (it read `GitHub Actions · <identity>` before).",
+    ],
+  },
+  {
     revision: "2026-09-09.2",
     changes: [
       "General: `GET /` carries `build` — the release version and short commit the web app was built from (`APP_VERSION` / `APP_COMMIT` image build arguments: the release workflow sets them from the tag, `scripts/deploy.sh` from the checkout); both are null when unknown. The footer of every page shows the same.",

@@ -50,8 +50,11 @@ export function CiIdentitiesManager({ organizationId, organizationSlug, appUrl, 
         <CardBody>
           <form action={action} className="grid gap-4 sm:grid-cols-2">
             <input type="hidden" name="organizationId" value={organizationId} />
-            <Field label="Name" htmlFor="ci-name" hint="e.g. github-main">
-              <Input id="ci-name" name="name" required className="font-mono" pattern="[a-z0-9]+([._\\-][a-z0-9]+)*" />
+            <Field label="Name" htmlFor="ci-name" hint="e.g. github-main — named with the organization in front wherever it acts.">
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0 font-mono text-sm text-ink-3">{organizationSlug}/</span>
+                <Input id="ci-name" name="name" required className="font-mono" pattern="[a-z0-9]+([._\\-][a-z0-9]+)*" />
+              </div>
             </Field>
             <Field label="Permission" htmlFor="ci-permission">
               <Select
@@ -106,7 +109,10 @@ export function CiIdentitiesManager({ organizationId, organizationSlug, appUrl, 
                 <KeySquare className="size-4 shrink-0 text-ink-3" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-medium">{i.name}</span>
+                    <span className="font-mono text-sm font-medium">
+                      <span className="text-ink-3">{organizationSlug}/</span>
+                      {i.name}
+                    </span>
                     <Badge>{PERMISSION_LABEL[i.permission] ?? i.permission}</Badge>
                     <Badge tone="info">{issuerLabel(i.issuer)}</Badge>
                     {i.repositories && <Badge tone="neutral">{i.repositories.join(", ")}</Badge>}

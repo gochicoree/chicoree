@@ -9,6 +9,7 @@ import { db } from "@/db";
 import { ciIdentitiesTrusted, organization, repositories } from "@/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { validateCiIdentity } from "@/lib/ci-auth";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { getOrgRole, requireSession } from "@/lib/session";
 
 export interface CiIdentityResult {
@@ -49,10 +50,11 @@ export async function addCiIdentity(_prev: CiIdentityResult | null, formData: Fo
     repositoryIds = rows.map((r) => r.id);
   }
   const session = await requireSession();
-  const [created] = await db.insert(ciIdentitiesTrusted).values({ organizationId, ...values, repositoryIds, createdBy: session.user.id }).returning({ id: ciIdentitiesTrusted.id });
-  await recordAudit({ action: "ci.identity.add", organizationId, targetType: "ci_identity", targetId: created.id, targetLabel: values.name, details: { issuer: values.issuer, subject: values.subject, permission: values.permission, repositories: repositoryIds?.length ?? null } });
   const org = await db.query.organization.findFirst({ where: eq(organization.id, organizationId) });
-  revalidatePath(`/${org?.slug}/service-accounts`);
+  if (!org) return { error: "Unknown organization." };
+  const [created] = await db.insert(ciIdentitiesTrusted).values({ organizationId, ...values, repositoryIds, createdBy: session.user.id }).returning({ id: ciIdentitiesTrusted.id });
+  await recordAudit({ action: "ci.identity.add", organizationId, targetType: "ci_identity", targetId: created.id, targetLabel: serviceAccountHandle(org.slug, values.name), details: { issuer: values.issuer, subject: values.subject, permission: values.permission, repositories: repositoryIds?.length ?? null } });
+  revalidatePath(`/${org.slug}/service-accounts`);
   return { saved: true };
 }
 
@@ -62,8 +64,8 @@ export async function removeCiIdentity(formData: FormData): Promise<void> {
   if (!row) return;
   const denied = await requireManager(row.organizationId);
   if (denied) return;
-  await db.delete(ciIdentitiesTrusted).where(eq(ciIdentitiesTrusted.id, id));
-  await recordAudit({ action: "ci.identity.remove", organizationId: row.organizationId, targetType: "ci_identity", targetId: row.id, targetLabel: row.name, details: { issuer: row.issuer, subject: row.subject } });
   const org = await db.query.organization.findFirst({ where: eq(organization.id, row.organizationId) });
+  await db.delete(ciIdentitiesTrusted).where(eq(ciIdentitiesTrusted.id, id));
+  await recordAudit({ action: "ci.identity.remove", organizationId: row.organizationId, targetType: "ci_identity", targetId: row.id, targetLabel: org ? serviceAccountHandle(org.slug, row.name) : row.name, details: { issuer: row.issuer, subject: row.subject } });
   revalidatePath(`/${org?.slug}/service-accounts`);
 }

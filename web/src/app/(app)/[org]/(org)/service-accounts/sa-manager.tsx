@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
 import { relativeTime } from "@/lib/format";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { NEVER, describeExpiryPolicy, expiryState, lastUsedText, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
 import { ExpiryBadge, ExpiryFields, SecretPanel } from "@/app/(app)/settings/tokens/token-manager";
 
@@ -32,7 +33,7 @@ const PERMISSION_LABEL: Record<string, string> = {
   admin: "pull + push + delete",
 };
 
-function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string }) {
+function RotateButton({ sa, handle, registryHost }: { sa: SaRow; handle: string; registryHost: string }) {
   const [confirm, setConfirm] = useState(false);
   const [state, action, pending] = useActionState<SecretResult | null, FormData>(rotateServiceAccount, null);
   const [shown, setShown] = useState<SecretResult | null>(null);
@@ -47,7 +48,7 @@ function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string })
       <button
         type="button"
         onClick={() => setConfirm(true)}
-        aria-label={`Rotate ${sa.name}`}
+        aria-label={`Rotate ${handle}`}
         title="Rotate: new secret, same permissions; the old secret stops working"
         className="rounded-md p-1.5 text-ink-3 hover:bg-card-2 hover:text-ink cursor-pointer"
       >
@@ -61,7 +62,7 @@ function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string })
           fd.set("id", sa.id);
           action(fd);
         }}
-        title={`Rotate “${sa.name}”?`}
+        title={`Rotate “${handle}”?`}
         description="The account keeps its settings and gets a new secret. The old one stops working right away."
         confirmLabel={pending ? "Rotating…" : "Rotate secret"}
         tone="accent"
@@ -69,11 +70,11 @@ function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string })
       >
         {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
       </ConfirmModal>
-      <Modal open={!!shown} onClose={() => setShown(null)} title={`New secret for “${sa.name}”`} description="Copy it now — it will not be shown again.">
+      <Modal open={!!shown} onClose={() => setShown(null)} title={`New secret for “${handle}”`} description="Copy it now — it will not be shown again.">
         {shown?.secret && (
           <SecretPanel title="Replacement credential" secret={shown.secret}>
             <p className="text-xs text-accent-ink/80">Use it in CI:</p>
-            <CommandLine command={`echo $REGISTRY_TOKEN | docker login ${registryHost} -u ${sa.name} --password-stdin`} />
+            <CommandLine command={`echo $REGISTRY_TOKEN | docker login ${registryHost} -u ${handle} --password-stdin`} />
           </SecretPanel>
         )}
       </Modal>
@@ -83,11 +84,13 @@ function RotateButton({ sa, registryHost }: { sa: SaRow; registryHost: string })
 
 export function ServiceAccountsManager({
   organizationId,
+  organizationSlug,
   registryHost,
   accounts,
   policy,
 }: {
   organizationId: string;
+  organizationSlug: string;
   registryHost: string;
   accounts: SaRow[];
   policy: TokenExpiryPolicy;
@@ -109,14 +112,17 @@ export function ServiceAccountsManager({
         <CardBody>
           <form action={action} className="grid gap-4 sm:grid-cols-2">
             <input type="hidden" name="organizationId" value={organizationId} />
-            <Field label="Name" htmlFor="sa-name" hint="e.g. github-actions, deploy-bot">
-              <Input
-                id="sa-name"
-                name="name"
-                required
-                className="font-mono"
-                pattern="[a-z0-9]+([._\\-][a-z0-9]+)*"
-              />
+            <Field label="Name" htmlFor="sa-name" hint="e.g. github-actions, deploy-bot — named with the organization in front wherever it acts.">
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0 font-mono text-sm text-ink-3">{organizationSlug}/</span>
+                <Input
+                  id="sa-name"
+                  name="name"
+                  required
+                  className="font-mono"
+                  pattern="[a-z0-9]+([._\\-][a-z0-9]+)*"
+                />
+              </div>
             </Field>
             <Field label="Permission" htmlFor="sa-permission">
               <Select
@@ -172,16 +178,21 @@ export function ServiceAccountsManager({
           <div>
             {accounts.map((sa) => {
               const expired = expiryState(sa.expiresAt).state === "expired";
+              const handle = serviceAccountHandle(organizationSlug, sa.name);
               return (
                 <div
                   key={sa.id}
                   data-sa-row={sa.name}
+                  data-sa-handle={handle}
                   className={`flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-0 sm:px-5 ${expired ? "opacity-60" : ""}`}
                 >
                   <Bot className="size-4 shrink-0 text-ink-3" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm font-medium">{sa.name}</span>
+                      <span className="font-mono text-sm font-medium">
+                        <span className="text-ink-3">{organizationSlug}/</span>
+                        {sa.name}
+                      </span>
                       <Badge>{PERMISSION_LABEL[sa.permission] ?? sa.permission}</Badge>
                       <ExpiryBadge expiresAt={sa.expiresAt} />
                     </div>
@@ -190,12 +201,12 @@ export function ServiceAccountsManager({
                     </div>
                     {sa.description && <div className="mt-0.5 text-xs text-ink-3">{sa.description}</div>}
                   </div>
-                  <RotateButton sa={sa} registryHost={registryHost} />
+                  <RotateButton sa={sa} handle={handle} registryHost={registryHost} />
                   <form action={deleteServiceAccount}>
                     <input type="hidden" name="id" value={sa.id} />
                     <button
                       type="submit"
-                      aria-label={`Delete ${sa.name}`}
+                      aria-label={`Delete ${handle}`}
                       className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                     >
                       <Trash2 className="size-4" />

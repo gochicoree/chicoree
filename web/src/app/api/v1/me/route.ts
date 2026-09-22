@@ -33,6 +33,7 @@ export const GET = route(async (_req, { caller }) => {
       serviceAccount: {
         id: c.sa.id,
         name: c.sa.name,
+        handle: c.sa.handle,
         organization: await orgSlug(c.sa.organizationId),
         permission: c.sa.permission,
         repositories: await repoNames(c.sa.repositoryIds),

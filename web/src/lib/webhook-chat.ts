@@ -65,7 +65,7 @@ function actorLine(actor: unknown): string | null {
   const name = str(a.name);
   const type = str(a.type);
   if (!name && !type) return null;
-  if (type === "sa") return `by service account ${name ?? a.id ?? ""}`.trim();
+  if (type === "sa" || type === "service_account") return `by service account ${name ?? a.id ?? ""}`.trim();
   if (type === "mirror") return "by a mirror";
   if (type === "proxy") return "by the proxy cache";
   return name ? `by ${name}` : null;

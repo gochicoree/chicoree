@@ -2,10 +2,10 @@
 // organization listings filtered by the caller, and the image document
 // (config, layers, variants, scan, signature, block) the tag page assembles
 // inline. Everything here is scoped by lib/api/access.ts.
-import { ciActorLabel } from "@/lib/ci-auth";
+import { ciIdentityLabel, serviceAccountLabel } from "@/lib/actor-labels";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { ciIdentitiesTrusted, manifestSignatures, member, organizationSettings, serviceAccounts, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
+import { manifestSignatures, member, organizationSettings, user as userTable, userSettings, vulnerabilityScans } from "@/db/schema";
 import { getManifestWithScan, indexScanRollups, mapRepoRow, repoListSelect, type RepoListItem } from "@/lib/data";
 import { env } from "@/lib/env";
 import { imagePath, imageReference } from "@/lib/library";
@@ -184,12 +184,10 @@ async function pushedByJson(pushedBy: string | null): Promise<{ type: string; id
     return { type: "user", id, label: u?.name ?? "deleted user" };
   }
   if (kind === "sa" && id?.startsWith("ci:")) {
-    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, id.slice(3)), columns: { name: true, issuer: true } });
-    return { type: "ci", id, label: identity ? ciActorLabel(identity.issuer, identity.name) : "deleted CI identity" };
+    return { type: "ci", id, label: (await ciIdentityLabel(id.slice(3))) ?? "deleted CI identity" };
   }
   if (kind === "sa" && id) {
-    const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id), columns: { name: true } });
-    return { type: "service-account", id, label: sa?.name ?? "deleted service account" };
+    return { type: "service-account", id, label: (await serviceAccountLabel(id)) ?? "deleted service account" };
   }
   if (kind === "proxy") return { type: "proxy", id, label: "proxy cache" };
   if (kind === "mirror") return { type: "mirror", id, label: "mirror" };

@@ -118,6 +118,8 @@ const USER_LIMITS_EXAMPLE = {
   updatedAt: "2026-09-05T09:00:00.000Z",
   updatedBy: "u_admin…",
 };
+/** `handle` is `<organization>/<name>` — how the account is named wherever it acts (pushedBy, webhooks, activity, audit log). */
+const SERVICE_ACCOUNT_EXAMPLE = { id: "sa_4b…", name: "ci-deploy", handle: "acme/ci-deploy", description: "GitHub Actions", permission: "push", tokenPrefix: "chc_sa_ab12cd…", repositories: null, createdAt: "2026-09-01T10:00:00.000Z", expiresAt: "2026-12-01T10:00:00.000Z", lastUsedAt: "2026-09-05T08:41:00.000Z", lastUsedIp: "10.0.0.9" };
 const USER_EXAMPLE = { id: "u_7f…", name: "Jo Doe", email: "jo@example.com", role: "user", emailVerified: true, twoFactorEnabled: false, banned: false, createdAt: "2026-08-30T08:00:00.000Z" };
 const LIMIT_BODY_COMMON: ApiParam[] = [
   { name: "maxPublicRepositories", in: "body", type: "integer | null", description: "null lifts the limit." },
@@ -311,7 +313,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     path: "/me",
     group: "General",
     summary: "Who am I",
-    description: "The caller behind the credential: the user and, for tokens, the token's scope, expiry and restriction; for service accounts, the account and its permission.",
+    description: "The caller behind the credential: the user and, for tokens, the token's scope, expiry and restriction; for service accounts, the account (`name`, its `handle` `<org>/<name>`, organization) and its permission.",
     access: "authenticated",
     serviceAccounts: true,
     example: {
@@ -705,7 +707,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     summary: "List service accounts",
     access: "manager",
     params: [ORG_PARAM],
-    example: { items: [{ id: "sa_4b…", name: "ci-deploy", description: "GitHub Actions", permission: "push", tokenPrefix: "chc_sa_ab12cd…", repositories: null, createdAt: "2026-09-01T10:00:00.000Z", expiresAt: "2026-12-01T10:00:00.000Z", lastUsedAt: "2026-09-05T08:41:00.000Z", lastUsedIp: "10.0.0.9" }], total: 1 },
+    example: { items: [SERVICE_ACCOUNT_EXAMPLE], total: 1 },
     since: "2026-09-05.3",
   },
   {
@@ -719,14 +721,14 @@ export const API_CATALOG: ApiEndpoint[] = [
     status: 201,
     params: [
       ORG_PARAM,
-      { name: "name", in: "body", type: "string", required: true, description: "Lowercase letters, digits and single ._- separators; unique in the organization." },
+      { name: "name", in: "body", type: "string", required: true, description: "Lowercase letters, digits and single ._- separators; unique in the organization. The account acts as `<org>/<name>` (its `handle`)." },
       { name: "description", in: "body", type: "string", description: "Shown in the list." },
       { name: "permission", in: "body", type: "pull | push | admin", description: "Default pull; admin adds delete." },
       { name: "expiresInDays", in: "body", type: "integer", description: "Lifetime in days; omit both expiry fields for never (when the policy allows)." },
       { name: "expiresAt", in: "body", type: "date", description: "Alternative to expiresInDays: an ISO date." },
       { name: "repositories", in: "body", type: "string[]", description: "Limit to these repository names; omit for every repository." },
     ],
-    example: { ...{ id: "sa_4b…", name: "ci-deploy", description: "GitHub Actions", permission: "push", tokenPrefix: "chc_sa_ab12cd…", repositories: null, createdAt: "2026-09-01T10:00:00.000Z", expiresAt: "2026-12-01T10:00:00.000Z", lastUsedAt: "2026-09-05T08:41:00.000Z", lastUsedIp: "10.0.0.9" }, secret: "chc_sa_ab12cd…full-secret" },
+    example: { ...SERVICE_ACCOUNT_EXAMPLE, secret: "chc_sa_ab12cd…full-secret" },
     since: "2026-09-05.3",
   },
   {
@@ -736,7 +738,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     summary: "Service account details",
     access: "manager",
     params: [ORG_PARAM, { name: "id", in: "path", type: "string", required: true, description: "Service account id." }],
-    example: { id: "sa_4b…", name: "ci-deploy", description: "GitHub Actions", permission: "push", tokenPrefix: "chc_sa_ab12cd…", repositories: null, createdAt: "2026-09-01T10:00:00.000Z", expiresAt: "2026-12-01T10:00:00.000Z", lastUsedAt: "2026-09-05T08:41:00.000Z", lastUsedIp: "10.0.0.9" },
+    example: SERVICE_ACCOUNT_EXAMPLE,
     since: "2026-09-05.3",
   },
   {
@@ -747,7 +749,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     access: "manager",
     write: true,
     params: [ORG_PARAM, { name: "id", in: "path", type: "string", required: true, description: "Service account id." }],
-    example: { deleted: "sa_4b…", name: "ci-deploy" },
+    example: { deleted: "sa_4b…", name: "ci-deploy", handle: "acme/ci-deploy" },
     since: "2026-09-05.3",
   },
   {
@@ -759,7 +761,7 @@ export const API_CATALOG: ApiEndpoint[] = [
     access: "manager",
     write: true,
     params: [ORG_PARAM, { name: "id", in: "path", type: "string", required: true, description: "Service account id." }],
-    example: { ...{ id: "sa_4b…", name: "ci-deploy", description: "GitHub Actions", permission: "push", tokenPrefix: "chc_sa_ab12cd…", repositories: null, createdAt: "2026-09-01T10:00:00.000Z", expiresAt: "2026-12-01T10:00:00.000Z", lastUsedAt: "2026-09-05T08:41:00.000Z", lastUsedIp: "10.0.0.9" }, secret: "chc_sa_ef34gh…new-secret" },
+    example: { ...SERVICE_ACCOUNT_EXAMPLE, secret: "chc_sa_ef34gh…new-secret" },
     since: "2026-09-05.3",
   },
   {

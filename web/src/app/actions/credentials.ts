@@ -9,6 +9,7 @@ import { getOrgRole, requireAdmin, requireSession } from "@/lib/session";
 import { recordAudit } from "@/lib/audit";
 import { getInstanceSettings } from "@/lib/instance-settings";
 import { normalizeRestriction, replacementExpiry, resolveExpiry, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
@@ -16,6 +17,7 @@ export interface SecretResult {
   error?: string;
   /** The full credential — shown exactly once, never stored. */
   secret?: string;
+  /** The token's name; for a service account its handle, `<organization>/<name>`. */
   name?: string;
   /** Rotation: the id of the replacement row. */
   id?: string;
@@ -60,6 +62,9 @@ export async function createServiceAccount(
     where: and(eq(serviceAccounts.organizationId, orgId), eq(serviceAccounts.name, name)),
   });
   if (existing) return { error: `A service account named ${name} already exists.` };
+  const org = await db.query.organization.findFirst({ where: eq(organization.id, orgId) });
+  if (!org) return { error: "Unknown organization." };
+  const handle = serviceAccountHandle(org.slug, name);
 
   const session = await requireSession();
   const { secret, hash, display } = generateSecret(SA_PREFIX);
@@ -73,11 +78,10 @@ export async function createServiceAccount(
     createdBy: session.user.id,
     expiresAt: expiry.expiresAt,
   }).returning({ id: serviceAccounts.id });
-  await recordAudit({ action: "sa.create", organizationId: orgId, targetType: "service_account", targetId: created.id, targetLabel: name, details: { permission, expiresAt: expiry.expiresAt?.toISOString() ?? null } });
+  await recordAudit({ action: "sa.create", organizationId: orgId, targetType: "service_account", targetId: created.id, targetLabel: handle, details: { permission, expiresAt: expiry.expiresAt?.toISOString() ?? null } });
 
-  const org = await db.query.organization.findFirst({ where: eq(organization.id, orgId) });
-  revalidatePath(`/${org?.slug}/service-accounts`);
-  return { secret, name, id: created.id };
+  revalidatePath(`/${org.slug}/service-accounts`);
+  return { secret, name: handle, id: created.id };
 }
 
 export async function deleteServiceAccount(formData: FormData): Promise<void> {
@@ -87,9 +91,9 @@ export async function deleteServiceAccount(formData: FormData): Promise<void> {
   if (!sa) return;
   const role = await getOrgRole(sa.organizationId);
   if (role !== "owner" && role !== "admin") return;
-  await db.delete(serviceAccounts).where(eq(serviceAccounts.id, id));
-  await recordAudit({ action: "sa.delete", organizationId: sa.organizationId, targetType: "service_account", targetId: sa.id, targetLabel: sa.name });
   const org = await db.query.organization.findFirst({ where: eq(organization.id, sa.organizationId) });
+  await db.delete(serviceAccounts).where(eq(serviceAccounts.id, id));
+  await recordAudit({ action: "sa.delete", organizationId: sa.organizationId, targetType: "service_account", targetId: sa.id, targetLabel: org ? serviceAccountHandle(org.slug, sa.name) : sa.name });
   revalidatePath(`/${org?.slug}/service-accounts`);
 }
 
@@ -119,10 +123,11 @@ export async function rotateServiceAccount(
     .update(serviceAccounts)
     .set({ tokenHash: hash, tokenPrefix: display, expiresAt: expiresAt.expiresAt, lastUsedAt: null, lastUsedIp: null })
     .where(eq(serviceAccounts.id, id));
-  await recordAudit({ action: "sa.rotate", organizationId: sa.organizationId, targetType: "service_account", targetId: sa.id, targetLabel: sa.name, details: { expiresAt: expiresAt.expiresAt?.toISOString() ?? null } });
   const org = await db.query.organization.findFirst({ where: eq(organization.id, sa.organizationId) });
+  const handle = org ? serviceAccountHandle(org.slug, sa.name) : sa.name;
+  await recordAudit({ action: "sa.rotate", organizationId: sa.organizationId, targetType: "service_account", targetId: sa.id, targetLabel: handle, details: { expiresAt: expiresAt.expiresAt?.toISOString() ?? null } });
   revalidatePath(`/${org?.slug}/service-accounts`);
-  return { secret, name: sa.name, id: sa.id };
+  return { secret, name: handle, id: sa.id };
 }
 
 // --- Personal access tokens (per user, for docker login) ---

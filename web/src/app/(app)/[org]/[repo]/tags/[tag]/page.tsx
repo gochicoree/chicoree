@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ciActorLabel } from "@/lib/ci-auth";
+import { ciIdentityLabel, serviceAccountLabel } from "@/lib/actor-labels";
 import { notFound } from "next/navigation";
 import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, GitCompareArrows, Layers } from "lucide-react";
 import { db } from "@/db";
-import { ciIdentitiesTrusted, organizationProxies, serviceAccounts, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
+import { organizationProxies, tags, user as userTable, vulnerabilityScans } from "@/db/schema";
 import { getSession } from "@/lib/session";
 import { getManifestWithScan, getRepoByPath, listUserOrgs } from "@/lib/data";
 import { env } from "@/lib/env";
@@ -101,12 +101,11 @@ async function resolveActor(pushedBy: string | null): Promise<PushActor | null> 
   if (kind === "sa" && id === "ci") {
     // "sa:ci:<identity id>": a workflow that authenticated with its OIDC token.
     const identityId = pushedBy.slice("sa:ci:".length);
-    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, identityId), columns: { name: true, issuer: true } });
-    return { label: identity ? ciActorLabel(identity.issuer, identity.name) : "a CI workflow", logo: null, isUser: false };
+    return { label: (await ciIdentityLabel(identityId)) ?? "a CI workflow", logo: null, isUser: false };
   }
   if (kind === "sa" && id) {
-    const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });
-    return sa ? { label: `${sa.name} (service account)`, logo: null, isUser: false } : null;
+    const label = await serviceAccountLabel(id);
+    return label ? { label: `${label} (service account)`, logo: null, isUser: false } : null;
   }
   if (kind === "proxy") return { label: "the proxy cache", logo: null, isUser: false };
   if (kind === "mirror") return { label: "a mirror", logo: null, isUser: false };

@@ -108,6 +108,9 @@ export function OrgRenameForm({
           </li>
           <li>Every web address under /{slug} redirects to /{next}.</li>
           <li>Members, repositories, service accounts, webhooks, rules and policies are unchanged. CI pipelines pushing to the old namespace must be updated.</li>
+          <li>
+            Service accounts and CI identities keep their secrets and are named <code className="font-mono">{next}/&lt;name&gt;</code> from then on.
+          </li>
           <li>The old slug becomes free again as soon as a new organization is created with it.</li>
         </ul>
       </ConfirmModal>

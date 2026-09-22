@@ -3,18 +3,16 @@
 // recording each attempt. The push payload keeps its original shape; every
 // other event shares the same envelope (event, timestamp, repository, …)
 // with event-specific fields next to it.
-import { ciActorLabel } from "@/lib/ci-auth";
+import { ciIdentityLabel, serviceAccountLabel } from "@/lib/actor-labels";
 import { randomUUID, createHmac } from "crypto";
 import { chatMessage, encodeChatMessage } from "./webhook-chat";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  ciIdentitiesTrusted,
   manifests,
   organization,
   repositories,
   repositoryWebhooks,
-  serviceAccounts,
   tags as tagsTable,
   user as userTable,
   webhookDeliveries,
@@ -115,12 +113,11 @@ export async function resolveActor(actor: string | undefined | null): Promise<We
   if (type === "sa" && id === "ci") {
     // "sa:ci:<identity id>": a workflow that signed in with its OIDC token.
     const identityId = actor.slice("sa:ci:".length);
-    const identity = await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, identityId), columns: { name: true, issuer: true } });
-    return { type: "ci", id: identityId, name: identity ? ciActorLabel(identity.issuer, identity.name) : null };
+    return { type: "ci", id: identityId, name: await ciIdentityLabel(identityId) };
   }
   if (type === "sa" && id) {
-    const sa = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, id) });
-    return { type: "service_account", id, name: sa?.name ?? null };
+    // Named by its handle, `acme/ci`, so receivers can tell organizations' accounts apart.
+    return { type: "service_account", id, name: await serviceAccountLabel(id) };
   }
   if (type === "mirror" && id) return { type: "mirror", id, name: null };
   return { type: "anonymous", id: null, name: null };

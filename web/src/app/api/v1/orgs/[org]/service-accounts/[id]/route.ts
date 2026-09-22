@@ -8,6 +8,7 @@ import { route } from "@/lib/api/handler";
 import { json, notFound } from "@/lib/api/respond";
 import { serviceAccountJson, serviceAccountRows } from "@/lib/api/service-accounts";
 import { recordAudit } from "@/lib/audit";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ type Params = { org: string; id: string };
 export const GET = route<Params>(async (_req, { caller, params }) => {
   const a = await loadOrg(caller, params.org);
   requireOrgManager(caller, a, "read service accounts");
-  const [row] = await serviceAccountRows(a.org.id, params.id);
+  const [row] = await serviceAccountRows(a.org, params.id);
   if (!row) throw notFound("No such service account.");
   return json(serviceAccountJson(row));
 });
@@ -27,7 +28,8 @@ export const DELETE = route<Params>(async (req, { caller, params }) => {
   const sa = await db.query.serviceAccounts.findFirst({ where: and(eq(serviceAccounts.id, params.id), eq(serviceAccounts.organizationId, a.org.id)) });
   if (!sa) throw notFound("No such service account.");
   await db.delete(serviceAccounts).where(eq(serviceAccounts.id, sa.id));
-  await recordAudit({ action: "sa.delete", actor: caller.auditActor, headers: req.headers, organizationId: a.org.id, targetType: "service_account", targetId: sa.id, targetLabel: sa.name, details: { via: "api" } });
+  const handle = serviceAccountHandle(a.org.slug, sa.name);
+  await recordAudit({ action: "sa.delete", actor: caller.auditActor, headers: req.headers, organizationId: a.org.id, targetType: "service_account", targetId: sa.id, targetLabel: handle, details: { via: "api" } });
   revalidatePath(`/${a.org.slug}/service-accounts`);
-  return json({ deleted: sa.id, name: sa.name });
+  return json({ deleted: sa.id, name: sa.name, handle });
 });

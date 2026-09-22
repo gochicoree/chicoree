@@ -13,7 +13,8 @@ import { clientIp, type AuditActor } from "@/lib/audit";
 import type { Caller } from "@/lib/access";
 import { ANONYMOUS, viewerFromSession, type Viewer } from "@/lib/viewer";
 import { db } from "@/db";
-import { serviceAccounts } from "@/db/schema";
+import { organization, serviceAccounts } from "@/db/schema";
+import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { eq } from "drizzle-orm";
 import { forbidden, unauthorized } from "./respond";
 
@@ -37,6 +38,8 @@ export interface ApiTokenInfo {
 export interface ApiServiceAccount {
   id: string;
   name: string;
+  /** `<organization>/<name>` — how the account is named wherever it acts. */
+  handle: string;
   organizationId: string;
   permission: "pull" | "push" | "admin";
   repositoryIds: string[] | null;
@@ -119,7 +122,12 @@ export async function authenticate(req: NextRequest): Promise<ApiCaller> {
     if (secret.startsWith(SA_PREFIX)) {
       const res = await identifyServiceAccount(secret, ip);
       if ("error" in res) throw unauthorized(`Service account refused: ${res.error}.`);
-      const row = await db.query.serviceAccounts.findFirst({ where: eq(serviceAccounts.id, res.saId) });
+      const [row] = await db
+        .select({ name: serviceAccounts.name, expiresAt: serviceAccounts.expiresAt, organizationSlug: organization.slug })
+        .from(serviceAccounts)
+        .innerJoin(organization, eq(organization.id, serviceAccounts.organizationId))
+        .where(eq(serviceAccounts.id, res.saId));
+      const handle = row ? serviceAccountHandle(row.organizationSlug, row.name) : res.saId;
       return {
         kind: "sa",
         via: "service-account",
@@ -128,13 +136,14 @@ export async function authenticate(req: NextRequest): Promise<ApiCaller> {
         sa: {
           id: res.saId,
           name: row?.name ?? res.saId,
+          handle,
           organizationId: res.organizationId,
           permission: res.permission,
           repositoryIds: res.repositoryIds,
           expiresAt: row?.expiresAt ?? null,
         },
         subject: `sa:${res.saId}`,
-        auditActor: { type: "sa", id: res.saId, label: row?.name ?? res.saId },
+        auditActor: { type: "sa", id: res.saId, label: handle },
       };
     }
 
@@ -149,13 +158,14 @@ export async function authenticate(req: NextRequest): Promise<ApiCaller> {
         sa: {
           id: res.caller.saId,
           name: res.identity.name,
+          handle: serviceAccountHandle(res.organizationSlug, res.identity.name),
           organizationId: res.identity.organizationId,
           permission: res.identity.permission,
           repositoryIds: res.identity.repositoryIds ?? null,
           expiresAt: res.expiresAt,
         },
         subject: `sa:${res.caller.saId}`,
-        auditActor: { type: "sa", id: res.caller.saId, label: `ci:${res.identity.name} (${res.oidcSubject})` },
+        auditActor: { type: "sa", id: res.caller.saId, label: `ci:${serviceAccountHandle(res.organizationSlug, res.identity.name)} (${res.oidcSubject})` },
       };
     }
 

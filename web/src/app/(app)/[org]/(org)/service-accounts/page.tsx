@@ -28,6 +28,7 @@ export default async function ServiceAccountsPage({ params }: { params: Promise<
     <div className="space-y-6">
     <ServiceAccountsManager
       organizationId={ctx.org.id}
+      organizationSlug={ctx.org.slug}
       registryHost={env.registryHost}
       policy={{ maxTokenLifetimeDays: settings.access.maxTokenLifetimeDays, requireTokenExpiry: settings.access.requireTokenExpiry }}
       accounts={accounts.map((sa) => ({

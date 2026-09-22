@@ -14,6 +14,7 @@ import { ciIdentitiesTrusted, organization, repositories } from "@/db/schema";
 import type { Caller } from "./access";
 import { env } from "./env";
 import { CI_PREFIX } from "./secrets";
+import { serviceAccountHandle } from "./service-account-shared";
 import { subjectMatches } from "./signatures";
 
 export type CiIdentityRow = typeof ciIdentitiesTrusted.$inferSelect;
@@ -28,10 +29,10 @@ export const CI_ISSUERS: { value: string; label: string; subjectHint: string }[]
   { value: "https://gitlab.com", label: "GitLab.com", subjectHint: "project_path:group/project:ref_type:branch:ref:main" },
 ];
 
-/** How a CI identity is named where an actor is shown: "GitHub Actions · release" (the issuer's label, then the identity's name). */
-export function ciActorLabel(issuer: string, name: string): string {
+/** How a CI identity is named where an actor is shown: "GitHub Actions · acme/release" (the issuer's label, then the identity's handle). */
+export function ciActorLabel(issuer: string, organizationSlug: string, name: string): string {
   const known = CI_ISSUERS.find((i) => i.value === issuer.replace(/\/$/, ""));
-  return `${known?.label ?? "CI"} · ${name}`;
+  return `${known?.label ?? "CI"} · ${serviceAccountHandle(organizationSlug, name)}`;
 }
 
 function hmacKey(): Uint8Array {
@@ -151,6 +152,7 @@ export async function mintCiToken(identity: CiIdentityRow, oidcSubject: string, 
 export interface IdentifiedCi {
   caller: Extract<Caller, { kind: "sa" }>;
   identity: CiIdentityRow;
+  organizationSlug: string;
   oidcSubject: string;
   expiresAt: Date;
 }
@@ -167,10 +169,18 @@ export async function identifyCiToken(secret: string): Promise<IdentifiedCi | { 
   } catch (err) {
     return { error: /exp/i.test(String(err)) ? "CI token expired" : "invalid CI token" };
   }
-  const identity = payload.sub ? await db.query.ciIdentitiesTrusted.findFirst({ where: eq(ciIdentitiesTrusted.id, payload.sub) }) : null;
-  if (!identity) return { error: "the CI identity behind this token no longer exists" };
+  const [found] = payload.sub
+    ? await db
+        .select({ identity: ciIdentitiesTrusted, organizationSlug: organization.slug })
+        .from(ciIdentitiesTrusted)
+        .innerJoin(organization, eq(organization.id, ciIdentitiesTrusted.organizationId))
+        .where(eq(ciIdentitiesTrusted.id, payload.sub))
+    : [];
+  if (!found) return { error: "the CI identity behind this token no longer exists" };
+  const { identity, organizationSlug } = found;
   return {
     identity,
+    organizationSlug,
     oidcSubject: String(payload.os ?? ""),
     expiresAt: new Date((payload.exp ?? 0) * 1000),
     caller: { kind: "sa", saId: `ci:${identity.id}`, organizationId: identity.organizationId, permission: identity.permission, repositoryIds: identity.repositoryIds ?? null },

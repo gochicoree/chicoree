@@ -2,7 +2,7 @@
 
 > **This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.**
 >
-> Current revision: `2026-09-09.2` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
+> Current revision: `2026-09-22.1` · [Changelog](#changelog) · index: `GET https://registry.example.com/api/v1` · in the app: `/docs/api`
 
 Everything the web app can do with organizations, repositories, tags and images is available as JSON under `/api/v1`. The same personal access tokens that authenticate `docker login` authenticate the API, with the same roles and restrictions, so a token that can push an image can read its scan result, and one limited to a repository sees nothing else.
 
@@ -51,7 +51,7 @@ Administrators can switch the whole API off (*Administration → Auth providers 
 - **Booleans** in the query string are `true`/`1`/`yes` (anything else is false).
 - **Repository names** of proxy caches can be nested (`bitnami/redis`); in a path they are one segment with the slash percent-encoded: `/repos/dockerhub/bitnami%2Fredis`. Top-level images (`registry.example.com/nginx`) live in the `library` organization.
 - Renamed or transferred repositories are **not** redirected by the API; use the new name (`docker pull` and the web pages do redirect).
-- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-09.2`, and `Cache-Control: private, no-store`.
+- Every response carries `X-Api-Version: 1` and `X-Api-Revision: 2026-09-22.1`, and `Cache-Control: private, no-store`.
 - Changes made through the API are audited like changes made in the app, with `"via": "api"` in the entry's details.
 - Unknown paths under `/api/v1` answer a JSON `404`; an unsupported method answers `405`.
 - **Conditional requests.** Every successful GET carries a weak `ETag`; send it back as `If-None-Match` and an unchanged answer comes back as `304` without a body (the rate-limit and deprecation headers still apply).
@@ -345,7 +345,7 @@ curl -X POST \
 
 ### <a id="get-me"></a>`GET /api/v1/me`
 
-Who am I — The caller behind the credential: the user and, for tokens, the token's scope, expiry and restriction; for service accounts, the account and its permission.
+Who am I — The caller behind the credential: the user and, for tokens, the token's scope, expiry and restriction; for service accounts, the account (`name`, its `handle` `<org>/<name>`, organization) and its permission.
 
 **Who:** any credential · **Service accounts:** yes · **Write:** no · **Since:** 2026-09-05.1
 
@@ -1154,6 +1154,7 @@ Response `200`:
     {
       "id": "sa_4b…",
       "name": "ci-deploy",
+      "handle": "acme/ci-deploy",
       "description": "GitHub Actions",
       "permission": "push",
       "tokenPrefix": "chc_sa_ab12cd…",
@@ -1182,7 +1183,7 @@ Create a service account — The secret is in the answer once and never again. E
 | Name | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `org` | path | string | yes | Organization slug. Top-level images live in `library`. |
-| `name` | body | string | yes | Lowercase letters, digits and single ._- separators; unique in the organization. |
+| `name` | body | string | yes | Lowercase letters, digits and single ._- separators; unique in the organization. The account acts as `<org>/<name>` (its `handle`). |
 | `description` | body | string |  | Shown in the list. |
 | `permission` | body | pull \| push \| admin |  | Default pull; admin adds delete. |
 | `expiresInDays` | body | integer |  | Lifetime in days; omit both expiry fields for never (when the policy allows). |
@@ -1195,6 +1196,7 @@ Response `201`:
 {
   "id": "sa_4b…",
   "name": "ci-deploy",
+  "handle": "acme/ci-deploy",
   "description": "GitHub Actions",
   "permission": "push",
   "tokenPrefix": "chc_sa_ab12cd…",
@@ -1230,6 +1232,7 @@ Response `200`:
 {
   "id": "sa_4b…",
   "name": "ci-deploy",
+  "handle": "acme/ci-deploy",
   "description": "GitHub Actions",
   "permission": "push",
   "tokenPrefix": "chc_sa_ab12cd…",
@@ -1262,7 +1265,8 @@ Response `200`:
 ~~~json
 {
   "deleted": "sa_4b…",
-  "name": "ci-deploy"
+  "name": "ci-deploy",
+  "handle": "acme/ci-deploy"
 }
 ~~~
 
@@ -1288,6 +1292,7 @@ Response `200`:
 {
   "id": "sa_4b…",
   "name": "ci-deploy",
+  "handle": "acme/ci-deploy",
   "description": "GitHub Actions",
   "permission": "push",
   "tokenPrefix": "chc_sa_ab12cd…",
@@ -3824,6 +3829,11 @@ curl -X DELETE -H "Authorization: Bearer $TOKEN" \
 ## Changelog
 
 This API follows the registry's features: whenever a feature is added, changed or removed, the endpoints that expose it and this documentation change with it in the same release. The revision moves every time — compare it with the changelog before relying on a new field, and read the changelog before upgrading.
+
+### 2026-09-22.1
+
+- Service accounts: an account is named by its handle, `<organization>/<name>` (`acme/ci-deploy`), wherever it acts or is listed — `pushedBy.label`, the webhook `actor.name`, the activity feed, the tag page, the audit log (actor and target labels) and the expiry email — so two organizations' `ci` accounts are told apart. The service-account responses, `DELETE …/service-accounts/{id}` and `GET /me` carry the new `handle` next to `name`, which stays the bare name.
+- Keyless CI: a trusted identity is named `GitHub Actions · <organization>/<identity>` in the same places (it read `GitHub Actions · <identity>` before).
 
 ### 2026-09-09.2
 
