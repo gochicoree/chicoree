@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { relativeTime } from "@/lib/format";
 import { serviceAccountHandle } from "@/lib/service-account-shared";
 import { NEVER, describeExpiryPolicy, expiryState, lastUsedText, type TokenExpiryPolicy } from "@/lib/token-policy-shared";
@@ -202,16 +203,20 @@ export function ServiceAccountsManager({
                     {sa.description && <div className="mt-0.5 text-xs text-ink-3">{sa.description}</div>}
                   </div>
                   <RotateButton sa={sa} handle={handle} registryHost={registryHost} />
-                  <form action={deleteServiceAccount}>
-                    <input type="hidden" name="id" value={sa.id} />
-                    <button
-                      type="submit"
-                      aria-label={`Delete ${handle}`}
-                      className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </form>
+                  <ConfirmForm
+                    action={deleteServiceAccount}
+                    fields={{ id: sa.id }}
+                    title={`Delete ${handle}?`}
+                    description="Pipelines signing in as this service account lose access within a few minutes. Its secret cannot be recovered."
+                    confirmLabel="Delete service account"
+                    pendingLabel="Deleting…"
+                    confirmText={sa.name}
+                    trigger={(open, pending) => (
+                      <button type="button" onClick={open} disabled={pending} aria-label={`Delete ${handle}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  />
                 </div>
               );
             })}

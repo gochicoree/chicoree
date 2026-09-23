@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/field";
 import { CopyButton } from "@/components/ui/copy";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -182,25 +183,29 @@ function SecurityControls({ user }: { user: AccountUser }) {
   );
 }
 
+/** Delete behind a dialog that asks for the user's email address. */
 function DeleteForm({ user }: { user: AccountUser }) {
   const [state, action, pending] = useActionState<AdminUserResult | null, FormData>(adminDeleteUser, null);
-  const [typed, setTyped] = useState("");
-  const ready = typed.trim().toLowerCase() === user.email.toLowerCase();
   return (
-    <form action={action} className="flex flex-col gap-3">
-      <input type="hidden" name="userId" value={user.id} />
-      <div className="sm:max-w-md">
-        <Field label={`Type ${user.email} to confirm`} htmlFor="acct-delete-confirm">
-          <Input id="acct-delete-confirm" name="confirm" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" className="font-mono" />
-        </Field>
-      </div>
+    <div className="flex flex-col gap-3">
       <ErrorLine state={state} />
       <div>
-        <Button type="submit" variant="danger" disabled={!ready || pending}>
-          <Trash2 className="size-4" /> {pending ? "Deleting…" : "Delete user permanently"}
-        </Button>
+        <ConfirmForm
+          action={action}
+          fields={{ userId: user.id, confirm: user.email }}
+          title={`Delete ${user.name}?`}
+          description={`The account ${user.email} is removed with its sessions, access tokens, passkeys and memberships. Repositories stay with their organizations. This cannot be undone.`}
+          confirmLabel="Delete user"
+          pendingLabel="Deleting…"
+          confirmText={user.email}
+          trigger={(open, busy) => (
+            <Button type="button" variant="danger" onClick={open} disabled={pending || busy}>
+              <Trash2 className="size-4" /> Delete user…
+            </Button>
+          )}
+        />
       </div>
-    </form>
+    </div>
   );
 }
 

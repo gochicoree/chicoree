@@ -11,6 +11,7 @@ import { Field, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { CommandLine } from "@/components/ui/copy";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast, useToast } from "@/components/ui/toast";
 import { displayHost, isDockerHubUrl, presetFor, PROXY_PRESETS, type ProxyPreset } from "@/lib/proxy-shared";
 import { relativeTime } from "@/lib/format";
@@ -53,6 +54,7 @@ export function ProxyForm({
   const [upstreamUrl, setUpstreamUrl] = useState(proxy?.upstreamUrl ?? PROXY_PRESETS[0].url);
   const [enabled, setEnabled] = useState(proxy?.enabled ?? true);
   const [removing, setRemoving] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const presetDef = PROXY_PRESETS.find((p) => p.value === preset);
   const dockerHub = isDockerHubUrl(upstreamUrl);
   const example = dockerHub ? "nginx:1.27" : preset === "ghcr" ? "oras-project/oras:v1.2.0" : "<namespace>/<image>:<tag>";
@@ -65,12 +67,12 @@ export function ProxyForm({
   }
 
   async function remove() {
-    if (!confirm("Turn the proxy cache off and forget the upstream? Cached repositories stay as normal repositories.")) return;
     setRemoving(true);
     const fd = new FormData();
     fd.set("organizationId", organizationId);
     const res = await removeOrgProxy(fd);
     setRemoving(false);
+    setConfirmRemove(false);
     if (res.error) toast({ title: res.error, tone: "error" });
     else {
       toast({ title: "Proxy cache removed" });
@@ -232,7 +234,7 @@ export function ProxyForm({
             title={proxy.lastError ? "Last upstream contact failed" : "Upstream status"}
             description={proxy.lastCheckedAt ? `Last contact ${relativeTime(proxy.lastCheckedAt)}.` : "The upstream has not been contacted yet."}
             action={
-              <Button variant="danger" size="sm" onClick={remove} disabled={removing}>
+              <Button type="button" variant="danger" size="sm" onClick={() => setConfirmRemove(true)} disabled={removing}>
                 Remove proxy cache
               </Button>
             }
@@ -245,6 +247,24 @@ export function ProxyForm({
             </CardBody>
           )}
         </Card>
+      )}
+      {proxy && (
+        <ConfirmModal
+          open={confirmRemove}
+          onClose={() => setConfirmRemove(false)}
+          onConfirm={remove}
+          busy={removing}
+          tone="danger"
+          confirmLabel={removing ? "Removing…" : "Remove proxy cache"}
+          title={`Stop caching ${displayHost(proxy.upstreamUrl)}?`}
+          description="The upstream and its stored credentials are forgotten."
+        >
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink-2">
+            <li>Nothing new is fetched from the upstream; pulls of images that are not cached yet fail.</li>
+            <li>Cached repositories stay as normal repositories with their images and can be pushed to.</li>
+            <li>The cache can be set up again later; the credentials have to be entered anew.</li>
+          </ul>
+        </ConfirmModal>
       )}
     </div>
   );

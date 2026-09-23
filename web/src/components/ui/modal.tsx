@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
+import { Input } from "./field";
 
 /**
  * Accessible modal dialog: backdrop, Escape to close, focus moved inside on
@@ -34,9 +35,11 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     restoreRef.current = document.activeElement as HTMLElement | null;
-    const first = panelRef.current?.querySelector<HTMLElement>(
-      "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
-    );
+    const first =
+      panelRef.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+      panelRef.current?.querySelector<HTMLElement>(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+      );
     (first ?? panelRef.current)?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -119,7 +122,12 @@ export function Modal({
   );
 }
 
-/** Confirm/cancel dialog with a danger or primary confirm button. */
+/**
+ * Confirm/cancel dialog with a danger or primary confirm button. With
+ * `confirmText` the confirm button stays disabled until the user types that
+ * text (the name of what is about to be destroyed) into a field below the
+ * body; the field is cleared whenever the dialog closes.
+ */
 export function ConfirmModal({
   open,
   onClose,
@@ -129,6 +137,7 @@ export function ConfirmModal({
   confirmLabel = "Confirm",
   tone = "primary",
   busy,
+  confirmText,
   children,
 }: {
   open: boolean;
@@ -139,8 +148,47 @@ export function ConfirmModal({
   confirmLabel?: string;
   tone?: "primary" | "danger" | "accent";
   busy?: boolean;
+  /** Exact text the user has to type before the confirm button works. */
+  confirmText?: string;
   children?: ReactNode;
 }) {
+  const [typed, setTyped] = useState("");
+  const inputId = useId();
+  useEffect(() => {
+    if (!open) setTyped("");
+  }, [open]);
+  const armed = !confirmText || typed.trim() === confirmText;
+
+  function submit() {
+    if (armed && !busy) onConfirm();
+  }
+
+  const field = confirmText ? (
+    <div className={children ? "mt-4" : undefined}>
+      <label htmlFor={inputId} className="mb-1.5 block text-[13px] font-medium text-ink">
+        Type <code className="rounded bg-card-2 px-1 py-0.5 font-mono text-[13px] select-all">{confirmText}</code> to confirm
+      </label>
+      <Input
+        id={inputId}
+        data-autofocus
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        className="font-mono"
+        aria-invalid={typed !== "" && !armed ? true : undefined}
+      />
+    </div>
+  ) : null;
+
   return (
     <Modal
       open={open}
@@ -152,13 +200,20 @@ export function ConfirmModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" variant={tone} onClick={onConfirm} disabled={busy}>
+          <Button type="button" variant={tone} onClick={submit} disabled={busy || !armed}>
             {confirmLabel}
           </Button>
         </>
       }
     >
-      {children}
+      {field ? (
+        <>
+          {children}
+          {field}
+        </>
+      ) : (
+        children
+      )}
     </Modal>
   );
 }

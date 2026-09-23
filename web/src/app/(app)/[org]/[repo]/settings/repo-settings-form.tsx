@@ -4,8 +4,10 @@ import { useActionState, useRef, useState } from "react";
 import { deleteRepository, updateRepository, type ActionResult } from "@/app/actions/repositories";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field, FieldAction, Input, Textarea } from "@/components/ui/field";
+import { Trash2 } from "lucide-react";
+import { Field, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useActionToast } from "@/components/ui/toast";
 
@@ -85,9 +87,8 @@ export function RepoGeneralForm({
   );
 }
 
-/** Typed-confirmation delete. */
+/** Delete behind a dialog that asks for the repository name. */
 export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; name: string }) {
-  const [confirm, setConfirm] = useState("");
   return (
     <Card className="border-danger/30">
       <CardHeader
@@ -96,19 +97,20 @@ export function RepoDangerForm({ repositoryId, name }: { repositoryId: string; n
         description="Deletes every tag and image in this repository. This cannot be undone."
       />
       <CardBody>
-        <form action={deleteRepository} className="flex flex-wrap items-start gap-3">
-          <input type="hidden" name="repositoryId" value={repositoryId} />
-          <div className="min-w-64">
-            <Field label={`Type "${name}" to confirm`} htmlFor="confirmName">
-              <Input id="confirmName" name="confirmName" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="font-mono" />
-            </Field>
-          </div>
-          <FieldAction>
-            <Button type="submit" variant="danger" disabled={confirm !== name}>
-              Delete repository permanently
+        <ConfirmForm
+          action={deleteRepository}
+          fields={{ repositoryId, confirmName: name }}
+          title={`Delete ${name}?`}
+          description="Every tag and image in it is deleted. Pulls of this repository fail from then on. This cannot be undone."
+          confirmLabel="Delete repository"
+          pendingLabel="Deleting…"
+          confirmText={name}
+          trigger={(open, pending) => (
+            <Button type="button" variant="danger" onClick={open} disabled={pending}>
+              <Trash2 className="size-4" /> Delete repository…
             </Button>
-          </FieldAction>
-        </form>
+          )}
+        />
       </CardBody>
     </Card>
   );

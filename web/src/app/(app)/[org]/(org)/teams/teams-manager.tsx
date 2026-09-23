@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Plus, Trash2, UserPlus, Users, X } from "lucide-react";
 import { addTeamMemberAction, createTeamAction, deleteTeamAction, removeTeamMemberAction, updateTeamAction, type TeamActionResult } from "@/app/actions/teams";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, FieldAction, Input } from "@/components/ui/field";
+import { ConfirmForm } from "@/components/ui/confirm-form";
+import { ConfirmModal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { EntityLogo } from "@/components/entity-logo";
@@ -140,33 +142,52 @@ function RemoveMemberButton({ orgSlug, team, member }: { orgSlug: string; team: 
   const [state, action, pending] = useActionState<TeamActionResult | null, FormData>(removeTeamMemberAction, null);
   useResultToast(state);
   return (
-    <form action={action}>
-      <input type="hidden" name="orgSlug" value={orgSlug} />
-      <input type="hidden" name="teamId" value={team.id} />
-      <input type="hidden" name="userId" value={member.userId} />
-      <button type="submit" disabled={pending} aria-label={`Remove ${member.name} from ${team.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
-        <X className="size-4" />
-      </button>
-    </form>
+    <ConfirmForm
+      action={action}
+      fields={{ orgSlug, teamId: team.id, userId: member.userId }}
+      title={`Remove ${member.name} from ${team.name}?`}
+      description="They lose the repository access this team grants. Their organization membership stays."
+      confirmLabel="Remove from team"
+      pendingLabel="Removing…"
+      trigger={(open, busy) => (
+        <button type="button" onClick={open} disabled={pending || busy} aria-label={`Remove ${member.name} from ${team.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+          <X className="size-4" />
+        </button>
+      )}
+    />
   );
 }
 
 function DeleteTeamButton({ orgSlug, team }: { orgSlug: string; team: Team }) {
   const [state, action, pending] = useActionState<TeamActionResult | null, FormData>(deleteTeamAction, null);
   useResultToast(state);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (state) setOpen(false);
+  }, [state]);
+  function confirm() {
+    const fd = new FormData();
+    fd.set("orgSlug", orgSlug);
+    fd.set("teamId", team.id);
+    startTransition(() => action(fd));
+  }
   return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (!confirm(`Delete the team ${team.name}? Its repository grants go with it; nobody loses their organization membership.`)) e.preventDefault();
-      }}
-    >
-      <input type="hidden" name="orgSlug" value={orgSlug} />
-      <input type="hidden" name="teamId" value={team.id} />
-      <Button type="submit" variant="ghost" size="sm" disabled={pending}>
+    <>
+      <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => setOpen(true)}>
         <Trash2 className="size-3.5" /> Delete team
       </Button>
-    </form>
+      <ConfirmModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onConfirm={confirm}
+        busy={pending}
+        tone="danger"
+        confirmLabel={pending ? "Deleting…" : "Delete team"}
+        confirmText={team.name}
+        title={`Delete the team ${team.name}?`}
+        description="Repositories that granted this team access lose those grants. Nobody loses their organization membership."
+      />
+    </>
   );
 }
 

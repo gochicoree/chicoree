@@ -11,6 +11,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
 import { ConfirmModal, Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { relativeTime } from "@/lib/format";
 import {
   CUSTOM,
@@ -294,16 +295,19 @@ export function TokenManager({
                     {t.description && <div className="mt-0.5 text-xs text-ink-3">{t.description}</div>}
                   </div>
                   <RotateButton token={t} registryHost={registryHost} email={email} />
-                  <form action={deleteAccessToken}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <button
-                      type="submit"
-                      aria-label={`Revoke ${t.name}`}
-                      className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </form>
+                  <ConfirmForm
+                    action={deleteAccessToken}
+                    fields={{ id: t.id }}
+                    title={`Revoke ${t.name}?`}
+                    description="Clients signed in with this token lose access within a few minutes. This cannot be undone."
+                    confirmLabel="Revoke token"
+                    pendingLabel="Revoking…"
+                    trigger={(open, pending) => (
+                      <button type="button" onClick={open} disabled={pending} aria-label={`Revoke ${t.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  />
                 </div>
               );
             })}

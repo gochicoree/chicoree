@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
+import { Trash2 } from "lucide-react";
 import { adminDeleteOrganization, adminSetMemberRole } from "@/app/actions/admin-orgs";
 import { ORG_ROLE_NAMES } from "@/lib/org-roles";
-import { Field, FieldAction, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CardBody } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 
 /** Role dropdown that submits its form on change. */
 export function MemberRoleSelect({
@@ -37,29 +38,24 @@ export function MemberRoleSelect({
   );
 }
 
+/** Delete behind a dialog that asks for the organization slug. */
 export function DeleteOrganization({ organizationId, slug }: { organizationId: string; slug: string }) {
-  const [confirm, setConfirm] = useState("");
   return (
     <CardBody>
-      <form action={adminDeleteOrganization} className="flex flex-wrap items-start gap-3">
-        <input type="hidden" name="organizationId" value={organizationId} />
-        <div className="min-w-64">
-          <Field label={`Type "${slug}" to confirm`} htmlFor="confirmSlug">
-            <Input
-              id="confirmSlug"
-              name="confirmSlug"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="font-mono"
-            />
-          </Field>
-        </div>
-        <FieldAction>
-          <Button type="submit" variant="danger" disabled={confirm !== slug}>
-            Delete organization permanently
+      <ConfirmForm
+        action={adminDeleteOrganization}
+        fields={{ organizationId, confirmSlug: slug }}
+        title={`Delete ${slug}?`}
+        description="The organization and every repository in it are deleted, with their tags and images. Its members keep their accounts. This cannot be undone."
+        confirmLabel="Delete organization"
+        pendingLabel="Deleting…"
+        confirmText={slug}
+        trigger={(open, pending) => (
+          <Button type="button" variant="danger" onClick={open} disabled={pending}>
+            <Trash2 className="size-4" /> Delete organization…
           </Button>
-        </FieldAction>
-      </form>
+        )}
+      />
     </CardBody>
   );
 }

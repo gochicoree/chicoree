@@ -7,6 +7,7 @@ import { removeGrantAction, setGrantAction, type AccessActionResult } from "@/ap
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { EntityLogo } from "@/components/entity-logo";
@@ -130,14 +131,23 @@ function GrantRow({ orgSlug, repoName, grant }: { orgSlug: string; repoName: str
           options={REPO_PERMISSIONS}
         />
       </form>
-      <form action={removeAction}>
-        <input type="hidden" name="orgSlug" value={orgSlug} />
-        <input type="hidden" name="repoName" value={repoName} />
-        <input type="hidden" name="grantId" value={grant.id} />
-        <button type="submit" disabled={removing || settingPending} aria-label={`Remove access for ${grant.label}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
-          <X className="size-4" />
-        </button>
-      </form>
+      <ConfirmForm
+        action={removeAction}
+        fields={{ orgSlug, repoName, grantId: grant.id }}
+        title={`Remove access for ${grant.label}?`}
+        description={
+          grant.subjectType === "team"
+            ? "Its members keep what their organization role allows here."
+            : "They keep what their organization role allows here."
+        }
+        confirmLabel="Remove access"
+        pendingLabel="Removing…"
+        trigger={(open, pending) => (
+          <button type="button" onClick={open} disabled={pending || removing || settingPending} aria-label={`Remove access for ${grant.label}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+            <X className="size-4" />
+          </button>
+        )}
+      />
     </li>
   );
 }

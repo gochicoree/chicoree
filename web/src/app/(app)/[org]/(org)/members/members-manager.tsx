@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmModal } from "@/components/ui/modal";
 import { ASSIGNABLE_ROLES, type OrgRole } from "@/lib/org-roles";
 import { useToast } from "@/components/ui/toast";
 import { EntityLogo } from "@/components/entity-logo";
@@ -55,6 +56,9 @@ export function MembersManager({
   const [role, setRole] = useState<OrgRole>("member");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<MemberRow | null>(null);
+  const [cancelling, setCancelling] = useState<InvitationRow | null>(null);
+  const [acting, setActing] = useState(false);
 
   async function invite(e: React.FormEvent) {
     e.preventDefault();
@@ -84,17 +88,23 @@ export function MembersManager({
 
   async function remove(memberId: string) {
     setError(null);
+    setActing(true);
     const res = await authClient.organization.removeMember({
       memberIdOrEmail: memberId,
       organizationId,
     });
+    setActing(false);
+    setRemoving(null);
     if (res.error) setError(res.error.message ?? "Could not remove the member");
     else toast({ title: "Member removed" });
     router.refresh();
   }
 
   async function cancelInvitation(invitationId: string) {
+    setActing(true);
     await authClient.organization.cancelInvitation({ invitationId });
+    setActing(false);
+    setCancelling(null);
     toast({ title: "Invitation cancelled" });
     router.refresh();
   }
@@ -180,7 +190,8 @@ export function MembersManager({
               )}
               {canManage && m.role !== "owner" && m.userId !== selfUserId && (
                 <button
-                  onClick={() => remove(m.id)}
+                  type="button"
+                  onClick={() => setRemoving(m)}
                   aria-label={`Remove ${m.name}`}
                   className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                 >
@@ -208,7 +219,8 @@ export function MembersManager({
                 <Badge>invited as {inv.role}</Badge>
                 {canManage && (
                   <button
-                    onClick={() => cancelInvitation(inv.id)}
+                    type="button"
+                    onClick={() => setCancelling(inv)}
                     aria-label={`Cancel invitation for ${inv.email}`}
                     className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                   >
@@ -221,6 +233,26 @@ export function MembersManager({
           </div>
         </Card>
       )}
+      <ConfirmModal
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => removing && remove(removing.id)}
+        busy={acting}
+        tone="danger"
+        confirmLabel={acting ? "Removing…" : "Remove member"}
+        title={removing ? `Remove ${removing.name}?` : ""}
+        description="They lose access to the organization's private repositories, their repository grants and their team seats. They can be invited again."
+      />
+      <ConfirmModal
+        open={cancelling !== null}
+        onClose={() => setCancelling(null)}
+        onConfirm={() => cancelling && cancelInvitation(cancelling.id)}
+        busy={acting}
+        tone="danger"
+        confirmLabel={acting ? "Cancelling…" : "Cancel invitation"}
+        title={cancelling ? `Cancel the invitation for ${cancelling.email}?` : ""}
+        description="The invitation link stops working. A new invitation can be sent at any time."
+      />
     </div>
   );
 }

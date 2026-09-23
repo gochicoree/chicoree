@@ -7,6 +7,7 @@ import { authClient } from "@/lib/auth-client";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { ConfirmModal } from "@/components/ui/modal";
 import { relativeTime } from "@/lib/format";
 import { useToast } from "@/components/ui/toast";
 
@@ -30,6 +31,8 @@ export function PasskeyManager({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<PasskeyRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +55,14 @@ export function PasskeyManager({
   }
 
   async function remove(id: string) {
-    await authClient.passkey.deletePasskey({ id });
+    setDeleting(true);
+    const res = await authClient.passkey.deletePasskey({ id });
+    setDeleting(false);
+    setRemoving(null);
+    if (res?.error) {
+      toast({ title: res.error.message ?? "Could not remove the passkey", tone: "error" });
+      return;
+    }
     toast({ title: "Passkey removed" });
     router.refresh();
   }
@@ -95,7 +105,8 @@ export function PasskeyManager({
                   </div>
                 </div>
                 <button
-                  onClick={() => remove(p.id)}
+                  type="button"
+                  onClick={() => setRemoving(p)}
                   aria-label={`Remove ${p.name}`}
                   className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
                 >
@@ -106,6 +117,16 @@ export function PasskeyManager({
           </ul>
         )}
       </CardBody>
+      <ConfirmModal
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => removing && remove(removing.id)}
+        busy={deleting}
+        tone="danger"
+        confirmLabel={deleting ? "Removing…" : "Remove passkey"}
+        title={removing ? `Remove ${removing.name}?` : ""}
+        description="You can no longer sign in with it. Keep a password or another passkey so you are not locked out."
+      />
     </Card>
   );
 }

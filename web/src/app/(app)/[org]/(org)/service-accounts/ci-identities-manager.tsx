@@ -9,6 +9,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CommandLine } from "@/components/ui/copy";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { relativeTime } from "@/lib/format";
 
 export interface CiIdentityRowView {
@@ -122,12 +123,19 @@ export function CiIdentitiesManager({ organizationId, organizationSlug, appUrl, 
                     added {relativeTime(i.createdAt)} · {i.lastUsedAt ? `last used ${relativeTime(i.lastUsedAt)}${i.lastSubject ? ` by ${i.lastSubject}` : ""}` : "never used"}
                   </div>
                 </div>
-                <form action={removeCiIdentity}>
-                  <input type="hidden" name="id" value={i.id} />
-                  <button type="submit" aria-label={`Remove ${i.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer">
-                    <Trash2 className="size-4" />
-                  </button>
-                </form>
+                <ConfirmForm
+                  action={removeCiIdentity}
+                  fields={{ id: i.id }}
+                  title={`Remove ${i.name}?`}
+                  description="Pushes from this CI identity are refused from now on. It can be added again with the same issuer and subject."
+                  confirmLabel="Remove identity"
+                  pendingLabel="Removing…"
+                  trigger={(open, pending) => (
+                    <button type="button" onClick={open} disabled={pending} aria-label={`Remove ${i.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
+                />
               </div>
             ))}
           </div>

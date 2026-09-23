@@ -7,6 +7,7 @@ import { organization } from "@/db/schema";
 import { listMembersWithUsers } from "@/lib/data";
 import { adminRemoveMember } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { EntityLogo } from "@/components/entity-logo";
 import { logoRef } from "@/lib/logo-shared";
 import { MemberRoleSelect } from "../org-controls";
@@ -31,17 +32,19 @@ export default async function AdminOrganizationMembers({ params }: { params: Pro
               <div className="truncate text-xs text-ink-2">{m.userEmail}</div>
             </div>
             <MemberRoleSelect memberId={m.id} organizationId={org.id} role={m.role} />
-            <form action={adminRemoveMember}>
-              <input type="hidden" name="memberId" value={m.id} />
-              <input type="hidden" name="organizationId" value={org.id} />
-              <button
-                type="submit"
-                aria-label={`Remove ${m.userName}`}
-                className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </form>
+            <ConfirmForm
+              action={adminRemoveMember}
+              fields={{ memberId: m.id, organizationId: org.id }}
+              title={`Remove ${m.userName} from ${org.name}?`}
+              description="They lose their role in the organization and access to its private repositories."
+              confirmLabel="Remove member"
+              pendingLabel="Removing…"
+              trigger={(open, pending) => (
+                <button type="button" onClick={open} disabled={pending} aria-label={`Remove ${m.userName}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                  <Trash2 className="size-4" />
+                </button>
+              )}
+            />
           </div>
         ))}
       </div>

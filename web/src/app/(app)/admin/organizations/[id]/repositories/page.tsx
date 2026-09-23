@@ -8,6 +8,7 @@ import { listOrgRepos } from "@/lib/data";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { adminDeleteRepository } from "@/app/actions/admin-orgs";
 import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { VisibilityBadge } from "@/components/ui/badge";
 import { repoHref } from "@/lib/proxy-shared";
 import { EntityLogo } from "@/components/entity-logo";
@@ -39,17 +40,20 @@ export default async function AdminOrganizationRepositories({ params }: { params
               <span className="ml-auto text-xs text-ink-3">
                 {r.lastPushedAt ? `pushed ${relativeTime(r.lastPushedAt)}` : "empty"}
               </span>
-              <form action={adminDeleteRepository}>
-                <input type="hidden" name="repositoryId" value={r.id} />
-                <input type="hidden" name="organizationId" value={org.id} />
-                <button
-                  type="submit"
-                  aria-label={`Delete ${r.name}`}
-                  className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </form>
+              <ConfirmForm
+                action={adminDeleteRepository}
+                fields={{ repositoryId: r.id, organizationId: org.id }}
+                title={`Delete ${org.slug}/${r.name}?`}
+                description="Every tag and image in it is deleted. This cannot be undone."
+                confirmLabel="Delete repository"
+                pendingLabel="Deleting…"
+                confirmText={r.name}
+                trigger={(open, pending) => (
+                  <button type="button" onClick={open} disabled={pending} aria-label={`Delete ${r.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
+              />
             </div>
           ))}
         </div>

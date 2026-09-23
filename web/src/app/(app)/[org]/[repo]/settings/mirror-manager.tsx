@@ -9,6 +9,7 @@ import type { MirrorLogEntry, Relabel, TagSelector } from "@/db/schema";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { MirrorFormFields } from "@/components/mirror-form-fields";
 import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice, type PageState, type QueryLike } from "@/lib/paginate-shared";
@@ -224,12 +225,19 @@ export function MirrorManager({
           <div className="mt-6 border-t border-line pt-4">
             <div className="mb-2 flex items-center justify-between">
               <div className="eyebrow">Recent runs</div>
-              <form action={deleteMirror}>
-                <input type="hidden" name="repositoryId" value={repositoryId} />
-                <Button type="submit" variant="ghost" size="sm">
-                  <Trash2 className="size-3.5" /> Remove mirror
-                </Button>
-              </form>
+              <ConfirmForm
+                action={deleteMirror}
+                fields={{ repositoryId }}
+                title={`Stop mirroring ${mirror.source}?`}
+                description="No more tags are imported from the source. Images already imported stay in the repository."
+                confirmLabel="Remove mirror"
+                pendingLabel="Removing…"
+                trigger={(open, pending) => (
+                  <Button type="button" variant="ghost" size="sm" onClick={open} disabled={pending}>
+                    <Trash2 className="size-3.5" /> Remove mirror
+                  </Button>
+                )}
+              />
             </div>
             {mirror.runs.length === 0 ? (
               <p className="text-sm text-ink-3">No runs yet.</p>

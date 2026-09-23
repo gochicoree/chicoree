@@ -8,6 +8,7 @@ import { describeRestriction, expiryState, lastUsedText } from "@/lib/token-poli
 import { adminRevokeAccessToken } from "@/app/actions/credentials";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { UsageMeter } from "@/components/admin/usage-meter";
 import { ExpiryBadge } from "@/app/(app)/settings/tokens/token-manager";
 import { LogoUploadCard } from "@/components/logo-upload";
@@ -27,7 +28,7 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
       <Card>
         <CardHeader eyebrow="Account" title="Role and access" />
         <CardBody>
-          <UserControls userId={user.id} isSelf={user.id === session.user.id} role={user.role ?? "user"} banned={!!user.banned} sessions={counts.sessions} />
+          <UserControls userId={user.id} name={user.name} isSelf={user.id === session.user.id} role={user.role ?? "user"} banned={!!user.banned} sessions={counts.sessions} />
           <dl className="mt-4 grid gap-3 border-t border-line pt-4 text-sm sm:grid-cols-3">
             <div>
               <dt className="eyebrow mb-0.5">Access tokens</dt>
@@ -110,16 +111,19 @@ export default async function AdminUserOverview({ params }: { params: Promise<{ 
                     </div>
                     {t.description && <div className="mt-0.5 text-xs text-ink-3">{t.description}</div>}
                   </div>
-                  <form action={adminRevokeAccessToken}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <button
-                      type="submit"
-                      aria-label={`Revoke ${t.name}`}
-                      className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </form>
+                  <ConfirmForm
+                    action={adminRevokeAccessToken}
+                    fields={{ id: t.id }}
+                    title={`Revoke ${t.name}?`}
+                    description={`Clients ${user.name} signed in with this token lose access within a few minutes. This cannot be undone.`}
+                    confirmLabel="Revoke token"
+                    pendingLabel="Revoking…"
+                    trigger={(open, pending) => (
+                      <button type="button" onClick={open} disabled={pending} aria-label={`Revoke ${t.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  />
                 </div>
               );
             })}

@@ -9,6 +9,7 @@ import { Field, Input, Textarea } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { ConfirmForm } from "@/components/ui/confirm-form";
 import { Pagination } from "@/components/ui/pagination";
 import { PAGE_SIZES, pageSlice } from "@/lib/paginate-shared";
 import { relativeTime } from "@/lib/format";
@@ -36,6 +37,10 @@ function eventLabel(value: string): string {
 
 function formatLabel(value: string): string {
   return WEBHOOK_FORMATS.find((f) => f.value === value)?.label ?? value;
+}
+
+function scopeFields(scope: WebhookScope): Record<string, string> {
+  return scope.kind === "repository" ? { repositoryId: scope.repositoryId } : { organizationId: scope.organizationId };
 }
 
 function ScopeInputs({ scope }: { scope: WebhookScope }) {
@@ -304,17 +309,19 @@ export function WebhooksManager({ scope, hooks, max }: { scope: WebhookScope; ho
                   >
                     {expanded === h.id ? "Hide log" : "Log"}
                   </button>
-                  <form action={deleteWebhook}>
-                    <ScopeInputs scope={scope} />
-                    <input type="hidden" name="id" value={h.id} />
-                    <button
-                      type="submit"
-                      aria-label={`Delete ${h.name}`}
-                      className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </form>
+                  <ConfirmForm
+                    action={deleteWebhook}
+                    fields={{ ...scopeFields(scope), id: h.id }}
+                    title={`Delete ${h.name}?`}
+                    description="No more deliveries are sent to its endpoint. This cannot be undone."
+                    confirmLabel="Delete webhook"
+                    pendingLabel="Deleting…"
+                    trigger={(open, pending) => (
+                      <button type="button" onClick={open} disabled={pending} aria-label={`Delete ${h.name}`} className="rounded-md p-1.5 text-ink-3 hover:bg-danger-soft hover:text-danger cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  />
                 </div>
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1 pl-7">
