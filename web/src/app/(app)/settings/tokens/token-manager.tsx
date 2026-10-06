@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useCallback, useEffect, useState } from "react";
 import { KeyRound, RefreshCw, Trash2 } from "lucide-react";
 import { createAccessToken, deleteAccessToken, rotateAccessToken, type SecretResult } from "@/app/actions/credentials";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -107,52 +107,32 @@ export function SecretPanel({ title, secret, children }: { title: string; secret
   );
 }
 
-function RotateButton({ token, registryHost, email }: { token: TokenRow; registryHost: string; email: string }) {
-  const [confirm, setConfirm] = useState(false);
+/**
+ * Confirms a rotation. Lives above the token list: the replacement token gets
+ * a new id, so its row remounts and could not keep the new secret.
+ */
+function RotateDialog({ token, onClose, onRotated }: { token: TokenRow; onClose: () => void; onRotated: (result: SecretResult) => void }) {
   const [state, action, pending] = useActionState<SecretResult | null, FormData>(rotateAccessToken, null);
-  const [shown, setShown] = useState<SecretResult | null>(null);
   useEffect(() => {
-    if (state?.secret) {
-      setShown(state);
-      setConfirm(false);
-    }
-  }, [state]);
+    if (state?.secret) onRotated(state);
+  }, [state, onRotated]);
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setConfirm(true)}
-        aria-label={`Rotate ${token.name}`}
-        title="Rotate: new secret, same settings; the old secret stops working"
-        className="rounded-md p-1.5 text-ink-3 hover:bg-card-2 hover:text-ink cursor-pointer"
-      >
-        <RefreshCw className="size-4" />
-      </button>
-      <ConfirmModal
-        open={confirm}
-        onClose={() => setConfirm(false)}
-        onConfirm={() => {
-          const fd = new FormData();
-          fd.set("id", token.id);
-          action(fd);
-        }}
-        title={`Rotate “${token.name}”?`}
-        description="You get a new secret with the same settings. The old one stops working right away."
-        confirmLabel={pending ? "Rotating…" : "Rotate token"}
-        tone="accent"
-        busy={pending}
-      >
-        {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
-      </ConfirmModal>
-      <Modal open={!!shown} onClose={() => setShown(null)} title={`New secret for “${token.name}”`} description="Copy it now — it will not be shown again.">
-        {shown?.secret && (
-          <SecretPanel title="Replacement token" secret={shown.secret}>
-            <p className="text-xs text-accent-ink/80">Sign in to the registry with it:</p>
-            <CommandLine command={`docker login ${registryHost} -u ${email}`} />
-          </SecretPanel>
-        )}
-      </Modal>
-    </>
+    <ConfirmModal
+      open
+      onClose={onClose}
+      onConfirm={() => {
+        const fd = new FormData();
+        fd.set("id", token.id);
+        startTransition(() => action(fd));
+      }}
+      title={`Rotate “${token.name}”?`}
+      description="You get a new secret with the same settings. The old one stops working right away."
+      confirmLabel={pending ? "Rotating…" : "Rotate token"}
+      tone="accent"
+      busy={pending}
+    >
+      {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
+    </ConfirmModal>
   );
 }
 
@@ -173,6 +153,13 @@ export function TokenManager({
   policy: TokenExpiryPolicy;
 }) {
   const [state, action, pending] = useActionState<SecretResult | null, FormData>(createAccessToken, null);
+  const [rotating, setRotating] = useState<TokenRow | null>(null);
+  const [rotated, setRotated] = useState<SecretResult | null>(null);
+  const closeRotate = useCallback(() => setRotating(null), []);
+  const showRotated = useCallback((result: SecretResult) => {
+    setRotated(result);
+    setRotating(null);
+  }, []);
   const [orgId, setOrgId] = useState("");
   const selectedOrg = orgs.find((o) => o.id === orgId) ?? null;
   const orgOptions = [
@@ -294,7 +281,15 @@ export function TokenManager({
                     </div>
                     {t.description && <div className="mt-0.5 text-xs text-ink-3">{t.description}</div>}
                   </div>
-                  <RotateButton token={t} registryHost={registryHost} email={email} />
+                  <button
+                    type="button"
+                    onClick={() => setRotating(t)}
+                    aria-label={`Rotate ${t.name}`}
+                    title="Rotate: new secret, same settings; the old secret stops working"
+                    className="rounded-md p-1.5 text-ink-3 hover:bg-card-2 hover:text-ink cursor-pointer"
+                  >
+                    <RefreshCw className="size-4" />
+                  </button>
                   <ConfirmForm
                     action={deleteAccessToken}
                     fields={{ id: t.id }}
@@ -314,6 +309,16 @@ export function TokenManager({
           </div>
         )}
       </Card>
+
+      {rotating && <RotateDialog key={rotating.id} token={rotating} onClose={closeRotate} onRotated={showRotated} />}
+      <Modal open={!!rotated} onClose={() => setRotated(null)} title={`New secret for “${rotated?.name}”`} description="Copy it now — it will not be shown again.">
+        {rotated?.secret && (
+          <SecretPanel title="Replacement token" secret={rotated.secret}>
+            <p className="text-xs text-accent-ink/80">Sign in to the registry with it:</p>
+            <CommandLine command={`docker login ${registryHost} -u ${email}`} />
+          </SecretPanel>
+        )}
+      </Modal>
     </div>
   );
 }

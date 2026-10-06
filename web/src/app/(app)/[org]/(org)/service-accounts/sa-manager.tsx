@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useEffect, useState } from "react";
 import { Bot, RefreshCw, Trash2 } from "lucide-react";
 import { createServiceAccount, deleteServiceAccount, rotateServiceAccount, type SecretResult } from "@/app/actions/credentials";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -61,7 +61,7 @@ function RotateButton({ sa, handle, registryHost }: { sa: SaRow; handle: string;
         onConfirm={() => {
           const fd = new FormData();
           fd.set("id", sa.id);
-          action(fd);
+          startTransition(() => action(fd));
         }}
         title={`Rotate “${handle}”?`}
         description="The account keeps its settings and gets a new secret. The old one stops working right away."
